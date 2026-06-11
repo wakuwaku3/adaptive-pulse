@@ -60,6 +60,8 @@
 
 ユーザが Play 開発者登録 ($25) を支払い済みと判明。一般公開の「テスター 12 人 × 14 日」要件は重いため、**内部テストトラックで本人のみに配布**する方針に変更 (requirements.md 更新済み)。内部テストはテスター要件・待機なしで、ウォッチの Play ストアからインストール・自動更新できる。実機購入後に必要な作業: release keystore 生成 (ローカル保管・コミット禁止) / AAB ビルド設定 / versionCode 運用 / Play Console へ手動アップロード (自動化は必要になってから)。
 
+→ (同日) release 体制は実装済み: upload keystore は `~/keystores/` + `.env` (要バックアップ)、署名は GitHub Secrets にも登録済み。main push 契機の自動 release (採番 + Notes + AAB/APK 添付) が稼働し、初版 v1.0.0 を発行済み。詳細は `.claude/rules/feedback-loop.md`。Play へは Release の AAB を内部テストへ手動アップロードする。
+
 ## ハマりどころメモ
 
 - `yes | sdkmanager` は pipefail で SIGPIPE 141 → `(yes || true) |`
