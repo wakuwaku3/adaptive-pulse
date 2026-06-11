@@ -7,11 +7,31 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.wear.compose.material.SwipeToDismissBox
+import io.github.wakuwaku3.adaptivepulse.core.SessionConfig
 import io.github.wakuwaku3.adaptivepulse.session.SessionScreen
 import io.github.wakuwaku3.adaptivepulse.session.SessionService
+import io.github.wakuwaku3.adaptivepulse.settings.SettingEditorScreen
+import io.github.wakuwaku3.adaptivepulse.settings.SettingItem
+import io.github.wakuwaku3.adaptivepulse.settings.SettingsRepository
+import io.github.wakuwaku3.adaptivepulse.settings.SettingsScreen
 import io.github.wakuwaku3.adaptivepulse.ui.theme.AdaptivePulseTheme
+import kotlinx.coroutines.launch
+
+private sealed interface AppScreen {
+    data object Session : AppScreen
+
+    data object Settings : AppScreen
+
+    data class Editor(val item: SettingItem) : AppScreen
+}
 
 class MainActivity : ComponentActivity() {
 
@@ -25,12 +45,47 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         setContent {
             AdaptivePulseTheme {
-                val state by SessionService.state.collectAsState()
-                SessionScreen(
-                    state = state,
-                    onStart = ::startWithPermissions,
-                    onStop = { SessionService.stop(this) },
-                )
+                AppNavigation()
+            }
+        }
+    }
+
+    @Composable
+    private fun AppNavigation() {
+        val sessionState by SessionService.state.collectAsState()
+        val settings = remember { SettingsRepository(applicationContext) }
+        val config by settings.config.collectAsState(initial = SessionConfig())
+        val scope = rememberCoroutineScope()
+        var screen by remember { mutableStateOf<AppScreen>(AppScreen.Session) }
+
+        when (val current = screen) {
+            AppScreen.Session -> SessionScreen(
+                state = sessionState,
+                onStart = ::startWithPermissions,
+                onStop = { SessionService.stop(this) },
+                onOpenSettings = { screen = AppScreen.Settings },
+            )
+
+            AppScreen.Settings -> SwipeToDismissBox(
+                onDismissed = { screen = AppScreen.Session },
+            ) { isBackground ->
+                if (!isBackground) {
+                    SettingsScreen(config = config, onSelect = { screen = AppScreen.Editor(it) })
+                }
+            }
+
+            is AppScreen.Editor -> SwipeToDismissBox(
+                onDismissed = { screen = AppScreen.Settings },
+            ) { isBackground ->
+                if (!isBackground) {
+                    SettingEditorScreen(
+                        item = current.item,
+                        config = config,
+                        onChange = { updated ->
+                            scope.launch { settings.update { updated } }
+                        },
+                    )
+                }
             }
         }
     }

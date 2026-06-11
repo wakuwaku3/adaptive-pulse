@@ -26,13 +26,18 @@ import io.github.wakuwaku3.adaptivepulse.ui.theme.APColors
 import kotlin.time.Duration
 
 @Composable
-fun SessionScreen(state: SessionUiState, onStart: () -> Unit, onStop: () -> Unit) {
+fun SessionScreen(
+    state: SessionUiState,
+    onStart: () -> Unit,
+    onStop: () -> Unit,
+    onOpenSettings: () -> Unit,
+) {
     Box(
         modifier = Modifier.fillMaxSize(),
         contentAlignment = Alignment.Center,
     ) {
         when (state) {
-            SessionUiState.Idle -> IdleScreen(onStart = onStart)
+            SessionUiState.Idle -> IdleScreen(onStart = onStart, onOpenSettings = onOpenSettings)
             is SessionUiState.Running -> RunningScreen(state, onStop = onStop)
             is SessionUiState.Finished -> FinishedScreen(state, onReset = onStop)
         }
@@ -40,7 +45,7 @@ fun SessionScreen(state: SessionUiState, onStart: () -> Unit, onStop: () -> Unit
 }
 
 @Composable
-private fun IdleScreen(onStart: () -> Unit) {
+private fun IdleScreen(onStart: () -> Unit, onOpenSettings: () -> Unit) {
     CycleRing(progress = 0f, color = APColors.High)
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -60,7 +65,12 @@ private fun IdleScreen(onStart: () -> Unit) {
             onClick = onStart,
             label = { Text("START", color = Color.Black) },
             colors = ChipDefaults.chipColors(backgroundColor = APColors.High),
-            modifier = Modifier.padding(top = 14.dp),
+            modifier = Modifier.padding(top = 10.dp),
+        )
+        CompactChip(
+            onClick = onOpenSettings,
+            label = { Text("SETTINGS", color = APColors.TextDim) },
+            colors = ChipDefaults.chipColors(backgroundColor = APColors.StopChip),
         )
     }
 }
