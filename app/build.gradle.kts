@@ -18,6 +18,32 @@ android {
         versionName = "0.1.0"
     }
 
+    // Play 内部テスト配布用の upload key。keystore は ~/keystores/ (コミット禁止)、
+    // 資格情報は .env (direnv) の環境変数。未設定なら署名なしでビルドする (CI はこちら)
+    val keystorePath = System.getenv("ADAPTIVE_PULSE_KEYSTORE_PATH")
+    if (keystorePath != null) {
+        signingConfigs {
+            create("release") {
+                storeFile = file(keystorePath)
+                storePassword = System.getenv("ADAPTIVE_PULSE_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("ADAPTIVE_PULSE_KEY_ALIAS")
+                keyPassword = System.getenv("ADAPTIVE_PULSE_KEY_PASSWORD")
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro",
+            )
+            signingConfig = signingConfigs.findByName("release")
+        }
+    }
+
     buildFeatures {
         compose = true
     }
