@@ -1,34 +1,38 @@
 package io.github.wakuwaku3.adaptivepulse.session
 
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.wear.compose.material.Chip
 import androidx.wear.compose.material.ChipDefaults
 import androidx.wear.compose.material.CompactChip
 import androidx.wear.compose.material.MaterialTheme
 import androidx.wear.compose.material.Text
 import io.github.wakuwaku3.adaptivepulse.core.Phase
+import io.github.wakuwaku3.adaptivepulse.ui.theme.APColors
 import kotlin.time.Duration
 
-private val HighIntensityColor = Color(0xFFFF5252)
-private val RecoveryColor = Color(0xFF69F0AE)
-
 @Composable
-fun SessionScreen(viewModel: SessionViewModel) {
+fun SessionScreen(viewModel: SessionViewModel, onStart: () -> Unit = viewModel::start) {
     Box(
         modifier = Modifier.fillMaxSize(),
         contentAlignment = Alignment.Center,
     ) {
         when (val state = viewModel.uiState) {
-            SessionUiState.Idle -> IdleScreen(onStart = viewModel::start)
+            SessionUiState.Idle -> IdleScreen(onStart = onStart)
             is SessionUiState.Running -> RunningScreen(state, onStop = { viewModel.stop() })
             is SessionUiState.Finished -> FinishedScreen(state, onReset = { viewModel.stop() })
         }
@@ -37,64 +41,129 @@ fun SessionScreen(viewModel: SessionViewModel) {
 
 @Composable
 private fun IdleScreen(onStart: () -> Unit) {
+    CycleRing(progress = 0f, color = APColors.High)
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
-        Text(text = "AdaptivePulse", style = MaterialTheme.typography.title2)
+        Text(
+            text = "ADAPTIVE",
+            color = APColors.TextDim,
+            style = MaterialTheme.typography.title3,
+        )
+        Text(
+            text = "PULSE",
+            color = APColors.Text,
+            style = MaterialTheme.typography.title1,
+        )
         Chip(
             onClick = onStart,
-            label = { Text("開始") },
-            colors = ChipDefaults.primaryChipColors(),
+            label = { Text("START", color = Color.Black) },
+            colors = ChipDefaults.chipColors(backgroundColor = APColors.High),
+            modifier = Modifier.padding(top = 14.dp),
         )
     }
 }
 
 @Composable
 private fun RunningScreen(state: SessionUiState.Running, onStop: () -> Unit) {
-    val (phaseLabel, phaseColor) = when (state.phase) {
-        Phase.HIGH_INTENSITY -> "高強度" to HighIntensityColor
-        Phase.RECOVERY -> "回復" to RecoveryColor
-        Phase.FINISHED -> "終了" to MaterialTheme.colors.onBackground
+    val (label, color) = when (state.phase) {
+        Phase.HIGH_INTENSITY -> "HIGH" to APColors.High
+        Phase.RECOVERY -> "RECOVER" to APColors.Recover
+        Phase.FINISHED -> "DONE" to APColors.Done
     }
+    // リングは完了サイクル数を示す。回復まで到達したサイクルは半分進んだ扱い
+    val ringProgress =
+        (state.currentCycle - 1 + if (state.phase == Phase.RECOVERY) 0.5f else 0f) /
+            state.finalCycle
+
+    CycleRing(progress = ringProgress, color = color)
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(4.dp),
+        verticalArrangement = Arrangement.spacedBy(0.dp),
     ) {
-        Text(text = phaseLabel, color = phaseColor, style = MaterialTheme.typography.title2)
+        Text(text = label, color = color, style = MaterialTheme.typography.title3)
+        Row(verticalAlignment = Alignment.Bottom) {
+            Text(
+                text = state.bpm?.toString() ?: "--",
+                color = color,
+                style = MaterialTheme.typography.display1,
+            )
+            Text(
+                text = "bpm",
+                color = APColors.TextDim,
+                style = MaterialTheme.typography.caption1,
+                modifier = Modifier.padding(start = 4.dp, bottom = 10.dp),
+            )
+        }
         Text(
-            text = state.bpm?.toString() ?: "--",
-            color = phaseColor,
-            style = MaterialTheme.typography.display1,
-        )
-        Text(
-            text = "サイクル ${state.currentCycle}/${state.finalCycle}  ${format(state.elapsed)}",
+            text = "CYCLE ${state.currentCycle}/${state.finalCycle} · ${format(state.elapsed)}",
+            color = APColors.TextDim,
             style = MaterialTheme.typography.caption1,
         )
         CompactChip(
             onClick = onStop,
-            label = { Text("停止") },
-            modifier = Modifier.padding(top = 4.dp),
+            label = {
+                Text(
+                    text = "STOP",
+                    color = APColors.Text,
+                    style = MaterialTheme.typography.button,
+                )
+            },
+            colors = ChipDefaults.chipColors(backgroundColor = APColors.StopChip),
+            modifier = Modifier.padding(top = 8.dp),
         )
     }
 }
 
 @Composable
 private fun FinishedScreen(state: SessionUiState.Finished, onReset: () -> Unit) {
+    CycleRing(progress = 1f, color = APColors.Done)
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        Text(text = "おつかれさま", style = MaterialTheme.typography.title2)
         Text(
-            text = "${state.cycles} サイクル  ${format(state.elapsed)}",
+            text = "DONE",
+            color = APColors.Done,
+            style = MaterialTheme.typography.title1,
+        )
+        Text(
+            text = "${state.cycles} CYCLES · ${format(state.elapsed)}",
+            color = APColors.Text,
             style = MaterialTheme.typography.body1,
+            textAlign = TextAlign.Center,
         )
         Chip(
             onClick = onReset,
-            label = { Text("OK") },
-            colors = ChipDefaults.secondaryChipColors(),
+            label = { Text("OK", color = Color.Black) },
+            colors = ChipDefaults.chipColors(backgroundColor = APColors.Done),
+            modifier = Modifier.padding(top = 10.dp),
         )
+    }
+}
+
+/** 丸画面の縁に沿ってサイクル進捗を描くリング */
+@Composable
+private fun CycleRing(progress: Float, color: Color) {
+    Canvas(modifier = Modifier.fillMaxSize().padding(4.dp)) {
+        val stroke = Stroke(width = 3.dp.toPx(), cap = StrokeCap.Round)
+        drawArc(
+            color = APColors.RingTrack,
+            startAngle = -90f,
+            sweepAngle = 360f,
+            useCenter = false,
+            style = stroke,
+        )
+        if (progress > 0f) {
+            drawArc(
+                color = color,
+                startAngle = -90f,
+                sweepAngle = 360f * progress.coerceIn(0f, 1f),
+                useCenter = false,
+                style = Stroke(width = 5.dp.toPx(), cap = StrokeCap.Round),
+            )
+        }
     }
 }
 

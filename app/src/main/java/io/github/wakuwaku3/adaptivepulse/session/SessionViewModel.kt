@@ -103,8 +103,16 @@ class SessionViewModel(
     }
 
     companion object {
-        fun factory(vibrator: SessionVibrator): ViewModelProvider.Factory = viewModelFactory {
-            initializer { SessionViewModel(onSessionEvent = vibrator::vibrate) }
+        fun factory(
+            vibrator: SessionVibrator,
+            sourceFactory: (phaseProvider: () -> Phase) -> HeartRateSource,
+        ): ViewModelProvider.Factory = viewModelFactory {
+            initializer {
+                SessionViewModel(
+                    onSessionEvent = vibrator::vibrate,
+                    sourceFactory = sourceFactory,
+                )
+            }
         }
     }
 }
