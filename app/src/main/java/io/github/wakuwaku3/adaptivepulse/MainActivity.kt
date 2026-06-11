@@ -70,7 +70,11 @@ class MainActivity : ComponentActivity() {
                 onDismissed = { screen = AppScreen.Session },
             ) { isBackground ->
                 if (!isBackground) {
-                    SettingsScreen(config = config, onSelect = { screen = AppScreen.Editor(it) })
+                    SettingsScreen(
+                        config = config,
+                        onSelect = { screen = AppScreen.Editor(it) },
+                        onBack = { screen = AppScreen.Session },
+                    )
                 }
             }
 
@@ -84,6 +88,7 @@ class MainActivity : ComponentActivity() {
                         onChange = { updated ->
                             scope.launch { settings.update { updated } }
                         },
+                        onBack = { screen = AppScreen.Settings },
                     )
                 }
             }

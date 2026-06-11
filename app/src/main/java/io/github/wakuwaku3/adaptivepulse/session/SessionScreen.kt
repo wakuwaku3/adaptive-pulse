@@ -15,12 +15,10 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import androidx.wear.compose.material.ButtonDefaults
-import androidx.wear.compose.material.CompactButton
 import androidx.wear.compose.material.MaterialTheme
 import androidx.wear.compose.material.Text
 import io.github.wakuwaku3.adaptivepulse.core.Phase
+import io.github.wakuwaku3.adaptivepulse.ui.IconActionButton
 import io.github.wakuwaku3.adaptivepulse.ui.theme.APColors
 import kotlin.time.Duration
 
@@ -68,22 +66,6 @@ private fun IdleScreen(onStart: () -> Unit, onOpenSettings: () -> Unit) {
             IconActionButton(glyph = "▶", tint = Color.Black, background = APColors.High, onClick = onStart)
             IconActionButton(glyph = "⚙", tint = APColors.TextDim, background = APColors.StopChip, onClick = onOpenSettings)
         }
-    }
-}
-
-/** 記号グリフ 1 文字の小円アクションボタン (視覚 32dp、タップ領域 48dp) */
-@Composable
-private fun IconActionButton(
-    glyph: String,
-    tint: Color,
-    background: Color,
-    onClick: () -> Unit,
-) {
-    CompactButton(
-        onClick = onClick,
-        colors = ButtonDefaults.buttonColors(backgroundColor = background),
-    ) {
-        Text(text = glyph, color = tint, fontSize = 14.sp)
     }
 }
 

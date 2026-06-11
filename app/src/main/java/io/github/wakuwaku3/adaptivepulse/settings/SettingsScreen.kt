@@ -2,6 +2,7 @@ package io.github.wakuwaku3.adaptivepulse.settings
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -17,10 +18,15 @@ import androidx.wear.compose.material.MaterialTheme
 import androidx.wear.compose.material.Stepper
 import androidx.wear.compose.material.Text
 import io.github.wakuwaku3.adaptivepulse.core.SessionConfig
+import io.github.wakuwaku3.adaptivepulse.ui.IconActionButton
 import io.github.wakuwaku3.adaptivepulse.ui.theme.APColors
 
 @Composable
-fun SettingsScreen(config: SessionConfig, onSelect: (SettingItem) -> Unit) {
+fun SettingsScreen(
+    config: SessionConfig,
+    onSelect: (SettingItem) -> Unit,
+    onBack: () -> Unit,
+) {
     ScalingLazyColumn(modifier = Modifier.fillMaxSize()) {
         item {
             Text(
@@ -45,6 +51,16 @@ fun SettingsScreen(config: SessionConfig, onSelect: (SettingItem) -> Unit) {
                 modifier = Modifier.fillMaxWidth(),
             )
         }
+        // スワイプバックは分かりにくいというユーザ FB を受けた明示の戻るボタン
+        item {
+            IconActionButton(
+                glyph = "←",
+                tint = APColors.TextDim,
+                background = APColors.StopChip,
+                onClick = onBack,
+                modifier = Modifier.padding(top = 4.dp),
+            )
+        }
     }
 }
 
@@ -53,6 +69,7 @@ fun SettingEditorScreen(
     item: SettingItem,
     config: SessionConfig,
     onChange: (SessionConfig) -> Unit,
+    onBack: () -> Unit,
 ) {
     val value = item.read(config)
     Stepper(
@@ -62,21 +79,29 @@ fun SettingEditorScreen(
         decreaseIcon = { Text("−", style = MaterialTheme.typography.title1) },
         increaseIcon = { Text("+", style = MaterialTheme.typography.title1) },
     ) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(2.dp),
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
+            verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.fillMaxWidth(),
         ) {
-            Text(
-                text = item.title,
-                color = APColors.TextDim,
-                style = MaterialTheme.typography.title3,
+            IconActionButton(
+                glyph = "←",
+                tint = APColors.TextDim,
+                background = APColors.StopChip,
+                onClick = onBack,
             )
-            Text(
-                text = item.format(value),
-                color = APColors.Text,
-                style = MaterialTheme.typography.title1,
-            )
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(
+                    text = item.title,
+                    color = APColors.TextDim,
+                    style = MaterialTheme.typography.title3,
+                )
+                Text(
+                    text = item.format(value),
+                    color = APColors.Text,
+                    style = MaterialTheme.typography.title1,
+                )
+            }
         }
     }
 }
