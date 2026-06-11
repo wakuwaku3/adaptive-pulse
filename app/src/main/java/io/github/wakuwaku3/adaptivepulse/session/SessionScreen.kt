@@ -61,17 +61,22 @@ private fun IdleScreen(onStart: () -> Unit, onOpenSettings: () -> Unit) {
             color = APColors.Text,
             style = MaterialTheme.typography.title1,
         )
-        Chip(
-            onClick = onStart,
-            label = { Text("START", color = Color.Black) },
-            colors = ChipDefaults.chipColors(backgroundColor = APColors.High),
-            modifier = Modifier.padding(top = 10.dp),
-        )
-        CompactChip(
-            onClick = onOpenSettings,
-            label = { Text("SETTINGS", color = APColors.TextDim) },
-            colors = ChipDefaults.chipColors(backgroundColor = APColors.StopChip),
-        )
+        // 主要操作と副次操作は横並びのコンパクト配置 (ユーザ FB 2026-06-11)
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            modifier = Modifier.padding(top = 12.dp),
+        ) {
+            CompactChip(
+                onClick = onStart,
+                label = { Text("START", color = Color.Black) },
+                colors = ChipDefaults.chipColors(backgroundColor = APColors.High),
+            )
+            CompactChip(
+                onClick = onOpenSettings,
+                label = { Text("SETTINGS", color = APColors.TextDim) },
+                colors = ChipDefaults.chipColors(backgroundColor = APColors.StopChip),
+            )
+        }
     }
 }
 
