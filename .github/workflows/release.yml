@@ -1,0 +1,90 @@
+# main への push を契機に、自動採番 (scripts/next_version.sh) で GitHub Release を
+# 作成し、Release Notes (scripts/release_notes.sh) と署名済み AAB/APK を添付する。
+# flame の release policy を単一 Android アプリ向けに適応したもの
+# (.claude/rules/feedback-loop.md)。アプリ実体に変更が無い push では release を作らない。
+# 署名は Secrets (ADAPTIVE_PULSE_*)。upload key なので Play アプリ署名でリセット可能。
+name: release
+
+on:
+  push:
+    branches: [main]
+  # release 経路の挙動を tag/release を作らずに検証するドライラン入口 (flame 準拠)
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: true で採番・build・notes 生成までに留め、release 作成を skip する
+        required: false
+        type: boolean
+        default: true
+
+permissions:
+  contents: write # tag push と gh release create に必要
+
+# 連続 push で採番が競合しないよう release は直列化する
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # tag と全履歴が採番・notes 生成に必要
+
+      - name: 次バージョンを決定
+        id: ver
+        run: bash scripts/next_version.sh | tee -a "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-java@v4
+        if: steps.ver.outputs.skip != 'true'
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: gradle/actions/setup-gradle@v4
+        if: steps.ver.outputs.skip != 'true'
+
+      - name: keystore を復元
+        if: steps.ver.outputs.skip != 'true'
+        run: echo "$KEYSTORE_B64" | base64 -d > /tmp/upload.jks
+        env:
+          KEYSTORE_B64: ${{ secrets.ADAPTIVE_PULSE_KEYSTORE_B64 }}
+
+      - name: 署名済み AAB / APK をビルド
+        if: steps.ver.outputs.skip != 'true'
+        # versionCode は semver から決定的に導出する (MAJOR*10000 + MINOR*100 + PATCH)
+        run: |
+          IFS=. read -r maj min pat <<<"$ADAPTIVE_PULSE_VERSION_NAME"
+          export ADAPTIVE_PULSE_VERSION_CODE=$((maj * 10000 + min * 100 + pat))
+          ./gradlew :app:bundleRelease :app:assembleRelease
+        env:
+          ADAPTIVE_PULSE_VERSION_NAME: ${{ steps.ver.outputs.version }}
+          ADAPTIVE_PULSE_KEYSTORE_PATH: /tmp/upload.jks
+          ADAPTIVE_PULSE_KEYSTORE_PASSWORD: ${{ secrets.ADAPTIVE_PULSE_KEYSTORE_PASSWORD }}
+          ADAPTIVE_PULSE_KEY_ALIAS: ${{ secrets.ADAPTIVE_PULSE_KEY_ALIAS }}
+          ADAPTIVE_PULSE_KEY_PASSWORD: ${{ secrets.ADAPTIVE_PULSE_KEY_PASSWORD }}
+
+      - name: Release Notes を生成
+        if: steps.ver.outputs.skip != 'true'
+        run: bash scripts/release_notes.sh "${{ steps.ver.outputs.prior_tag }}" | tee /tmp/notes.md
+
+      - name: Release を作成 (tag + notes + assets)
+        if: >-
+          steps.ver.outputs.skip != 'true' &&
+          (github.event_name != 'workflow_dispatch' || inputs.dry_run != true)
+        run: |
+          cp app/build/outputs/bundle/release/app-release.aab "adaptive-pulse-v${VERSION}.aab"
+          cp app/build/outputs/apk/release/app-release.apk "adaptive-pulse-v${VERSION}.apk"
+          gh release create "v${VERSION}" \
+            --title "v${VERSION}" \
+            --notes-file /tmp/notes.md \
+            --target "$GITHUB_SHA" \
+            "adaptive-pulse-v${VERSION}.aab" "adaptive-pulse-v${VERSION}.apk"
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.ver.outputs.version }}
+
+      - name: skip 理由を記録
+        if: steps.ver.outputs.skip == 'true'
+        run: echo "アプリ実体 (app/ core/ gradle 系) に変更が無いため release を skip しました"

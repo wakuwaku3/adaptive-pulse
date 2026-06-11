@@ -14,8 +14,10 @@ android {
         applicationId = "io.github.wakuwaku3.adaptivepulse"
         minSdk = 30 // Wear OS 3 (Pixel Watch 初代) 以上
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
+        // リリースは release workflow が自動採番して環境変数で渡す (semver から導出)。
+        // ローカルビルドは dev 固定で、Play へ上げる versionCode と衝突しない
+        versionCode = System.getenv("ADAPTIVE_PULSE_VERSION_CODE")?.toInt() ?: 1
+        versionName = System.getenv("ADAPTIVE_PULSE_VERSION_NAME") ?: "0.0.0-dev"
     }
 
     // Play 内部テスト配布用の upload key。keystore は ~/keystores/ (コミット禁止)、

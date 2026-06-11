@@ -15,6 +15,7 @@ flame の 3 層モデル (AI ターン内 hook / CI / 監視) のうち、本 re
 - **Stop hook** (`scripts/check.sh`): 毎ターン・軽量。gitleaks (秘密検査) + ドキュメント配置検査。失敗時 exit 2 で stderr を AI に返し、同ターンで fix させる。Gradle はターン内検査には遅すぎるため呼ばない。
 - **PreToolUse hook (Bash matcher)** (`scripts/pre_push.sh`): AI が `git push` しようとした瞬間だけ `./gradlew build` (compile + unit test + lint)。失敗時 exit 2 で push を止める。push 以外の Bash は素通り。`gradlew` が無い間 (アプリ scaffold 前) はスキップ。
 - **CI** (`.github/workflows/ci.yml`): push/PR で hook と同等の検査 (gitleaks / docs 配置 / gradle build) を再実行する。手動 push (`! git push`) が hook を素通りする抜け道を塞ぐ層。
+- **release workflow** (`.github/workflows/release.yml`): main への push を契機に、flame の release policy のアプリ向け適応で自動 release する。採番は `scripts/next_version.sh` (初版 1.0.0、bump は commit trailer `semver: minor|major`、無指定 PATCH)、Release Notes は `scripts/release_notes.sh` (前回 tag → HEAD の commit 一覧)。アプリ実体 (app/ core/ gradle 系) に変更が無い push は release を作らない。署名済み AAB/APK を添付 (Secrets `ADAPTIVE_PULSE_*`)。versionCode は semver から決定的に導出。`workflow_dispatch` の dry_run で release を作らず経路検証できる。
 
 ## 方針
 
