@@ -10,6 +10,11 @@
     <!-- Health Services 経由の心拍取得 (実行時許可) -->
     <uses-permission android:name="android.permission.BODY_SENSORS" />
 
+    <!-- 画面オフ中の計測継続 (Foreground Service)。通知許可は API 33+ で実行時要求 -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_HEALTH" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
     <application
         android:label="@string/app_name"
         android:theme="@android:style/Theme.DeviceDefault">
@@ -27,6 +32,11 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <service
+            android:name=".session.SessionService"
+            android:exported="false"
+            android:foregroundServiceType="health" />
 
         <!-- 開発用の設定書き込み (debuggable ビルド以外では無効。実装側でガード) -->
         <receiver

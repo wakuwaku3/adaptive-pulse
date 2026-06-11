@@ -26,15 +26,15 @@ import io.github.wakuwaku3.adaptivepulse.ui.theme.APColors
 import kotlin.time.Duration
 
 @Composable
-fun SessionScreen(viewModel: SessionViewModel, onStart: () -> Unit = viewModel::start) {
+fun SessionScreen(state: SessionUiState, onStart: () -> Unit, onStop: () -> Unit) {
     Box(
         modifier = Modifier.fillMaxSize(),
         contentAlignment = Alignment.Center,
     ) {
-        when (val state = viewModel.uiState) {
+        when (state) {
             SessionUiState.Idle -> IdleScreen(onStart = onStart)
-            is SessionUiState.Running -> RunningScreen(state, onStop = { viewModel.stop() })
-            is SessionUiState.Finished -> FinishedScreen(state, onReset = { viewModel.stop() })
+            is SessionUiState.Running -> RunningScreen(state, onStop = onStop)
+            is SessionUiState.Finished -> FinishedScreen(state, onReset = onStop)
         }
     }
 }

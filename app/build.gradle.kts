@@ -43,4 +43,8 @@ dependencies {
     // Health Services の ListenableFuture を suspend で扱う
     implementation(libs.kotlinx.coroutines.guava)
     implementation(libs.androidx.datastore.preferences)
+    implementation(libs.androidx.core.ktx)
+    // 画面オフ中もセッション継続を示す Ongoing Activity
+    implementation(libs.wear.ongoing)
+    implementation(libs.androidx.lifecycle.service)
 }
