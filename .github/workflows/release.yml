@@ -1,7 +1,8 @@
-# main への push を契機に、自動採番 (scripts/next_version.sh) で GitHub Release を
-# 作成し、Release Notes (scripts/release_notes.sh) と署名済み AAB/APK を添付する。
-# flame の release policy を単一 Android アプリ向けに適応したもの
-# (.claude/rules/feedback-loop.md)。アプリ実体に変更が無い push では release を作らない。
+# main への push を契機に自動 release する (flame の release policy のアプリ向け適応。
+# .claude/rules/feedback-loop.md)。
+# semver bump は「公開 surface spec」(:spec モジュールが生成) を前回 release の
+# spec asset と比較して自動判定する (scripts/semver_bump.sh)。commit message には
+# 依存しない。アプリ実体に変更が無い push では release を作らない。
 # 署名は Secrets (ADAPTIVE_PULSE_*)。upload key なので Play アプリ署名でリセット可能。
 name: release
 
@@ -33,26 +34,54 @@ jobs:
         with:
           fetch-depth: 0 # tag と全履歴が採番・notes 生成に必要
 
-      - name: 次バージョンを決定
-        id: ver
-        run: bash scripts/next_version.sh | tee -a "$GITHUB_OUTPUT"
+      - name: release 対象か判定
+        id: target
+        run: bash scripts/release_target.sh | tee -a "$GITHUB_OUTPUT"
 
       - uses: actions/setup-java@v4
-        if: steps.ver.outputs.skip != 'true'
+        if: steps.target.outputs.skip != 'true'
         with:
           distribution: temurin
           java-version: "21"
       - uses: gradle/actions/setup-gradle@v4
-        if: steps.ver.outputs.skip != 'true'
+        if: steps.target.outputs.skip != 'true'
+
+      - name: 公開 surface spec を生成
+        if: steps.target.outputs.skip != 'true'
+        run: ./gradlew :spec:emitSpec
+
+      - name: 前回 spec と比較して bump を判定
+        id: bump
+        if: steps.target.outputs.skip != 'true'
+        run: |
+          if [ -n "$PRIOR_TAG" ]; then
+            gh release download "$PRIOR_TAG" --pattern spec.json --dir /tmp/prior 2>/dev/null \
+              || echo "前回 release に spec asset がありません" >&2
+          fi
+          bump="$(bash scripts/semver_bump.sh /tmp/prior/spec.json spec/build/spec.json)"
+          echo "bump=$bump" | tee -a "$GITHUB_OUTPUT"
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PRIOR_TAG: ${{ steps.target.outputs.prior_tag }}
+
+      - name: 次バージョンを決定
+        id: ver
+        if: steps.target.outputs.skip != 'true'
+        run: |
+          version="$(bash scripts/next_version.sh "$PRIOR_TAG" "$BUMP")"
+          echo "version=$version" | tee -a "$GITHUB_OUTPUT"
+        env:
+          PRIOR_TAG: ${{ steps.target.outputs.prior_tag }}
+          BUMP: ${{ steps.bump.outputs.bump }}
 
       - name: keystore を復元
-        if: steps.ver.outputs.skip != 'true'
+        if: steps.target.outputs.skip != 'true'
         run: echo "$KEYSTORE_B64" | base64 -d > /tmp/upload.jks
         env:
           KEYSTORE_B64: ${{ secrets.ADAPTIVE_PULSE_KEYSTORE_B64 }}
 
       - name: 署名済み AAB / APK をビルド
-        if: steps.ver.outputs.skip != 'true'
+        if: steps.target.outputs.skip != 'true'
         # versionCode は semver から決定的に導出する (MAJOR*10000 + MINOR*100 + PATCH)
         run: |
           IFS=. read -r maj min pat <<<"$ADAPTIVE_PULSE_VERSION_NAME"
@@ -66,12 +95,13 @@ jobs:
           ADAPTIVE_PULSE_KEY_PASSWORD: ${{ secrets.ADAPTIVE_PULSE_KEY_PASSWORD }}
 
       - name: Release Notes を生成
-        if: steps.ver.outputs.skip != 'true'
-        run: bash scripts/release_notes.sh "${{ steps.ver.outputs.prior_tag }}" | tee /tmp/notes.md
+        if: steps.target.outputs.skip != 'true'
+        run: bash scripts/release_notes.sh "${{ steps.target.outputs.prior_tag }}" | tee /tmp/notes.md
 
       - name: Release を作成 (tag + notes + assets)
+        # spec.json は次回 bump 判定の入力になるため必ず添付する (flame 準拠)
         if: >-
-          steps.ver.outputs.skip != 'true' &&
+          steps.target.outputs.skip != 'true' &&
           (github.event_name != 'workflow_dispatch' || inputs.dry_run != true)
         run: |
           cp app/build/outputs/bundle/release/app-release.aab "adaptive-pulse-v${VERSION}.aab"
@@ -80,11 +110,12 @@ jobs:
             --title "v${VERSION}" \
             --notes-file /tmp/notes.md \
             --target "$GITHUB_SHA" \
-            "adaptive-pulse-v${VERSION}.aab" "adaptive-pulse-v${VERSION}.apk"
+            "adaptive-pulse-v${VERSION}.aab" "adaptive-pulse-v${VERSION}.apk" \
+            "spec/build/spec.json"
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.ver.outputs.version }}
 
       - name: skip 理由を記録
-        if: steps.ver.outputs.skip == 'true'
-        run: echo "アプリ実体 (app/ core/ gradle 系) に変更が無いため release を skip しました"
+        if: steps.target.outputs.skip == 'true'
+        run: echo "アプリ実体 (app/ core/ spec/ gradle 系) に変更が無いため release を skip しました"

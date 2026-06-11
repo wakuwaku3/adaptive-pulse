@@ -16,7 +16,7 @@
 - ユーザからの補足・指摘・決定は会話に残さず `.claude/rules/*.md` に反映する (該当が無ければ新設)。一般原則を含む指摘は、その場のインスタンスを直すだけでなくルールに昇格させる。
 - ドキュメントは stock / flow に分類して配置する。
 - 変更はこまめに commit & push する (push 時に hook が build/test を通し、CI が再検証する)。push 後は CI の結果を確認し、失敗していたら同ターンで修正する。
-- main への push はアプリ実体に変更があれば自動で GitHub Release になる (自動採番)。機能追加を含む commit には `semver: minor`、破壊的変更には `semver: major` の行を message に入れる (無指定は PATCH)。
+- main への push はアプリ実体に変更があれば自動で GitHub Release になる。semver bump は公開 surface spec の差分から自動判定される (commit message への記載は不要。`.claude/rules/feedback-loop.md`)。
 
 ## 基本思想
 
