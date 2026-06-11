@@ -46,9 +46,27 @@
 - public repo なので **CI (GitHub Actions) を追加**: gitleaks / docs 配置検査 / gradle build (scaffold 前はスキップ)。hook との検査ロジック共通化のため `scripts/check_docs.sh` を切り出した。
 - 言語が Go → Kotlin/Gradle に変わるため、Stop hook から build 系を外した (Gradle はターン内検査には遅い)。build+test は push hook と CI が担う。
 
-## 残課題 (open)
+## 追記 (同日): 環境分担の決定とアプリ scaffold
 
-- [ ] Android SDK / エミュレータの開発環境: WSL 内 cmdline-tools で CLI build + Windows 側 Android Studio でエミュレータ、の分担をアプリ scaffold 時に決める
+### 環境分担
+
+WSL に /dev/kvm があり nested virtualization が有効 (24 コア / 21GB) だったため、**エミュレータ含めすべて WSL 内で完結**と決定。Windows 側 Android Studio は使わない (AI 駆動開発の主経路を CLI に揃える。必要になったら補助として再検討)。
+
+- Android SDK: `scripts/setup_android.sh` (idempotent) で `~/Android/Sdk` へ。nixpkgs の androidsdk は unfree かつ構成が特殊なので devbox 管理にしない
+- Wear OS system image は sdkmanager --list から動的に最新を選ぶ方式にした → `system-images;android-34;android-wear;x86_64` (Wear OS 5) が入った
+- ハマりどころ: `yes | sdkmanager --licenses` は pipefail 下で SIGPIPE (141) になる → `(yes || true) |` で回避
+- 要手作業: ユーザを `kvm` グループに追加 (`sudo usermod -aG kvm <user>`) + WSL 再起動
+
+### scaffold の構成判断
+
+- `:core` (純 Kotlin) + `:app` (Wear OS) の 2 モジュール。ロジックのエミュレータ非依存検証という要件をモジュール境界で強制する
+- `IntervalEngine` は時計の抽象すら持たず、呼び出し側が経過時間 (単調増加) を渡す設計にした。fake clock より単純で、テストが (bpm, 経過秒) の表になる
+- イベントは 1 遷移 = 1 発火 (振動パターンと 1:1 対応させるため)。タイムアウト遷移は `PhaseTimeout` のみ、疲労遷移は `FatigueBrake` のみを発火し、通常の `EnterRecovery`/`EnterHighIntensity` と重ねない
+- 回復タイムアウトでもサイクルは完了扱い (最終サイクルなら強制終了)。セッションが止まらないことを優先する要件の帰結
+- バージョン: AGP 8.10.1 / Gradle 8.11.1 / Kotlin 2.1.21 / Wear Compose 1.4.1 / compileSdk 35 / minSdk 30 (Pixel Watch 初代 = Wear OS 3)
+- Gradle wrapper は gradle/gradle の v8.11.1 タグから取得 (ローカルに gradle CLI を恒久導入しないため)
+
+## 残課題 (open)
 - [ ] Health Connect に年齢・性別プロファイルが本当に無いか実装時に確認
 - [ ] ExerciseClient の心拍サンプリング頻度・遅延をエミュレータで確認 (閾値判定の応答性に直結)
 - [ ] (開発外) Pixel Watch 購入前の FeliCa (iD/QUICPay) 対応世代確認・手持ちクレカの Google ウォレット対応確認

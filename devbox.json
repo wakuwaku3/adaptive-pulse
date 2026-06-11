@@ -3,6 +3,7 @@
   "packages": [
     "jdk@21",
     "gitleaks@latest",
-    "jq@latest"
+    "jq@latest",
+    "unzip@latest"
   ]
 }

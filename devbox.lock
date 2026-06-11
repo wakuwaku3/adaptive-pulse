@@ -204,6 +204,54 @@
           "store_path": "/nix/store/s04d6wm3kqjdgr7zdhlk214f6a2291ks-jq-1.8.1-bin"
         }
       }
+    },
+    "unzip@latest": {
+      "last_modified": "2026-05-21T08:15:18Z",
+      "resolved": "github:NixOS/nixpkgs/4a29d733e8a7d5b824c3d8c958a946a9867b3eb2#unzip",
+      "source": "devbox-search",
+      "version": "6.0",
+      "systems": {
+        "aarch64-darwin": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/8s625qigz41r5qvl1z3yglaak2j0llr9-unzip-6.0",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/8s625qigz41r5qvl1z3yglaak2j0llr9-unzip-6.0"
+        },
+        "aarch64-linux": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/cdxq66siy546g4gqp0w693n6d043ngnd-unzip-6.0",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/cdxq66siy546g4gqp0w693n6d043ngnd-unzip-6.0"
+        },
+        "x86_64-darwin": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/zbara2rlmdaaf71hxxdq9qrwbx7jly9f-unzip-6.0",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/zbara2rlmdaaf71hxxdq9qrwbx7jly9f-unzip-6.0"
+        },
+        "x86_64-linux": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/mhw4sjc1rz4zmb3vkdinvfm7ym96fazx-unzip-6.0",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/mhw4sjc1rz4zmb3vkdinvfm7ym96fazx-unzip-6.0"
+        }
+      }
     }
   }
 }
