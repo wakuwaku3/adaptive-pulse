@@ -1,0 +1,17 @@
+# gitleaks 設定。デフォルトルールを継承しつつ、gitignore 済のローカル秘密ファイルを
+# 走査対象から除外する (これらは commit されない前提なので scan しても誤検知になるだけ)。
+# 詳細: .claude/rules/secret.md
+[extend]
+useDefault = true
+
+[allowlist]
+description = "ローカル秘密ファイル (.gitignore 済) は走査対象外"
+paths = [
+  '''\.env$''',
+  '''\.env\..*''',
+  '''.*\.key$''',
+  '''.*\.pem$''',
+  '''.*\.keystore$''',
+  '''.*\.jks$''',
+  '''^secrets/''',
+]

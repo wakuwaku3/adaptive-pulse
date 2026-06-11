@@ -1,0 +1,38 @@
+# FB ループ 2 層目 (CI)。AI ターン内 hook と同等の検査を GitHub 上で再実行し、
+# 手動 push が hook を素通りする抜け道を塞ぐ。構成: .claude/rules/feedback-loop.md
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  gitleaks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: docs placement
+        run: bash scripts/check_docs.sh
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: gradle/actions/setup-gradle@v4
+      - name: build
+        run: |
+          if [ -x ./gradlew ]; then
+            ./gradlew build
+          else
+            echo "gradlew 不在のため build をスキップ (アプリ scaffold 前)"
+          fi

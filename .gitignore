@@ -1,0 +1,24 @@
+# secrets — 絶対にコミットしない (public repo)
+.env
+.env.*
+*.key
+*.pem
+*.keystore
+*.jks
+secrets/
+
+# Android / Gradle
+.gradle/
+build/
+local.properties
+captures/
+*.apk
+*.aab
+
+# IDE
+.idea/
+*.iml
+
+# devbox / direnv
+.devbox/
+.direnv/
