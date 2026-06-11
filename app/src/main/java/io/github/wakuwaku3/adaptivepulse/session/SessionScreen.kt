@@ -3,13 +3,10 @@ package io.github.wakuwaku3.adaptivepulse.session
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -19,9 +16,8 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.wear.compose.material.Chip
-import androidx.wear.compose.material.ChipDefaults
-import androidx.wear.compose.material.CompactChip
+import androidx.wear.compose.material.ButtonDefaults
+import androidx.wear.compose.material.CompactButton
 import androidx.wear.compose.material.MaterialTheme
 import androidx.wear.compose.material.Text
 import io.github.wakuwaku3.adaptivepulse.core.Phase
@@ -64,42 +60,31 @@ private fun IdleScreen(onStart: () -> Unit, onOpenSettings: () -> Unit) {
             color = APColors.Text,
             style = MaterialTheme.typography.title1,
         )
-        // 主要操作と副次操作は横並びのコンパクト配置で幅を揃える (ユーザ FB 2026-06-11)
+        // 操作はテキストラベルではなく記号アイコンの小円ボタンで表現 (ユーザ FB 2026-06-11)
         Row(
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-            modifier = Modifier.padding(top = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            modifier = Modifier.padding(top = 8.dp),
         ) {
-            SmallActionChip(text = "START", textColor = Color.Black, background = APColors.High, onClick = onStart)
-            SmallActionChip(text = "SETTINGS", textColor = APColors.TextDim, background = APColors.StopChip, onClick = onOpenSettings)
+            IconActionButton(glyph = "▶", tint = Color.Black, background = APColors.High, onClick = onStart)
+            IconActionButton(glyph = "⚙", tint = APColors.TextDim, background = APColors.StopChip, onClick = onOpenSettings)
         }
     }
 }
 
-/** 幅を揃えた小型アクションボタン。長いラベルも 1 行に収める */
+/** 記号グリフ 1 文字の小円アクションボタン (視覚 32dp、タップ領域 48dp) */
 @Composable
-private fun SmallActionChip(
-    text: String,
-    textColor: Color,
+private fun IconActionButton(
+    glyph: String,
+    tint: Color,
     background: Color,
     onClick: () -> Unit,
 ) {
-    CompactChip(
+    CompactButton(
         onClick = onClick,
-        label = {
-            Text(
-                text = text,
-                color = textColor,
-                style = MaterialTheme.typography.button.copy(letterSpacing = 0.5.sp),
-                maxLines = 1,
-                softWrap = false,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth(),
-            )
-        },
-        colors = ChipDefaults.chipColors(backgroundColor = background),
-        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
-        modifier = Modifier.width(76.dp),
-    )
+        colors = ButtonDefaults.buttonColors(backgroundColor = background),
+    ) {
+        Text(text = glyph, color = tint, fontSize = 14.sp)
+    }
 }
 
 @Composable
@@ -138,18 +123,14 @@ private fun RunningScreen(state: SessionUiState.Running, onStop: () -> Unit) {
             color = APColors.TextDim,
             style = MaterialTheme.typography.caption1,
         )
-        CompactChip(
-            onClick = onStop,
-            label = {
-                Text(
-                    text = "STOP",
-                    color = APColors.Text,
-                    style = MaterialTheme.typography.button,
-                )
-            },
-            colors = ChipDefaults.chipColors(backgroundColor = APColors.StopChip),
-            modifier = Modifier.padding(top = 8.dp),
-        )
+        Box(modifier = Modifier.padding(top = 4.dp)) {
+            IconActionButton(
+                glyph = "■",
+                tint = APColors.Text,
+                background = APColors.StopChip,
+                onClick = onStop,
+            )
+        }
     }
 }
 
@@ -171,12 +152,14 @@ private fun FinishedScreen(state: SessionUiState.Finished, onReset: () -> Unit) 
             style = MaterialTheme.typography.body1,
             textAlign = TextAlign.Center,
         )
-        Chip(
-            onClick = onReset,
-            label = { Text("OK", color = Color.Black) },
-            colors = ChipDefaults.chipColors(backgroundColor = APColors.Done),
-            modifier = Modifier.padding(top = 10.dp),
-        )
+        Box(modifier = Modifier.padding(top = 6.dp)) {
+            IconActionButton(
+                glyph = "✓",
+                tint = Color.Black,
+                background = APColors.Done,
+                onClick = onReset,
+            )
+        }
     }
 }
 
