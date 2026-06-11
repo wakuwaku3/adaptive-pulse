@@ -215,6 +215,27 @@ class IntervalEngineTest {
     }
 
     @Test
+    fun `ウォームアップ判定 - 下限閾値を上向きに超えるまでが区間で、2 サイクル目以降は該当しない`() {
+        val engine = IntervalEngine(config)
+        kotlin.test.assertTrue(engine.isWarmingUp)
+        engine.onHeartRate(120, 0.seconds)
+        kotlin.test.assertTrue(engine.isWarmingUp)
+        engine.onHeartRate(141, 30.seconds) // 計測開始 = ウォームアップ終了
+        kotlin.test.assertFalse(engine.isWarmingUp)
+        engine.onHeartRate(156, 90.seconds)
+        engine.onHeartRate(139, 150.seconds) // サイクル2 高強度 (140 未満から再開)
+        kotlin.test.assertFalse(engine.isWarmingUp)
+    }
+
+    @Test
+    fun `ゾーン滞在率 - 下限〜上限の帯にいたサンプルの割合を返す`() {
+        val metrics = SessionMetrics(config)
+        assertNull(metrics.zoneRatio)
+        listOf(120, 140, 150, 155, 160).forEach(metrics::onHeartRate) // 帯内は 140/150/155
+        assertEquals(0.6, metrics.zoneRatio!!, 1e-9)
+    }
+
+    @Test
     fun `設定の不変条件 - 閾値の逆転や不正な係数を弾く`() {
         kotlin.test.assertFailsWith<IllegalArgumentException> { SessionConfig(upperBpm = 140, lowerBpm = 155) }
         kotlin.test.assertFailsWith<IllegalArgumentException> { SessionConfig(targetCycles = 0) }

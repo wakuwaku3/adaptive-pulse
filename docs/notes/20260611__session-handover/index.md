@@ -62,6 +62,12 @@
 
 → (同日) release 体制は実装済み: upload keystore は `~/keystores/` + `.env` (要バックアップ)、署名は GitHub Secrets にも登録済み。main push 契機の自動 release (採番 + Notes + AAB/APK 添付) が稼働し、初版 v1.0.0 を発行済み。詳細は `.claude/rules/feedback-loop.md`。Play へは Release の AAB を内部テストへ手動アップロードする。
 
+## 追記 (2026-06-12): R8 が Health Services を黙って壊していた
+
+release ビルドで Health Services の能力照会が `Field packageName_ ... not found` で落ち、**実センサー経路が使えず合成ソースにフォールバックしていた** (UI 上は動いて見えるため発覚しにくい)。原因は health-services-client が protobuf javalite のフィールドをリフレクションで読むのに対し、R8 がフィールドを削除/リネームすること。`proguard-rules.pro` に `GeneratedMessageLite` の `<fields>` keep を追加して解決。**教訓: release ビルドの検証は「動く」ではなくログで実経路 (ExerciseClient ...) を確認する。**
+
+同時に発覚: カロリー (CALORIES_TOTAL) の取得には ACTIVITY_RECOGNITION 許可が必要で、未許可のまま要求すると startExercise が SecurityException → サービスごとクラッシュする。許可済みのときだけデータ型を要求する防御と、セッション異常終了時に Idle へ戻すエラーハンドリングを追加した。
+
 ## ハマりどころメモ
 
 - `yes | sdkmanager` は pipefail で SIGPIPE 141 → `(yes || true) |`

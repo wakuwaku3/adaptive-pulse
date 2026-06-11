@@ -75,4 +75,8 @@ dependencies {
     // 画面オフ中もセッション継続を示す Ongoing Activity
     implementation(libs.wear.ongoing)
     implementation(libs.androidx.lifecycle.service)
+    // ウォッチフェイスから 1 スワイプで開始するタイル
+    implementation(libs.wear.tiles)
+    implementation(libs.wear.protolayout)
+    implementation(libs.wear.protolayout.material)
 }

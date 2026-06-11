@@ -43,11 +43,20 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // タイルからの起動なら即セッション開始 (1 スワイプ + 1 タップで計測が始まる)。
+        // 再生成時の重複は SessionService 側の二重開始ガードが吸収する
+        if (intent?.getBooleanExtra(EXTRA_START_SESSION, false) == true) {
+            startWithPermissions()
+        }
         setContent {
             AdaptivePulseTheme {
                 AppNavigation()
             }
         }
+    }
+
+    companion object {
+        const val EXTRA_START_SESSION = "start_session"
     }
 
     @Composable
@@ -98,6 +107,7 @@ class MainActivity : ComponentActivity() {
     private fun startWithPermissions() {
         val needed = buildList {
             add(Manifest.permission.BODY_SENSORS)
+            add(Manifest.permission.ACTIVITY_RECOGNITION) // カロリー取得用
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 add(Manifest.permission.POST_NOTIFICATIONS)
             }

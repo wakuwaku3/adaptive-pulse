@@ -22,6 +22,9 @@ object APColors {
     /** 回復フェーズ: ミント (緩めろ) */
     val Recover = Color(0xFF2CE8B5)
 
+    /** ウォームアップ区間: クールブルー (まだ計測対象外) */
+    val WarmUp = Color(0xFF54C7EC)
+
     /** 完了: ゴールド */
     val Done = Color(0xFFFFC857)
 

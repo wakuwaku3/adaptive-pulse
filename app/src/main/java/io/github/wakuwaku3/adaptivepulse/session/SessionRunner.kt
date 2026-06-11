@@ -4,7 +4,8 @@ import io.github.wakuwaku3.adaptivepulse.core.IntervalEngine
 import io.github.wakuwaku3.adaptivepulse.core.Phase
 import io.github.wakuwaku3.adaptivepulse.core.SessionConfig
 import io.github.wakuwaku3.adaptivepulse.core.SessionEvent
-import io.github.wakuwaku3.adaptivepulse.hr.HeartRateSource
+import io.github.wakuwaku3.adaptivepulse.core.SessionMetrics
+import io.github.wakuwaku3.adaptivepulse.hr.ExerciseSource
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
 import kotlin.time.TimeSource
@@ -15,12 +16,12 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 /**
- * IntervalEngine と心拍ソースをつなぐ実行ループ。ホスト (Foreground Service) から
+ * IntervalEngine とデータソースをつなぐ実行ループ。ホスト (Foreground Service) から
  * 切り離して保持し、ロジックの正しさは core のテスト、この層はエミュレータで確認する。
  */
 class SessionRunner(
     private val config: SessionConfig,
-    private val sourceFactory: (phaseProvider: () -> Phase) -> HeartRateSource,
+    private val sourceFactory: (phaseProvider: () -> Phase) -> ExerciseSource,
     private val onSessionEvent: (SessionEvent) -> Unit,
     private val onState: (SessionUiState) -> Unit,
     private val timeSource: TimeSource = TimeSource.Monotonic,
@@ -29,21 +30,30 @@ class SessionRunner(
     /** セッション完走で正常リターンする。キャンセルで中断 */
     suspend fun run(): Unit = coroutineScope {
         val engine = IntervalEngine(config)
+        val metrics = SessionMetrics(config)
         val mark = timeSource.markNow()
         var lastBpm: Int? = null
+        var calories: Double? = null
 
         fun update(event: SessionEvent?, elapsed: Duration) {
             event?.let(onSessionEvent)
             onState(
                 if (engine.phase == Phase.FINISHED) {
-                    SessionUiState.Finished(cycles = engine.currentCycle, elapsed = elapsed)
+                    SessionUiState.Finished(
+                        cycles = engine.currentCycle,
+                        elapsed = elapsed,
+                        calories = calories,
+                        zoneRatio = metrics.zoneRatio,
+                    )
                 } else {
                     SessionUiState.Running(
                         bpm = lastBpm,
                         phase = engine.phase,
+                        isWarmingUp = engine.isWarmingUp,
                         currentCycle = engine.currentCycle,
                         finalCycle = engine.finalCycle,
                         elapsed = elapsed,
+                        calories = calories,
                     )
                 },
             )
@@ -60,9 +70,11 @@ class SessionRunner(
         }
 
         // first(predicate) は条件成立でアップストリームを閉じる = 終了時にソースも止まる
-        sourceFactory { engine.phase }.heartRates().first { bpm ->
-            lastBpm = bpm
-            update(engine.onHeartRate(bpm, mark.elapsedNow()), mark.elapsedNow())
+        sourceFactory { engine.phase }.samples().first { sample ->
+            lastBpm = sample.bpm
+            sample.totalCalories?.let { calories = it }
+            metrics.onHeartRate(sample.bpm)
+            update(engine.onHeartRate(sample.bpm, mark.elapsedNow()), mark.elapsedNow())
             engine.phase == Phase.FINISHED
         }
         ticker.cancel()

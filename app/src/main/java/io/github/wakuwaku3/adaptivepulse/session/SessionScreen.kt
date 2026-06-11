@@ -71,10 +71,12 @@ private fun IdleScreen(onStart: () -> Unit, onOpenSettings: () -> Unit) {
 
 @Composable
 private fun RunningScreen(state: SessionUiState.Running, onStop: () -> Unit) {
-    val (label, color) = when (state.phase) {
-        Phase.HIGH_INTENSITY -> "HIGH" to APColors.High
-        Phase.RECOVERY -> "RECOVER" to APColors.Recover
-        Phase.FINISHED -> "DONE" to APColors.Done
+    val (label, color) = when {
+        // 下限閾値を超えるまでは計測対象外のウォームアップ区間 (画面が嘘をつかない)
+        state.isWarmingUp -> "WARM-UP" to APColors.WarmUp
+        state.phase == Phase.HIGH_INTENSITY -> "HIGH" to APColors.High
+        state.phase == Phase.RECOVERY -> "RECOVER" to APColors.Recover
+        else -> "DONE" to APColors.Done
     }
     // リングは完了サイクル数を示す。回復まで到達したサイクルは半分進んだ扱い
     val ringProgress =
@@ -101,7 +103,10 @@ private fun RunningScreen(state: SessionUiState.Running, onStop: () -> Unit) {
             )
         }
         Text(
-            text = "CYCLE ${state.currentCycle}/${state.finalCycle} · ${format(state.elapsed)}",
+            text = buildString {
+                append("CYCLE ${state.currentCycle}/${state.finalCycle} · ${format(state.elapsed)}")
+                state.calories?.let { append(" · ${it.toInt()} kcal") }
+            },
             color = APColors.TextDim,
             style = MaterialTheme.typography.caption1,
         )
@@ -134,6 +139,17 @@ private fun FinishedScreen(state: SessionUiState.Finished, onReset: () -> Unit) 
             style = MaterialTheme.typography.body1,
             textAlign = TextAlign.Center,
         )
+        val summary = listOfNotNull(
+            state.calories?.let { "${it.toInt()} kcal" },
+            state.zoneRatio?.let { "ZONE ${(it * 100).toInt()}%" },
+        )
+        if (summary.isNotEmpty()) {
+            Text(
+                text = summary.joinToString(" · "),
+                color = APColors.TextDim,
+                style = MaterialTheme.typography.caption1,
+            )
+        }
         Box(modifier = Modifier.padding(top = 6.dp)) {
             IconActionButton(
                 glyph = "✓",

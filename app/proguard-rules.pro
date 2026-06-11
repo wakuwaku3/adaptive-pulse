@@ -1,3 +1,9 @@
-# R8 追加ルール。依存ライブラリ (wear-compose / health-services / datastore) は
-# consumer rules を同梱しているため、現状プロジェクト固有の keep は不要。
-# release ビルドで実行時クラッシュが出たらここに追加する。
+# R8 追加ルール。release ビルドで実行時クラッシュが出たらここに追加する。
+
+# health-services-client は protobuf javalite のフィールドをリフレクションで読む。
+# R8 がフィールドを削除/リネームすると実行時に
+# 「Field packageName_ ... not found」で能力照会が落ち、実センサー経路が
+# 使えなくなる (2026-06-12 にエミュレータの release ビルドで実際に発生)。
+-keepclassmembers class * extends com.google.protobuf.GeneratedMessageLite {
+    <fields>;
+}

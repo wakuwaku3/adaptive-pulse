@@ -34,6 +34,10 @@ class IntervalEngine(private val config: SessionConfig) {
     // セッション開始直後のウォームアップ区間を計測から外し、全サイクルを公平に比較するため。
     private var measureStartedAt: Duration? = null
 
+    /** セッション開始直後、まだ下限閾値を上向きに超えていないウォームアップ区間か */
+    val isWarmingUp: Boolean
+        get() = phase == Phase.HIGH_INTENSITY && currentCycle == 1 && measureStartedAt == null
+
     /** 心拍サンプルを処理する。遷移が起きたときだけイベントを 1 つ返す */
     fun onHeartRate(bpm: Int, elapsed: Duration): SessionEvent? {
         // タイムアウトが先に成立していたら強制遷移し、このサンプルは消費する

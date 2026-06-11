@@ -10,6 +10,9 @@
     <!-- Health Services 経由の心拍取得 (実行時許可) -->
     <uses-permission android:name="android.permission.BODY_SENSORS" />
 
+    <!-- カロリー累計の取得に必要 (実行時許可。拒否時はカロリー無しで計測継続) -->
+    <uses-permission android:name="android.permission.ACTIVITY_RECOGNITION" />
+
     <!-- 画面オフ中の計測継続 (Foreground Service)。通知許可は API 33+ で実行時要求 -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_HEALTH" />
@@ -37,6 +40,20 @@
             android:name=".session.SessionService"
             android:exported="false"
             android:foregroundServiceType="health" />
+
+        <!-- ウォッチフェイスから 1 スワイプで開始するタイル -->
+        <service
+            android:name=".tile.MainTileService"
+            android:exported="true"
+            android:label="@string/app_name"
+            android:permission="com.google.android.wearable.permission.BIND_TILE_PROVIDER">
+            <intent-filter>
+                <action android:name="androidx.wear.tiles.action.BIND_TILE_PROVIDER" />
+            </intent-filter>
+            <meta-data
+                android:name="androidx.wear.tiles.PREVIEW"
+                android:resource="@drawable/ic_pulse" />
+        </service>
 
         <!-- 開発用の設定書き込み (debuggable ビルド以外では無効。実装側でガード) -->
         <receiver

@@ -20,33 +20,32 @@ private const val TAG = "AdaptivePulse"
  * 使えなければ合成ソースに切り替える。判定は能力照会ベースなので、
  * エミュレータ (WHS の合成センサー) でも実機でも同じ経路を通る。
  */
-class AutoHeartRateSource(
+class AutoExerciseSource(
     private val context: Context,
     private val phaseProvider: () -> Phase,
-) : HeartRateSource {
+) : ExerciseSource {
 
-    override fun heartRates(): Flow<Int> = flow {
-        val delegate = selectSource()
-        emitAll(delegate.heartRates())
+    override fun samples(): Flow<ExerciseSample> = flow {
+        emitAll(selectSource().samples())
     }
 
-    private suspend fun selectSource(): HeartRateSource {
+    private suspend fun selectSource(): ExerciseSource {
         if (context.checkSelfPermission(Manifest.permission.BODY_SENSORS) !=
             PackageManager.PERMISSION_GRANTED
         ) {
-            Log.i(TAG, "BODY_SENSORS 未許可のため合成心拍ソースを使用")
-            return SyntheticHeartRateSource(phaseProvider)
+            Log.i(TAG, "BODY_SENSORS 未許可のため合成データソースを使用")
+            return SyntheticExerciseSource(phaseProvider)
         }
         val exerciseType = runCatching { supportedExerciseType() }.getOrElse {
-            Log.w(TAG, "Health Services の能力照会に失敗。合成心拍ソースを使用", it)
+            Log.w(TAG, "Health Services の能力照会に失敗。合成データソースを使用", it)
             null
         }
         if (exerciseType == null) {
-            Log.i(TAG, "心拍対応のワークアウト種別が無いため合成心拍ソースを使用")
-            return SyntheticHeartRateSource(phaseProvider)
+            Log.i(TAG, "心拍対応のワークアウト種別が無いため合成データソースを使用")
+            return SyntheticExerciseSource(phaseProvider)
         }
-        Log.i(TAG, "ExerciseClient ($exerciseType) で心拍を取得")
-        return ExerciseClientHeartRateSource(context, exerciseType)
+        Log.i(TAG, "ExerciseClient ($exerciseType) で計測")
+        return HealthServicesExerciseSource(context, exerciseType)
     }
 
     /** クロスストレーナー (ELLIPTICAL) を優先し、無ければ汎用 WORKOUT で心拍対応を探す */

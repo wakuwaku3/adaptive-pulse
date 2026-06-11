@@ -15,8 +15,9 @@ import androidx.lifecycle.lifecycleScope
 import androidx.wear.ongoing.OngoingActivity
 import io.github.wakuwaku3.adaptivepulse.MainActivity
 import io.github.wakuwaku3.adaptivepulse.R
-import io.github.wakuwaku3.adaptivepulse.hr.AutoHeartRateSource
+import io.github.wakuwaku3.adaptivepulse.hr.AutoExerciseSource
 import io.github.wakuwaku3.adaptivepulse.settings.SettingsRepository
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -68,19 +69,28 @@ class SessionService : LifecycleService() {
         val vibrator = SessionVibrator.from(applicationContext)
         val settings = SettingsRepository(applicationContext)
         sessionJob = lifecycleScope.launch {
-            val config = settings.load()
-            Log.i(TAG, "セッション開始: $config")
-            SessionRunner(
-                config = config,
-                sourceFactory = { phaseProvider ->
-                    AutoHeartRateSource(applicationContext, phaseProvider)
-                },
-                onSessionEvent = vibrator::vibrate,
-                onState = { _state.value = it },
-            ).run()
-            // 完走: 結果 (Finished) は表示し続け、サービスだけ畳む
-            sessionJob = null
-            stopSelf()
+            try {
+                val config = settings.load()
+                Log.i(TAG, "セッション開始: $config")
+                SessionRunner(
+                    config = config,
+                    sourceFactory = { phaseProvider ->
+                        AutoExerciseSource(applicationContext, phaseProvider)
+                    },
+                    onSessionEvent = vibrator::vibrate,
+                    onState = { _state.value = it },
+                ).run()
+                // 完走: 結果 (Finished) は表示し続け、サービスだけ畳む
+            } catch (e: CancellationException) {
+                throw e // 手動停止 (stopSession) の正常経路
+            } catch (e: Exception) {
+                // センサー経路の失敗でアプリごと落とさない。Idle に戻して再開可能にする
+                Log.e(TAG, "セッションが異常終了", e)
+                _state.value = SessionUiState.Idle
+            } finally {
+                sessionJob = null
+                stopSelf()
+            }
         }
     }
 

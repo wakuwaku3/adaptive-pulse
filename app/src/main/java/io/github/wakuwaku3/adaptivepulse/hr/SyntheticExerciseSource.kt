@@ -9,15 +9,16 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 
 /**
- * ロジック検証用の合成心拍ソース。フェーズ通知に従ってペースを変える人間を模し、
+ * ロジック検証用の合成データソース。フェーズ通知に従ってペースを変える人間を模し、
  * 高強度なら上限閾値を超えるまで上昇、回復なら下限閾値を下回るまで下降する。
  * エミュレータ/実機センサー無しでステートマシン全体を回すために使う。
+ * カロリーは提供しない (実経路でのみ表示される)。
  */
-class SyntheticHeartRateSource(
+class SyntheticExerciseSource(
     private val phaseProvider: () -> Phase,
-) : HeartRateSource {
+) : ExerciseSource {
 
-    override fun heartRates(): Flow<Int> = flow {
+    override fun samples(): Flow<ExerciseSample> = flow {
         var bpm = 115.0
         while (true) {
             val target = when (phaseProvider()) {
@@ -27,7 +28,7 @@ class SyntheticHeartRateSource(
             }
             // 目標心拍へ指数的に漸近 (120→155 が 30〜40 秒程度) + センサーノイズ
             bpm += (target - bpm) * 0.05 + Random.nextDouble(-1.5, 1.5)
-            emit(bpm.roundToInt())
+            emit(ExerciseSample(bpm = bpm.roundToInt()))
             delay(1.seconds)
         }
     }

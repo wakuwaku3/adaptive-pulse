@@ -16,22 +16,33 @@ import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.guava.await
 
 /**
- * Health Services ExerciseClient による心拍ソース。セッションを OS にワークアウト
+ * Health Services ExerciseClient によるデータソース。セッションを OS にワークアウト
  * として認識させ、画面オフ中のセンサー継続取得や将来の Health Connect 連携の
  * 土台になる (docs/stock/tech.md)。BODY_SENSORS 許可済みであることが前提。
+ * カロリー累計は能力があるときだけ要求し、サンプルに載せる。
  */
-class ExerciseClientHeartRateSource(
-    context: Context,
+class HealthServicesExerciseSource(
+    private val context: Context,
     private val exerciseType: ExerciseType = ExerciseType.ELLIPTICAL,
-) : HeartRateSource {
+) : ExerciseSource {
 
     private val client = HealthServices.getClient(context).exerciseClient
 
-    override fun heartRates(): Flow<Int> = callbackFlow {
+    override fun samples(): Flow<ExerciseSample> = callbackFlow {
+        var totalCalories: Double? = null
+
         val callback = object : ExerciseUpdateCallback {
             override fun onExerciseUpdateReceived(update: ExerciseUpdate) {
+                update.latestMetrics.getData(DataType.CALORIES_TOTAL)?.let {
+                    totalCalories = it.total
+                }
                 update.latestMetrics.getData(DataType.HEART_RATE_BPM).forEach { sample ->
-                    trySend(sample.value.roundToInt())
+                    trySend(
+                        ExerciseSample(
+                            bpm = sample.value.roundToInt(),
+                            totalCalories = totalCalories,
+                        ),
+                    )
                 }
             }
 
@@ -49,10 +60,24 @@ class ExerciseClientHeartRateSource(
             }
         }
 
+        val supported = client.getCapabilitiesAsync().await()
+            .getExerciseTypeCapabilities(exerciseType).supportedDataTypes
+        // カロリーは ACTIVITY_RECOGNITION が要る。未許可で要求すると
+        // startExercise が SecurityException になるため、許可済みのときだけ足す
+        val canReadCalories = context.checkSelfPermission(
+            android.Manifest.permission.ACTIVITY_RECOGNITION,
+        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        val dataTypes = buildSet {
+            add(DataType.HEART_RATE_BPM)
+            if (canReadCalories && DataType.CALORIES_TOTAL in supported) {
+                add(DataType.CALORIES_TOTAL)
+            }
+        }
+
         client.setUpdateCallback(callback)
         client.startExerciseAsync(
             ExerciseConfig.builder(exerciseType)
-                .setDataTypes(setOf(DataType.HEART_RATE_BPM))
+                .setDataTypes(dataTypes)
                 .build(),
         ).await()
 
