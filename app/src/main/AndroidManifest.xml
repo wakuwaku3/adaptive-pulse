@@ -4,6 +4,9 @@
     <!-- Wear OS 専用アプリ。スマホ側コンパニオンは持たない -->
     <uses-feature android:name="android.hardware.type.watch" />
 
+    <!-- フェーズ遷移はすべて振動で通知する -->
+    <uses-permission android:name="android.permission.VIBRATE" />
+
     <application
         android:label="@string/app_name"
         android:theme="@android:style/Theme.DeviceDefault">
