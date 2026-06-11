@@ -44,6 +44,18 @@
 
 ハマり: WSL の素の Ubuntu 24.04 にはエミュレータ (qemu/Qt) が要求するシステムライブラリが無い。`sudo apt-get install -y libpulse0 libnss3 libnspr4 libsm6 libice6 libxkbfile1` で解決 (setup_android.sh に不足検出と案内を追加済み)。`ldd` で直接見えない不足は emulator の lib64 を LD_LIBRARY_PATH に通して全 .so を走査すると洗い出せる。
 
+## 追記 (同日・2): 実機投入前の必須実装がすべて完了
+
+エミュレータ検証後、同日中に以下を実装・検証済み:
+
+- **UI 刷新**: 英語化 + Rajdhani (OFL、`licenses/`) + フェーズ直感色 + サイクル進捗リング。丸画面では中央寄せ Column に padding を足すと測定サイズが画面を超えて下端が切れる (フォントサイズ側で制御する)
+- **Health Services ExerciseClient**: `AutoHeartRateSource` が能力照会して実センサー経路と合成ソースを自動選択。WHS (エミュレータ) で実経路の双方向閾値遷移を確認
+- **DataStore 設定永続化**: セッション開始時に読む。debug ビルド限定の `SET_CONFIG` broadcast で adb から変更可能 (例: `adb shell am broadcast -a io.github.wakuwaku3.adaptivepulse.SET_CONFIG --ei upper_bpm 145 --ei lower_bpm 110 io.github.wakuwaku3.adaptivepulse`)。WHS の合成心拍は ~150 までしか上がらないので、エミュレータで閾値遷移を見るときは 145/110 に下げる
+- **Foreground Service + Ongoing Activity**: セッション実行主体を `SessionService` (FGS type=health) に移し ViewModel 廃止。画面オフ 90 秒中の継続・完走・疲労ブレーキ発火を確認
+- 注意: エミュレータの DataStore には 145/110 が保存されたまま。デフォルトに戻すには `--ei upper_bpm 155 --ei lower_bpm 140` を送る
+
+**残り**: 設定画面 / 年齢ベース閾値導出 / Health Connect 書き込み / Polar H10 (すべて拡張)。実機 (Pixel Watch) 購入後: Wi-Fi ADB サイドロード → 振動パターン体感調整 → ジム実戦投入。
+
 ## ハマりどころメモ
 
 - `yes | sdkmanager` は pipefail で SIGPIPE 141 → `(yes || true) |`
