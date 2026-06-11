@@ -27,6 +27,15 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- 開発用の設定書き込み (debuggable ビルド以外では無効。実装側でガード) -->
+        <receiver
+            android:name=".settings.DebugConfigReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="io.github.wakuwaku3.adaptivepulse.SET_CONFIG" />
+            </intent-filter>
+        </receiver>
     </application>
 
 </manifest>

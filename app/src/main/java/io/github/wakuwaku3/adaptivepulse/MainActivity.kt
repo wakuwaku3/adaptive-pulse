@@ -11,13 +11,16 @@ import io.github.wakuwaku3.adaptivepulse.hr.AutoHeartRateSource
 import io.github.wakuwaku3.adaptivepulse.session.SessionScreen
 import io.github.wakuwaku3.adaptivepulse.session.SessionViewModel
 import io.github.wakuwaku3.adaptivepulse.session.SessionVibrator
+import io.github.wakuwaku3.adaptivepulse.settings.SettingsRepository
 import io.github.wakuwaku3.adaptivepulse.ui.theme.AdaptivePulseTheme
 
 class MainActivity : ComponentActivity() {
 
     private val viewModel: SessionViewModel by viewModels {
+        val settings = SettingsRepository(applicationContext)
         SessionViewModel.factory(
             vibrator = SessionVibrator.from(applicationContext),
+            configProvider = settings::load,
             sourceFactory = { phaseProvider ->
                 AutoHeartRateSource(applicationContext, phaseProvider)
             },

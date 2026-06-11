@@ -42,4 +42,5 @@ dependencies {
     implementation(libs.health.services.client)
     // Health Services の ListenableFuture を suspend で扱う
     implementation(libs.kotlinx.coroutines.guava)
+    implementation(libs.androidx.datastore.preferences)
 }

@@ -1,5 +1,6 @@
 package io.github.wakuwaku3.adaptivepulse.session
 
+import android.util.Log
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -21,6 +22,8 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+
+private const val TAG = "AdaptivePulse"
 
 sealed interface SessionUiState {
     data object Idle : SessionUiState
@@ -46,7 +49,7 @@ sealed interface SessionUiState {
  */
 class SessionViewModel(
     private val onSessionEvent: (SessionEvent) -> Unit,
-    private val config: SessionConfig = SessionConfig(),
+    private val configProvider: suspend () -> SessionConfig = { SessionConfig() },
     private val sourceFactory: (phaseProvider: () -> Phase) -> HeartRateSource =
         { SyntheticHeartRateSource(it) },
     private val timeSource: TimeSource = TimeSource.Monotonic,
@@ -60,12 +63,15 @@ class SessionViewModel(
 
     fun start() {
         if (job != null) return
-        val engine = IntervalEngine(config)
-        val mark = timeSource.markNow()
         lastBpm = null
-        update(engine, event = null, elapsed = Duration.ZERO)
-
         job = viewModelScope.launch {
+            // 設定はセッション開始時に読む (セッション途中の変更は次回から反映)
+            val config = configProvider()
+            Log.i(TAG, "セッション開始: $config")
+            val engine = IntervalEngine(config)
+            val mark = timeSource.markNow()
+            update(engine, event = null, elapsed = Duration.ZERO)
+
             // 心拍サンプルが途絶えてもタイムアウト遷移が動くよう、tick を並走させる
             launch {
                 while (isActive && engine.phase != Phase.FINISHED) {
@@ -105,11 +111,13 @@ class SessionViewModel(
     companion object {
         fun factory(
             vibrator: SessionVibrator,
+            configProvider: suspend () -> SessionConfig,
             sourceFactory: (phaseProvider: () -> Phase) -> HeartRateSource,
         ): ViewModelProvider.Factory = viewModelFactory {
             initializer {
                 SessionViewModel(
                     onSessionEvent = vibrator::vibrate,
+                    configProvider = configProvider,
                     sourceFactory = sourceFactory,
                 )
             }
