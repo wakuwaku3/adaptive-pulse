@@ -9,6 +9,7 @@ secrets/
 
 # Android / Gradle
 .gradle/
+.kotlin/
 build/
 local.properties
 captures/
