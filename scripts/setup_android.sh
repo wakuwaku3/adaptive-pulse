@@ -62,6 +62,19 @@ else
   echo "WARN: Wear OS system image が見つからず。sdkmanager --list で確認してください" >&2
 fi
 
+# エミュレータ (qemu/Qt) が要求するシステムライブラリ。WSL の素の Ubuntu には無い
+missing_pkgs=""
+for lib_pkg in "libpulse.so.0:libpulse0" "libnss3.so:libnss3" "libnspr4.so:libnspr4" \
+  "libSM.so.6:libsm6" "libICE.so.6:libice6" "libxkbfile.so.1:libxkbfile1"; do
+  lib="${lib_pkg%%:*}"
+  pkg="${lib_pkg##*:}"
+  ldconfig -p 2>/dev/null | grep -q "$lib" || missing_pkgs="$missing_pkgs $pkg"
+done
+if [ -n "$missing_pkgs" ]; then
+  echo "WARN: エミュレータ実行に必要なライブラリが不足しています:" >&2
+  echo "  sudo apt-get install -y$missing_pkgs" >&2
+fi
+
 if [ ! -e /dev/kvm ]; then
   echo "WARN: /dev/kvm が無いためエミュレータは動きません (Windows 側で nested virtualization を確認)" >&2
 elif [ ! -r /dev/kvm ] || [ ! -w /dev/kvm ]; then

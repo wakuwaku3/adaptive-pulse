@@ -32,6 +32,18 @@
 3. DataStore で SessionConfig を永続化
 4. 残課題は `docs/notes/20260611__kickoff/` の「残課題 (open)」参照
 
+## 追記 (同日): エミュレータ検証完了 — WSL 再起動は不要だった
+
+`sudo chmod 666 /dev/kvm` で即時にアクセス権を得られたため、セッションを切らずに検証まで完了した (`usermod -aG kvm` も実施済みなので次回 WSL 起動以降は恒久的に有効)。
+
+検証結果 (すべてグリーン):
+
+- Idle 画面 →「開始」→ 高強度 (赤・心拍上昇) → 155 超えで回復 (緑・心拍下降) → 140 未満で高強度へ、がサイクル表示とともに循環
+- **7 サイクル 3:31 で完走**し「おつかれさま」表示 (合成心拍で 1 サイクル約 30 秒)。Finished 画面は完走時の経過時間を凍結表示する (実時間と照合済み)
+- 振動も logcat の VibratorManagerService に記録あり (パターンの体感調整は実機で)
+
+ハマり: WSL の素の Ubuntu 24.04 にはエミュレータ (qemu/Qt) が要求するシステムライブラリが無い。`sudo apt-get install -y libpulse0 libnss3 libnspr4 libsm6 libice6 libxkbfile1` で解決 (setup_android.sh に不足検出と案内を追加済み)。`ldd` で直接見えない不足は emulator の lib64 を LD_LIBRARY_PATH に通して全 .so を走査すると洗い出せる。
+
 ## ハマりどころメモ
 
 - `yes | sdkmanager` は pipefail で SIGPIPE 141 → `(yes || true) |`
