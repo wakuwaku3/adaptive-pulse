@@ -75,8 +75,8 @@ private val AppTypography = Typography(
     button = Typography().button.copy(
         fontFamily = Rajdhani,
         fontWeight = FontWeight.Bold,
-        fontSize = 14.sp,
-        letterSpacing = 1.5.sp,
+        fontSize = 12.sp,
+        letterSpacing = 1.sp,
     ),
 )
 

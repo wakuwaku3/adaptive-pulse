@@ -3,10 +3,13 @@ package io.github.wakuwaku3.adaptivepulse.session
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -61,23 +64,42 @@ private fun IdleScreen(onStart: () -> Unit, onOpenSettings: () -> Unit) {
             color = APColors.Text,
             style = MaterialTheme.typography.title1,
         )
-        // 主要操作と副次操作は横並びのコンパクト配置 (ユーザ FB 2026-06-11)
+        // 主要操作と副次操作は横並びのコンパクト配置で幅を揃える (ユーザ FB 2026-06-11)
         Row(
             horizontalArrangement = Arrangement.spacedBy(6.dp),
             modifier = Modifier.padding(top = 12.dp),
         ) {
-            CompactChip(
-                onClick = onStart,
-                label = { Text("START", color = Color.Black) },
-                colors = ChipDefaults.chipColors(backgroundColor = APColors.High),
-            )
-            CompactChip(
-                onClick = onOpenSettings,
-                label = { Text("SETTINGS", color = APColors.TextDim) },
-                colors = ChipDefaults.chipColors(backgroundColor = APColors.StopChip),
-            )
+            SmallActionChip(text = "START", textColor = Color.Black, background = APColors.High, onClick = onStart)
+            SmallActionChip(text = "SETTINGS", textColor = APColors.TextDim, background = APColors.StopChip, onClick = onOpenSettings)
         }
     }
+}
+
+/** 幅を揃えた小型アクションボタン。長いラベルも 1 行に収める */
+@Composable
+private fun SmallActionChip(
+    text: String,
+    textColor: Color,
+    background: Color,
+    onClick: () -> Unit,
+) {
+    CompactChip(
+        onClick = onClick,
+        label = {
+            Text(
+                text = text,
+                color = textColor,
+                style = MaterialTheme.typography.button.copy(letterSpacing = 0.5.sp),
+                maxLines = 1,
+                softWrap = false,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        },
+        colors = ChipDefaults.chipColors(backgroundColor = background),
+        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
+        modifier = Modifier.width(76.dp),
+    )
 }
 
 @Composable
