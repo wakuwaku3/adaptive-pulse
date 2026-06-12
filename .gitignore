@@ -1,6 +1,7 @@
 # secrets — 絶対にコミットしない (public repo)
 .env
 .env.*
+google-services.json
 *.key
 *.pem
 *.keystore

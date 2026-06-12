@@ -10,6 +10,12 @@
 - **ロジック分離**: フェーズ遷移・サイクルカウント・疲労ブレーキは Android 非依存の純 Kotlin ステートマシンとして実装し、時計と心拍ソースを interface で注入する。JVM 単体テストで検証する (`.claude/rules/kotlin.md`)。
 - **(拡張)** Health Connect SDK (セッション書き込み) / Android BLE API (Polar H10、標準 Heart Rate Service 0x180D)
 
+## 履歴・設定同期 (docs/stock/sync.md)
+
+- **`:mobile`** (phone アプリ): Compose Material3 / Firebase Auth (Google サインイン、Credential Manager) / Wearable Data Layer / ktor client
+- **`:server`** (同期 API): server side Kotlin + ktor / firebase-admin (ID トークン検証 + Firestore) / Cloud Run (無料枠、コンテナ化済み)
+- インフラは Firebase Spark (無料): Firebase Auth + Firestore。セットアップ手順は `docs/stock/setup-firebase.md`
+
 ## 開発環境
 
 すべて WSL 内で完結させる (Windows 側 Android Studio は使わない。AI 駆動開発の主経路を CLI に揃えるため。選定経緯: `docs/notes/20260611__kickoff/`)。

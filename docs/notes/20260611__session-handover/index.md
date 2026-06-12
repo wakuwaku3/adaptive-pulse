@@ -68,6 +68,15 @@ release ビルドで Health Services の能力照会が `Field packageName_ ... 
 
 同時に発覚: カロリー (CALORIES_TOTAL) の取得には ACTIVITY_RECOGNITION 許可が必要で、未許可のまま要求すると startExercise が SecurityException → サービスごとクラッシュする。許可済みのときだけデータ型を要求する防御と、セッション異常終了時に Idle へ戻すエラーハンドリングを追加した。
 
+## 追記 (2026-06-12・2): 履歴・設定のクロスデバイス同期を実装
+
+watch → phone → server (ktor on Cloud Run) → Firestore の同期一式を実装 (設計: `docs/stock/sync.md`、人間のセットアップ手順: `docs/stock/setup-firebase.md`)。モジュール: `:mobile` (phone アプリ、Google サインイン + 履歴 + 設定) / `:server` (同期 API、テスト 6 件)。
+
+**検証の到達点と限界**:
+- 全モジュールのビルド + core/server のユニットテストは CI でグリーン
+- **実行時の疎通は未検証**: Google サインインは Firebase プロジェクト (google-services.json) が、サーバーは Cloud Run デプロイが、watch⇄phone の Data Layer はペアリング済みの phone+watch エミュレータ (または実機) が必要。セットアップ後に setup-firebase.md §5 の手順で検証する
+- 設計上の注意: 設定同期は updatedAtMs の LWW。phone は受領した DataItem を永続キュー保存後に削除し (ack)、サーバー反映はキューから再送する
+
 ## ハマりどころメモ
 
 - `yes | sdkmanager` は pipefail で SIGPIPE 141 → `(yes || true) |`
