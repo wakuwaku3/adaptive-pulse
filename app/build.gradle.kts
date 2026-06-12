@@ -79,4 +79,10 @@ dependencies {
     implementation(libs.wear.tiles)
     implementation(libs.wear.protolayout)
     implementation(libs.wear.protolayout.material)
+    // phone との履歴・設定同期 (Wearable Data Layer)
+    implementation(libs.play.services.wearable)
+    implementation(libs.kotlinx.coroutines.play.services)
+    // play-services-wearable が古い fragment を引き込み ActivityResult lint に
+    // 引っかかるため新しい版を明示する
+    implementation(libs.androidx.fragment)
 }

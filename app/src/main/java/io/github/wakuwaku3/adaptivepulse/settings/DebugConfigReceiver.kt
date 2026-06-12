@@ -23,7 +23,7 @@ class DebugConfigReceiver : BroadcastReceiver() {
 
         // 設定書き込みは小さく即時 (debug 専用なので runBlocking を許容)
         runBlocking {
-            SettingsRepository(context).update { current ->
+            io.github.wakuwaku3.adaptivepulse.sync.updateSettingsAndSync(context) { current ->
                 current.copy(
                     upperBpm = intent.intExtra("upper_bpm", current.upperBpm),
                     lowerBpm = intent.intExtra("lower_bpm", current.lowerBpm),

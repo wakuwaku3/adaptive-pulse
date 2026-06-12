@@ -15,8 +15,13 @@ import androidx.lifecycle.lifecycleScope
 import androidx.wear.ongoing.OngoingActivity
 import io.github.wakuwaku3.adaptivepulse.MainActivity
 import io.github.wakuwaku3.adaptivepulse.R
+import io.github.wakuwaku3.adaptivepulse.core.sync.SessionConfigSnapshot
+import io.github.wakuwaku3.adaptivepulse.core.sync.SessionRecord
+import io.github.wakuwaku3.adaptivepulse.history.WatchHistoryStore
 import io.github.wakuwaku3.adaptivepulse.hr.AutoExerciseSource
 import io.github.wakuwaku3.adaptivepulse.settings.SettingsRepository
+import io.github.wakuwaku3.adaptivepulse.sync.WearSync
+import java.util.UUID
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -72,7 +77,8 @@ class SessionService : LifecycleService() {
             try {
                 val config = settings.load()
                 Log.i(TAG, "セッション開始: $config")
-                SessionRunner(
+                val startedAtMs = System.currentTimeMillis()
+                val result = SessionRunner(
                     config = config,
                     sourceFactory = { phaseProvider ->
                         AutoExerciseSource(applicationContext, phaseProvider)
@@ -81,6 +87,7 @@ class SessionService : LifecycleService() {
                     onState = { _state.value = it },
                 ).run()
                 // 完走: 結果 (Finished) は表示し続け、サービスだけ畳む
+                recordSession(startedAtMs, result)
             } catch (e: CancellationException) {
                 throw e // 手動停止 (stopSession) の正常経路
             } catch (e: Exception) {
@@ -92,6 +99,28 @@ class SessionService : LifecycleService() {
                 stopSelf()
             }
         }
+    }
+
+    /** 完走セッションを履歴に残し、phone へ送る (失敗してもセッション完了は壊さない) */
+    private suspend fun recordSession(startedAtMs: Long, result: SessionResult) {
+        val record = SessionRecord(
+            id = "$startedAtMs-${UUID.randomUUID().toString().take(8)}",
+            startedAtMs = startedAtMs,
+            durationSec = result.elapsed.inWholeSeconds,
+            cycles = result.cycles,
+            plannedCycles = result.config.targetCycles,
+            fatigueBrake = result.fatigueBrake,
+            calories = result.calories,
+            zoneRatio = result.zoneRatio,
+            highDurationsSec = result.highDurations.map { it.inWholeMilliseconds / 1000.0 },
+            avgBpm = result.avgBpm,
+            maxBpm = result.maxBpm,
+            config = SessionConfigSnapshot.from(result.config),
+        )
+        runCatching { WatchHistoryStore(applicationContext).save(record) }
+            .onFailure { Log.w(TAG, "履歴の保存に失敗", it) }
+        WearSync.putSession(applicationContext, record)
+        Log.i(TAG, "セッションを記録: ${record.id}")
     }
 
     private fun stopSession() {

@@ -12,6 +12,7 @@ lifecycleService = "2.8.7"
 wearTiles = "1.4.1"
 protolayout = "1.2.1"
 kotlinxSerialization = "1.7.3"
+playServicesWearable = "18.2.0"
 
 [libraries]
 wear-compose-material = { group = "androidx.wear.compose", name = "compose-material", version.ref = "wearCompose" }
@@ -27,6 +28,9 @@ wear-tiles = { group = "androidx.wear.tiles", name = "tiles", version.ref = "wea
 wear-protolayout = { group = "androidx.wear.protolayout", name = "protolayout", version.ref = "protolayout" }
 wear-protolayout-material = { group = "androidx.wear.protolayout", name = "protolayout-material", version.ref = "protolayout" }
 kotlinx-serialization-json = { group = "org.jetbrains.kotlinx", name = "kotlinx-serialization-json", version.ref = "kotlinxSerialization" }
+play-services-wearable = { group = "com.google.android.gms", name = "play-services-wearable", version.ref = "playServicesWearable" }
+androidx-fragment = { group = "androidx.fragment", name = "fragment", version = "1.8.5" }
+kotlinx-coroutines-play-services = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-play-services", version.ref = "coroutinesGuava" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

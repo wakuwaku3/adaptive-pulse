@@ -41,6 +41,19 @@
             android:exported="false"
             android:foregroundServiceType="health" />
 
+        <!-- phone 起点の設定変更を受信する (Wearable Data Layer) -->
+        <service
+            android:name=".sync.WatchSyncService"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.google.android.gms.wearable.DATA_CHANGED" />
+                <data
+                    android:scheme="wear"
+                    android:host="*"
+                    android:pathPrefix="/settings" />
+            </intent-filter>
+        </service>
+
         <!-- ウォッチフェイスから 1 スワイプで開始するタイル -->
         <service
             android:name=".tile.MainTileService"

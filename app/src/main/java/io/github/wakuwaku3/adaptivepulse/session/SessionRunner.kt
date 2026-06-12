@@ -15,6 +15,19 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
+/** 完走したセッションの結果 (履歴 SessionRecord の材料) */
+data class SessionResult(
+    val cycles: Int,
+    val elapsed: Duration,
+    val calories: Double?,
+    val zoneRatio: Double?,
+    val highDurations: List<Duration>,
+    val fatigueBrake: Boolean,
+    val avgBpm: Int?,
+    val maxBpm: Int?,
+    val config: SessionConfig,
+)
+
 /**
  * IntervalEngine とデータソースをつなぐ実行ループ。ホスト (Foreground Service) から
  * 切り離して保持し、ロジックの正しさは core のテスト、この層はエミュレータで確認する。
@@ -27,8 +40,8 @@ class SessionRunner(
     private val timeSource: TimeSource = TimeSource.Monotonic,
 ) {
 
-    /** セッション完走で正常リターンする。キャンセルで中断 */
-    suspend fun run(): Unit = coroutineScope {
+    /** セッション完走で結果を返す。キャンセルで中断 */
+    suspend fun run(): SessionResult = coroutineScope {
         val engine = IntervalEngine(config)
         val metrics = SessionMetrics(config)
         val mark = timeSource.markNow()
@@ -78,5 +91,17 @@ class SessionRunner(
             engine.phase == Phase.FINISHED
         }
         ticker.cancel()
+
+        SessionResult(
+            cycles = engine.currentCycle,
+            elapsed = mark.elapsedNow(),
+            calories = calories,
+            zoneRatio = metrics.zoneRatio,
+            highDurations = engine.highDurations,
+            fatigueBrake = engine.fatigueBrakeFired,
+            avgBpm = metrics.avgBpm,
+            maxBpm = metrics.maxBpm,
+            config = config,
+        )
     }
 }

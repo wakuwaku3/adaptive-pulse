@@ -22,6 +22,7 @@ import io.github.wakuwaku3.adaptivepulse.settings.SettingEditorScreen
 import io.github.wakuwaku3.adaptivepulse.settings.SettingItem
 import io.github.wakuwaku3.adaptivepulse.settings.SettingsRepository
 import io.github.wakuwaku3.adaptivepulse.settings.SettingsScreen
+import io.github.wakuwaku3.adaptivepulse.sync.updateSettingsAndSync
 import io.github.wakuwaku3.adaptivepulse.ui.theme.AdaptivePulseTheme
 import kotlinx.coroutines.launch
 
@@ -95,7 +96,7 @@ class MainActivity : ComponentActivity() {
                         item = current.item,
                         config = config,
                         onChange = { updated ->
-                            scope.launch { settings.update { updated } }
+                            scope.launch { updateSettingsAndSync(applicationContext) { updated } }
                         },
                         onBack = { screen = AppScreen.Settings },
                     )

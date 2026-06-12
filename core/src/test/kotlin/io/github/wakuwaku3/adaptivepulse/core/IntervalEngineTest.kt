@@ -233,6 +233,22 @@ class IntervalEngineTest {
         assertNull(metrics.zoneRatio)
         listOf(120, 140, 150, 155, 160).forEach(metrics::onHeartRate) // 帯内は 140/150/155
         assertEquals(0.6, metrics.zoneRatio!!, 1e-9)
+        assertEquals(160, metrics.maxBpm)
+        assertEquals(145, metrics.avgBpm)
+    }
+
+    @Test
+    fun `per-cycle 高強度所要時間と疲労ブレーキ発動が履歴用に残る`() {
+        val engine = IntervalEngine(config.copy(targetCycles = 7))
+        run(
+            engine,
+            listOf(
+                0 to 141, 60 to 156, // サイクル1: 60 秒 (基準)
+                120 to 139, 130 to 141, 155 to 156, // サイクル2: 25 秒 → 疲労
+            ),
+        )
+        assertEquals(listOf(60.seconds, 25.seconds), engine.highDurations)
+        kotlin.test.assertTrue(engine.fatigueBrakeFired)
     }
 
     @Test
