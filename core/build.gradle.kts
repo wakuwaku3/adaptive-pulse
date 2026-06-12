@@ -2,6 +2,7 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
     alias(libs.plugins.kotlin.jvm)
+    alias(libs.plugins.kotlin.serialization)
 }
 
 // app モジュール (Android, jvmTarget 17) から参照されるため bytecode target を合わせる。
@@ -18,6 +19,8 @@ kotlin {
 }
 
 dependencies {
+    // 同期モデル (SessionRecord 等) は watch/phone/server 全員が JSON で交換する
+    api(libs.kotlinx.serialization.json)
     testImplementation(kotlin("test"))
 }
 

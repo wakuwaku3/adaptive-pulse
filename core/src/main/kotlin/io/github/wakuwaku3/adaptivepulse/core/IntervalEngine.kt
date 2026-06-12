@@ -28,6 +28,14 @@ class IntervalEngine(private val config: SessionConfig) {
     var baseline: Duration? = null
         private set
 
+    /** 実測できたサイクルごとの高強度所要時間 (体力トレンドの源泉として履歴に残す) */
+    val highDurations: List<Duration> get() = measuredHighDurations
+    private val measuredHighDurations = mutableListOf<Duration>()
+
+    /** 疲労ブレーキが発動したか (履歴用) */
+    var fatigueBrakeFired: Boolean = false
+        private set
+
     private var phaseStartedAt: Duration = Duration.ZERO
 
     // 高強度所要時間は「下限閾値を上向きに超えてから上限到達まで」で測る。
@@ -86,6 +94,7 @@ class IntervalEngine(private val config: SessionConfig) {
     }
 
     private fun judgeFatigue(highDuration: Duration): SessionEvent {
+        measuredHighDurations += highDuration
         val base = baseline
         if (base == null) {
             // 最初に実測できたサイクルが基準候補。最低基準時間に満たない場合
@@ -98,6 +107,7 @@ class IntervalEngine(private val config: SessionConfig) {
         }
         if (highDuration <= base * config.fatigueRatio && currentCycle < finalCycle) {
             finalCycle = currentCycle
+            fatigueBrakeFired = true
             return SessionEvent.FatigueBrake
         }
         return SessionEvent.EnterRecovery
