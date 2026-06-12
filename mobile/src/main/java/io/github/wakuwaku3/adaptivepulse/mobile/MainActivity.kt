@@ -1,0 +1,164 @@
+package io.github.wakuwaku3.adaptivepulse.mobile
+
+import android.os.Bundle
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.Button
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRow
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import io.github.wakuwaku3.adaptivepulse.core.SessionConfig
+import io.github.wakuwaku3.adaptivepulse.mobile.auth.AuthManager
+import io.github.wakuwaku3.adaptivepulse.mobile.settings.PhoneSettingsRepository
+import io.github.wakuwaku3.adaptivepulse.mobile.sync.ApiClient
+import io.github.wakuwaku3.adaptivepulse.mobile.sync.PendingSessionStore
+import io.github.wakuwaku3.adaptivepulse.mobile.sync.PhoneSync
+import io.github.wakuwaku3.adaptivepulse.mobile.ui.AdaptivePulseMobileTheme
+import io.github.wakuwaku3.adaptivepulse.mobile.ui.HistoryItem
+import io.github.wakuwaku3.adaptivepulse.mobile.ui.HistoryScreen
+import io.github.wakuwaku3.adaptivepulse.mobile.ui.MobileColors
+import io.github.wakuwaku3.adaptivepulse.mobile.ui.SettingsScreen
+import kotlinx.coroutines.launch
+
+class MainActivity : ComponentActivity() {
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContent {
+            AdaptivePulseMobileTheme {
+                Root()
+            }
+        }
+    }
+
+    @Composable
+    private fun Root() {
+        val auth = remember { AuthManager(applicationContext) }
+        var signedIn by remember { mutableStateOf(auth.currentUser != null) }
+        if (signedIn) {
+            MainScreen(onSignOut = {
+                auth.signOut()
+                signedIn = false
+            })
+        } else {
+            SignInScreen(auth, onSignedIn = { signedIn = true })
+        }
+    }
+
+    @Composable
+    private fun SignInScreen(auth: AuthManager, onSignedIn: () -> Unit) {
+        val scope = rememberCoroutineScope()
+        var error by remember { mutableStateOf<String?>(null) }
+        Column(
+            modifier = Modifier.fillMaxSize().padding(32.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterVertically),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Text("AdaptivePulse", style = androidx.compose.material3.MaterialTheme.typography.headlineMedium)
+            Text(
+                "Sign in to sync your sessions and settings across devices.",
+                color = MobileColors.TextDim,
+            )
+            if (!auth.isConfigured) {
+                Text(
+                    "Firebase is not configured. Place google-services.json in mobile/ and rebuild (docs/stock/setup-firebase.md).",
+                    color = MobileColors.Done,
+                )
+            }
+            Button(
+                enabled = auth.isConfigured,
+                onClick = {
+                    scope.launch {
+                        auth.signInWithGoogle(this@MainActivity)
+                            .onSuccess { onSignedIn() }
+                            .onFailure { error = it.message }
+                    }
+                },
+            ) { Text("Sign in with Google") }
+            error?.let { Text(it, color = MobileColors.High) }
+        }
+    }
+
+    @OptIn(ExperimentalMaterial3Api::class)
+    @Composable
+    private fun MainScreen(onSignOut: () -> Unit) {
+        val scope = rememberCoroutineScope()
+        var tab by remember { mutableStateOf(0) }
+        var history by remember { mutableStateOf<List<HistoryItem>?>(null) }
+        var status by remember { mutableStateOf<String?>(null) }
+        val settingsRepo = remember { PhoneSettingsRepository(applicationContext) }
+        val settingsDoc by settingsRepo.document.collectAsState(initial = null)
+
+        suspend fun refresh() {
+            val pendingLeft = PhoneSync.syncPendingSessions(applicationContext)
+            PhoneSync.reconcileSettings(applicationContext)
+            val pending = PendingSessionStore(applicationContext).list()
+                .map { HistoryItem(it, pending = true) }
+            val token = AuthManager(applicationContext).idToken()
+            val server = token?.let { ApiClient.listSessions(it) }
+                ?.map { HistoryItem(it, pending = false) }
+            history = (pending + server.orEmpty())
+                .distinctBy { it.record.id }
+                .sortedByDescending { it.record.startedAtMs }
+            status = when {
+                server == null && pending.isEmpty() -> "Server sync not available."
+                server == null -> "Server sync not available · ${pending.size} local sessions"
+                pendingLeft > 0 -> "$pendingLeft sessions waiting to sync"
+                else -> null
+            }
+        }
+
+        LaunchedEffect(Unit) { refresh() }
+
+        Scaffold(
+            topBar = {
+                TopAppBar(
+                    title = { Text("AdaptivePulse") },
+                    actions = {
+                        TextButton(onClick = { scope.launch { refresh() } }) { Text("REFRESH") }
+                        TextButton(onClick = onSignOut) { Text("SIGN OUT") }
+                    },
+                )
+            },
+        ) { padding ->
+            Column(modifier = Modifier.padding(padding)) {
+                TabRow(selectedTabIndex = tab) {
+                    Tab(selected = tab == 0, onClick = { tab = 0 }, text = { Text("HISTORY") })
+                    Tab(selected = tab == 1, onClick = { tab = 1 }, text = { Text("SETTINGS") })
+                }
+                when (tab) {
+                    0 -> HistoryScreen(items = history, statusLine = status)
+                    1 -> SettingsScreen(
+                        config = settingsDoc?.toSessionConfig() ?: SessionConfig(),
+                        onChange = { item, newValue ->
+                            scope.launch {
+                                PhoneSync.updateSettingsEverywhere(applicationContext) { config ->
+                                    item.write(config, newValue)
+                                }
+                            }
+                        },
+                    )
+                }
+            }
+        }
+    }
+}

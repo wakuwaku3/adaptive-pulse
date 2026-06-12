@@ -18,6 +18,7 @@ import androidx.wear.compose.material.MaterialTheme
 import androidx.wear.compose.material.Stepper
 import androidx.wear.compose.material.Text
 import io.github.wakuwaku3.adaptivepulse.core.SessionConfig
+import io.github.wakuwaku3.adaptivepulse.core.settings.SettingItem
 import io.github.wakuwaku3.adaptivepulse.ui.IconActionButton
 import io.github.wakuwaku3.adaptivepulse.ui.theme.APColors
 

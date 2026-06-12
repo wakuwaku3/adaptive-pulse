@@ -1,4 +1,4 @@
-package io.github.wakuwaku3.adaptivepulse.settings
+package io.github.wakuwaku3.adaptivepulse.core.settings
 
 import io.github.wakuwaku3.adaptivepulse.core.SessionConfig
 import kotlin.math.roundToInt

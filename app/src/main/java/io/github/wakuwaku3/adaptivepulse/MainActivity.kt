@@ -19,7 +19,7 @@ import io.github.wakuwaku3.adaptivepulse.core.SessionConfig
 import io.github.wakuwaku3.adaptivepulse.session.SessionScreen
 import io.github.wakuwaku3.adaptivepulse.session.SessionService
 import io.github.wakuwaku3.adaptivepulse.settings.SettingEditorScreen
-import io.github.wakuwaku3.adaptivepulse.settings.SettingItem
+import io.github.wakuwaku3.adaptivepulse.core.settings.SettingItem
 import io.github.wakuwaku3.adaptivepulse.settings.SettingsRepository
 import io.github.wakuwaku3.adaptivepulse.settings.SettingsScreen
 import io.github.wakuwaku3.adaptivepulse.sync.updateSettingsAndSync
