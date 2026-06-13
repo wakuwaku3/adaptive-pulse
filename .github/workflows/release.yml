@@ -80,6 +80,16 @@ jobs:
         env:
           KEYSTORE_B64: ${{ secrets.ADAPTIVE_PULSE_KEYSTORE_B64 }}
 
+      # google-services.json は repo では gitignored (.claude/rules/secret.md)。
+      # google-services プラグインが有効でないと FirebaseApp が auto-init されず
+      # phone アプリの Auth / Firestore SDK が「未設定」状態に倒れるため、
+      # base64 secret から復元してから build する。
+      - name: google-services.json を復元
+        if: steps.target.outputs.skip != 'true' && env.GS_B64 != ''
+        run: echo "$GS_B64" | base64 -d > mobile/google-services.json
+        env:
+          GS_B64: ${{ secrets.MOBILE_GOOGLE_SERVICES_JSON }}
+
       - name: 署名済み AAB / APK をビルド (watch + phone)
         if: steps.target.outputs.skip != 'true'
         # versionCode は semver から決定的に導出する (MAJOR*10000 + MINOR*100 + PATCH)

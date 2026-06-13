@@ -23,6 +23,11 @@
    ```
 3. `google-services.json` をダウンロードして **`mobile/google-services.json`** に置く
    (gitignore 済み。無くてもビルドは通るが、サインインできない)
+4. **CI の release ビルドにも embed する** (これをやらないと sideload した release APK で「Firebase is not configured」になる):
+   ```bash
+   base64 -w0 mobile/google-services.json | gh secret set MOBILE_GOOGLE_SERVICES_JSON
+   ```
+   release workflow が secret を base64 decode して `mobile/google-services.json` に復元してから gradle build する。
 
 ## 3. Firestore Rules deploy のセットアップ
 

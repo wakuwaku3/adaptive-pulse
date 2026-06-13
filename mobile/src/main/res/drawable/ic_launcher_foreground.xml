@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- ECG 風の心拍パルス。adaptive icon の safe zone (中心半径 33) 内に収まる
+     形に最適化 (.claude/rules/ui.md のコーラル基調)。 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:strokeColor="#FFFF4E5E"
+        android:strokeWidth="10"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:fillColor="#00000000"
+        android:pathData="M 18,54 L 36,54 L 46,24 L 60,84 L 70,54 L 90,54" />
+</vector>
