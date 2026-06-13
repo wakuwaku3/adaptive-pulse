@@ -38,7 +38,7 @@ GCP リソース (Cloud Run / Artifact Registry / 実行 SA / IAM) は `infra/` 
    devbox shell   # gcloud / terraform / gh が PATH に通る
    bash infra/bootstrap.sh <GCP プロジェクトID>
    ```
-   bootstrap が API 有効化・`<PROJECT>-tfstate` バケット作成・Terraform 実行 SA (`tf-runner`) と Owner ロール付与・SA キー生成までを行い、GitHub に `GCP_SA_KEY` (secret) と `GCP_PROJECT_ID` / `GCP_REGION` / `TFSTATE_BUCKET` (variables) を登録する。
+   bootstrap が API 有効化・`<PROJECT>-tfstate` バケット作成・Terraform 実行 SA (`tf-runner`) と Owner ロール付与・SA キー生成までを行い、GitHub に `GCP_SA_KEY` (secret) と `GCP_PROJECT_ID` / `GCP_REGION` / `TFSTATE_BUCKET` (variables) を登録する。tfstate バケットは GCS always-free 5GB 対象の `us-central1` に作る (Cloud Run / AR の `$GCP_REGION` とは別)。
 4. (任意) GitHub の Actions タブから **terraform workflow を `workflow_dispatch` で実行** するか、`infra/` を変更して main へ push すると CI が `terraform apply` する。
 5. apply 完了後、Cloud Run の URL を `SERVER_BASE_URL` に設定:
    ```bash

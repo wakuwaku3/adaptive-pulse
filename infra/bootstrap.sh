@@ -13,9 +13,12 @@ set -euo pipefail
 
 PROJECT_ID="${1:-${ADAPTIVE_PULSE_PROJECT_ID:-}}"
 REGION="${2:-asia-northeast1}"
+# tfstate バケットだけは GCS always-free 5GB 対象 (us-east1/us-west1/us-central1) に置く。
+# Cloud Run / AR は $REGION (asia-northeast1) のまま。
+TFSTATE_LOCATION="${3:-${ADAPTIVE_PULSE_TFSTATE_LOCATION:-us-central1}}"
 
 if [ -z "$PROJECT_ID" ]; then
-  echo "usage: $0 <gcp-project-id> [region]" >&2
+  echo "usage: $0 <gcp-project-id> [region [tfstate-location]]" >&2
   exit 1
 fi
 
@@ -36,9 +39,9 @@ gcloud services enable \
   iamcredentials.googleapis.com \
   storage.googleapis.com >/dev/null
 
-echo "==> tfstate バケット gs://$BUCKET を用意"
+echo "==> tfstate バケット gs://$BUCKET を用意 (location: $TFSTATE_LOCATION)"
 if ! gcloud storage buckets describe "gs://$BUCKET" >/dev/null 2>&1; then
-  gcloud storage buckets create "gs://$BUCKET" --location="$REGION" --uniform-bucket-level-access
+  gcloud storage buckets create "gs://$BUCKET" --location="$TFSTATE_LOCATION" --uniform-bucket-level-access
 fi
 gcloud storage buckets update "gs://$BUCKET" --versioning >/dev/null
 
