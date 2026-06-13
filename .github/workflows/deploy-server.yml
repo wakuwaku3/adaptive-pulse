@@ -1,9 +1,6 @@
-# :server を Cloud Run へデプロイする (docs/stock/sync.md の同期 API)。
-# Firebase/GCP のセットアップが済むまでは repo variable ENABLE_SERVER_DEPLOY で
-# 無効化されている (手順: docs/stock/setup-firebase.md)。
-# 必要な設定:
-#   variables: ENABLE_SERVER_DEPLOY=true, GCP_PROJECT_ID, GCP_REGION (例 asia-northeast1)
-#   secrets:   GCP_SA_KEY (Cloud Run デプロイ権限を持つサービスアカウントの JSON キー)
+# server コンテナをビルドして Artifact Registry に push し、Cloud Run を更新する。
+# Cloud Run サービス・Artifact Registry リポジトリ・実行 SA・IAM は
+# Terraform (infra/) が管理する。本 workflow は image だけを差し替える。
 name: deploy-server
 
 on:
@@ -24,7 +21,7 @@ concurrency:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    if: vars.ENABLE_SERVER_DEPLOY == 'true'
+    if: vars.GCP_PROJECT_ID != ''
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -58,7 +55,7 @@ jobs:
 
   skipped:
     runs-on: ubuntu-latest
-    if: vars.ENABLE_SERVER_DEPLOY != 'true'
+    if: vars.GCP_PROJECT_ID == ''
     steps:
-      - name: 未設定のためスキップ
-        run: echo "ENABLE_SERVER_DEPLOY が未設定のためデプロイをスキップ (docs/stock/setup-firebase.md)"
+      - name: bootstrap 未実施のためスキップ
+        run: echo "infra/bootstrap.sh が未実行 (GCP_PROJECT_ID 未設定)。docs/stock/setup-firebase.md を参照。"

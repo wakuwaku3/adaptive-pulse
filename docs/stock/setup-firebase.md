@@ -25,28 +25,41 @@
 3. `google-services.json` をダウンロードして **`mobile/google-services.json`** に置く
    (gitignore 済み。無くてもビルドは通るが、サインインできない)
 
-## 3. server のデプロイ (Cloud Run)
+## 3. server のデプロイ (Cloud Run, Terraform)
+
+GCP リソース (Cloud Run / Artifact Registry / 実行 SA / IAM) は `infra/` の Terraform が管理する。卵-鶏 (tfstate バケットと Terraform 実行 SA) だけはローカルの bootstrap で一度だけ作る。
+
+### 3.1 一度だけ手元で実行 (bootstrap)
 
 1. https://console.cloud.google.com で Firebase と同じプロジェクトを開き、請求先アカウントを設定
-2. Artifact Registry にリポジトリ `adaptive-pulse` (Docker, リージョン `asia-northeast1`) を作成
-3. サービスアカウントを作成し、ロール「Cloud Run 管理者 / Artifact Registry 書き込み / サービス アカウント ユーザー」を付与し、JSON キーをダウンロード
-4. GitHub リポジトリに設定:
+2. `gcloud auth login` で人間アカウントでサインイン
+3. リポジトリ直下で:
    ```bash
-   gh secret set GCP_SA_KEY < サービスアカウントキー.json
-   gh variable set GCP_PROJECT_ID --body "<プロジェクトID>"
-   gh variable set GCP_REGION --body "asia-northeast1"
-   gh variable set ENABLE_SERVER_DEPLOY --body "true"
+   devbox shell   # gcloud / terraform / gh が PATH に通る
+   bash infra/bootstrap.sh <GCP プロジェクトID>
    ```
-5. main へ push (server/ 配下の変更) すると deploy-server workflow が Cloud Run へデプロイする
-6. デプロイ後の URL (例 `https://adaptive-pulse-server-xxxx.a.run.app`) を控える
-   - Cloud Run の「認証が必要」設定は **オフ (未認証呼び出しを許可)** にする
-     (API 自体が Firebase ID トークンで認証する)
+   bootstrap が API 有効化・`<PROJECT>-tfstate` バケット作成・Terraform 実行 SA (`tf-runner`) と Owner ロール付与・SA キー生成までを行い、GitHub に `GCP_SA_KEY` (secret) と `GCP_PROJECT_ID` / `GCP_REGION` / `TFSTATE_BUCKET` (variables) を登録する。
+4. (任意) GitHub の Actions タブから **terraform workflow を `workflow_dispatch` で実行** するか、`infra/` を変更して main へ push すると CI が `terraform apply` する。
+5. apply 完了後、Cloud Run の URL を `SERVER_BASE_URL` に設定:
+   ```bash
+   url=$(cd infra && GOOGLE_APPLICATION_CREDENTIALS=... \
+     terraform init -backend-config="bucket=$(gh variable get TFSTATE_BUCKET)" >/dev/null && \
+     terraform output -raw service_url)
+   gh variable set SERVER_BASE_URL --body "$url"
+   ```
+   - terraform output だけ取り出せれば良いので、CI のログ Summary に出る URL をコピペして `gh variable set SERVER_BASE_URL --body 'https://...'` でも構わない。
+
+### 3.2 以降の運用
+
+- `server/` の変更 → `deploy-server` workflow がコンテナを Artifact Registry に push して Cloud Run を更新する (Terraform 管理外の image だけが更新される)。
+- `infra/` の変更 → `terraform` workflow が plan/apply する。PR では plan を本文にコメント、main push で apply。
+- 最小権限化 (`tf-runner` の Owner を細分化) は将来課題。
 
 ## 4. phone アプリにサーバー URL を設定
 
 - ローカルビルド: リポジトリ直下の `gradle.properties` ではなく **`~/.gradle/gradle.properties`** に
   `adaptivePulse.serverUrl=https://...` を書く (リポジトリにコミットしない)
-- リリースビルド (GitHub Release): `gh variable set SERVER_BASE_URL --body "https://..."`
+- リリースビルド (GitHub Release): bootstrap 後の手順 3.1 §5 で `SERVER_BASE_URL` を設定済みになる
 
 ## 5. 動作確認
 

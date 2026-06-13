@@ -4,6 +4,8 @@
     "jdk@21",
     "gitleaks@latest",
     "jq@latest",
-    "unzip@latest"
+    "unzip@latest",
+    "terraform@latest",
+    "google-cloud-sdk@latest"
   ]
 }

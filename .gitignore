@@ -24,3 +24,10 @@ captures/
 # devbox / direnv
 .devbox/
 .direnv/
+
+# Terraform (init で取得するプロバイダ・state ロックは作業ツリーに残さない)
+.terraform/
+.terraform.lock.hcl
+*.tfplan
+*.tfstate
+*.tfstate.backup

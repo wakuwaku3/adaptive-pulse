@@ -1,0 +1,93 @@
+# Cloud Run / Artifact Registry / IAM を Terraform で管理する。
+# infra/ 配下の変更で plan/apply が走る。PR では plan、main push で apply。
+# state は GCS、Terraform 実行 SA は infra/bootstrap.sh が事前に作る。
+name: terraform
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "infra/**"
+      - ".github/workflows/terraform.yml"
+  pull_request:
+    paths:
+      - "infra/**"
+      - ".github/workflows/terraform.yml"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: terraform
+  cancel-in-progress: false
+
+jobs:
+  terraform:
+    runs-on: ubuntu-latest
+    if: vars.GCP_PROJECT_ID != ''
+    defaults:
+      run:
+        working-directory: infra
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.8
+
+      - uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: terraform init
+        run: terraform init -backend-config="bucket=${{ vars.TFSTATE_BUCKET }}"
+
+      - name: terraform fmt -check
+        run: terraform fmt -check -recursive
+
+      - name: terraform validate
+        run: terraform validate -no-color
+
+      - name: terraform plan
+        id: plan
+        run: |
+          terraform plan -no-color -input=false \
+            -var="project_id=${{ vars.GCP_PROJECT_ID }}" \
+            -var="region=${{ vars.GCP_REGION }}" \
+            -out=tfplan
+        continue-on-error: ${{ github.event_name == 'pull_request' }}
+
+      - name: PR コメントに plan を貼る
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const { execSync } = require('child_process');
+            const plan = execSync('terraform show -no-color tfplan', { cwd: 'infra' }).toString();
+            const body = `### terraform plan\n\n<details><summary>show</summary>\n\n\`\`\`hcl\n${plan.slice(0, 60000)}\n\`\`\`\n\n</details>`;
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body,
+            });
+
+      - name: terraform apply
+        if: github.event_name != 'pull_request'
+        run: terraform apply -auto-approve -input=false tfplan
+
+      - name: output
+        if: github.event_name != 'pull_request'
+        run: |
+          echo "service_url=$(terraform output -raw service_url)" >> "$GITHUB_STEP_SUMMARY"
+          echo "artifact_repository=$(terraform output -raw artifact_repository)" >> "$GITHUB_STEP_SUMMARY"
+
+  skipped:
+    runs-on: ubuntu-latest
+    if: vars.GCP_PROJECT_ID == ''
+    steps:
+      - name: bootstrap 未実施のためスキップ
+        run: echo "infra/bootstrap.sh が未実行 (GCP_PROJECT_ID 未設定)。docs/stock/setup-firebase.md を参照。"
