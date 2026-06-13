@@ -159,6 +159,11 @@ class MainActivity : ComponentActivity() {
                         }
                     },
                     actions = {
+                        if (screen == Screen.History) {
+                            IconButton(onClick = { scope.launch { refresh() } }) {
+                                Text("↻", style = MaterialTheme.typography.headlineMedium)
+                            }
+                        }
                         IconButton(onClick = { menuOpen = true }) {
                             Text("⋮", style = MaterialTheme.typography.headlineMedium)
                         }
@@ -167,13 +172,6 @@ class MainActivity : ComponentActivity() {
                             onDismissRequest = { menuOpen = false },
                         ) {
                             if (screen == Screen.History) {
-                                DropdownMenuItem(
-                                    text = { Text("Refresh") },
-                                    onClick = {
-                                        menuOpen = false
-                                        scope.launch { refresh() }
-                                    },
-                                )
                                 DropdownMenuItem(
                                     text = { Text("Settings") },
                                     onClick = {

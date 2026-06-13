@@ -24,6 +24,6 @@ paths:
 
 ## :mobile (Android phone) 特有
 
-- **TopAppBar の `actions` は overflow menu (`⋮` IconButton + `DropdownMenu`)** に畳む (Android 標準の慣習)。`Refresh` / `Settings` / `Sign out` 等の二次操作を直接 TextButton で並べない。
+- **`TopAppBar` の `actions` は「画面の primary action だけ icon で直置き、それ以外は overflow menu (`⋮ IconButton + DropdownMenu`) に畳む」** (Android 標準の慣習)。e.g., HISTORY 画面の `Refresh` (↻) は visible icon、`Settings` / `Sign out` などは overflow へ。`TextButton` を並べる UI は使わない。
 - **タブで主画面を切り替えない**。主画面 1 枚 (`HISTORY`) + overflow から `Settings` などサブ画面へ遷移、戻りは `BackHandler` でシステム back に乗せる。タブは「同等な並列ビュー」のときだけ使う (本アプリは該当しない)。
-- 副画面の TopAppBar には `navigationIcon` (`‹`) で back を明示。
+- 副画面の `TopAppBar` には `navigationIcon` (`‹`) で back を明示。
