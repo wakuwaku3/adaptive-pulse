@@ -2,18 +2,21 @@ package io.github.wakuwaku3.adaptivepulse.mobile
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -38,6 +41,8 @@ import io.github.wakuwaku3.adaptivepulse.mobile.ui.HistoryScreen
 import io.github.wakuwaku3.adaptivepulse.mobile.ui.MobileColors
 import io.github.wakuwaku3.adaptivepulse.mobile.ui.SettingsScreen
 import kotlinx.coroutines.launch
+
+private enum class Screen { History, Settings }
 
 class MainActivity : ComponentActivity() {
 
@@ -68,33 +73,40 @@ class MainActivity : ComponentActivity() {
     private fun SignInScreen(auth: AuthManager, onSignedIn: () -> Unit) {
         val scope = rememberCoroutineScope()
         var error by remember { mutableStateOf<String?>(null) }
-        Column(
-            modifier = Modifier.fillMaxSize().padding(32.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterVertically),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            Text("AdaptivePulse", style = androidx.compose.material3.MaterialTheme.typography.headlineMedium)
-            Text(
-                "Sign in to sync your sessions and settings across devices.",
-                color = MobileColors.TextDim,
-            )
-            if (!auth.isConfigured) {
+        // Scaffold で包まないと LocalContentColor が Color.Black に倒れて
+        // dark theme でも本文が黒のまま不可視になる (.claude/rules/ui.md)
+        Scaffold { padding ->
+            Column(
+                modifier = Modifier.fillMaxSize().padding(padding).padding(32.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterVertically),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
                 Text(
-                    "Firebase is not configured. Place google-services.json in mobile/ and rebuild (docs/stock/setup-firebase.md).",
-                    color = MobileColors.Done,
+                    "AdaptivePulse",
+                    style = MaterialTheme.typography.headlineMedium,
                 )
+                Text(
+                    "Sign in to sync your sessions and settings across devices.",
+                    color = MobileColors.TextDim,
+                )
+                if (!auth.isConfigured) {
+                    Text(
+                        "Firebase is not configured. Place google-services.json in mobile/ and rebuild (docs/stock/setup-firebase.md).",
+                        color = MobileColors.Done,
+                    )
+                }
+                Button(
+                    enabled = auth.isConfigured,
+                    onClick = {
+                        scope.launch {
+                            auth.signInWithGoogle(this@MainActivity)
+                                .onSuccess { onSignedIn() }
+                                .onFailure { error = it.message }
+                        }
+                    },
+                ) { Text("Sign in with Google") }
+                error?.let { Text(it, color = MobileColors.High) }
             }
-            Button(
-                enabled = auth.isConfigured,
-                onClick = {
-                    scope.launch {
-                        auth.signInWithGoogle(this@MainActivity)
-                            .onSuccess { onSignedIn() }
-                            .onFailure { error = it.message }
-                    }
-                },
-            ) { Text("Sign in with Google") }
-            error?.let { Text(it, color = MobileColors.High) }
         }
     }
 
@@ -102,7 +114,8 @@ class MainActivity : ComponentActivity() {
     @Composable
     private fun MainScreen(onSignOut: () -> Unit) {
         val scope = rememberCoroutineScope()
-        var tab by remember { mutableStateOf(0) }
+        var screen by remember { mutableStateOf(Screen.History) }
+        var menuOpen by remember { mutableStateOf(false) }
         var history by remember { mutableStateOf<List<HistoryItem>?>(null) }
         var status by remember { mutableStateOf<String?>(null) }
         val settingsRepo = remember { PhoneSettingsRepository(applicationContext) }
@@ -128,25 +141,63 @@ class MainActivity : ComponentActivity() {
 
         LaunchedEffect(Unit) { refresh() }
 
+        BackHandler(enabled = screen == Screen.Settings) {
+            screen = Screen.History
+        }
+
         Scaffold(
             topBar = {
                 TopAppBar(
-                    title = { Text("AdaptivePulse") },
+                    title = {
+                        Text(if (screen == Screen.History) "AdaptivePulse" else "Settings")
+                    },
+                    navigationIcon = {
+                        if (screen == Screen.Settings) {
+                            IconButton(onClick = { screen = Screen.History }) {
+                                Text("‹", style = MaterialTheme.typography.headlineMedium)
+                            }
+                        }
+                    },
                     actions = {
-                        TextButton(onClick = { scope.launch { refresh() } }) { Text("REFRESH") }
-                        TextButton(onClick = onSignOut) { Text("SIGN OUT") }
+                        IconButton(onClick = { menuOpen = true }) {
+                            Text("⋮", style = MaterialTheme.typography.headlineMedium)
+                        }
+                        DropdownMenu(
+                            expanded = menuOpen,
+                            onDismissRequest = { menuOpen = false },
+                        ) {
+                            if (screen == Screen.History) {
+                                DropdownMenuItem(
+                                    text = { Text("Refresh") },
+                                    onClick = {
+                                        menuOpen = false
+                                        scope.launch { refresh() }
+                                    },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Settings") },
+                                    onClick = {
+                                        menuOpen = false
+                                        screen = Screen.Settings
+                                    },
+                                )
+                            }
+                            DropdownMenuItem(
+                                text = { Text("Sign out") },
+                                onClick = {
+                                    menuOpen = false
+                                    onSignOut()
+                                },
+                            )
+                        }
                     },
                 )
             },
         ) { padding ->
-            Column(modifier = Modifier.padding(padding)) {
-                TabRow(selectedTabIndex = tab) {
-                    Tab(selected = tab == 0, onClick = { tab = 0 }, text = { Text("HISTORY") })
-                    Tab(selected = tab == 1, onClick = { tab = 1 }, text = { Text("SETTINGS") })
-                }
-                when (tab) {
-                    0 -> HistoryScreen(items = history, statusLine = status)
-                    1 -> SettingsScreen(
+            Box(modifier = Modifier.padding(padding)) {
+                when (screen) {
+                    Screen.History -> HistoryScreen(items = history, statusLine = status)
+                    Screen.Settings -> SettingsScreen(
                         config = settingsDoc?.toSessionConfig() ?: SessionConfig(),
                         onChange = { item, newValue ->
                             scope.launch {

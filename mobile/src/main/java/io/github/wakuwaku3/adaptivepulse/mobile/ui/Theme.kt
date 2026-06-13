@@ -14,6 +14,9 @@ object MobileColors {
     val Surface = Color(0xFF15181D)
 }
 
+// Material3 の Text は color 未指定時に LocalContentColor を読むため、
+// onBackground / onSurface を明示しないと dark theme でも default が Color.Black
+// に倒れて不可視になる (.claude/rules/ui.md)。
 private val DarkColors = darkColorScheme(
     primary = MobileColors.High,
     onPrimary = Color.Black,
@@ -21,7 +24,9 @@ private val DarkColors = darkColorScheme(
     onSecondary = Color.Black,
     tertiary = MobileColors.Done,
     background = Color.Black,
+    onBackground = Color.White,
     surface = MobileColors.Surface,
+    onSurface = Color.White,
 )
 
 @Composable
