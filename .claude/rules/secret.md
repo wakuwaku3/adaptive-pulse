@@ -11,3 +11,4 @@ description: 秘密情報・個人データの取り扱い (public repo・常時
 - 健康データ (実測の心拍ログ等) はユーザ個人のものなので repo にコミットしない。テストデータは合成する。
 - 秘密を含みうるファイル (`.env`, `*.keystore`, `local.properties` 等) は `.gitignore` で除外する。
 - gitleaks による検査を Stop hook と CI に組み込み、混入を検出する。
+- Stop hook の gitleaks は `dir` モード (作業ツリー走査) なので `.gitignore` を尊重しない。`.gitignore` に新規パターン (秘密ファイル / ビルド成果物 / キャッシュ等) を足したら、同じ意図のパターンを `.gitleaks.toml` の `[allowlist] paths` にも追加し、両者を同期させる。
