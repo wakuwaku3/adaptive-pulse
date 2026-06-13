@@ -18,6 +18,7 @@
 
 - **Firebase Spark プラン (無料)**: Firebase Auth + Firestore。
 - **server は Cloud Run** (無料枠) を一次候補とし、コンテナ (Dockerfile) として任意の PaaS で動かせる形に保つ。Cloud Run は請求先アカウントの登録が必要だが無料枠内で運用する。
+- **Artifact Registry**: server image を保管する。cleanup policy で最新 1 個だけ残し、AR の 0.5 GB-月 無料枠を維持する。過去 image での即時 rollback は諦め、必要なら git から再ビルドする。
 - **Firestore のセキュリティルールはクライアント直アクセスを全拒否**する。書き込み経路はサーバー (Admin SDK) のみ。
 
 ## 認証の拡張余地

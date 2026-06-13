@@ -53,6 +53,7 @@ GCP リソース (Cloud Run / Artifact Registry / 実行 SA / IAM) は `infra/` 
 
 - `server/` の変更 → `deploy-server` workflow がコンテナを Artifact Registry に push して Cloud Run を更新する (Terraform 管理外の image だけが更新される)。
 - `infra/` の変更 → `terraform` workflow が plan/apply する。PR では plan を本文にコメント、main push で apply。
+- AR は cleanup policy で最新 1 image のみ保持し、0.5 GB-月 無料枠を維持する (`infra/main.tf`)。古い image での rollback は諦め、必要なら git から再ビルドする。
 - 最小権限化 (`tf-runner` の Owner を細分化) は将来課題。
 
 ## 4. phone アプリにサーバー URL を設定

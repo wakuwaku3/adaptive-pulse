@@ -22,6 +22,27 @@ resource "google_artifact_registry_repository" "server" {
   format        = "DOCKER"
   description   = "AdaptivePulse server container images"
   depends_on    = [google_project_service.apis]
+
+  # AR 0.5 GB-月の無料枠を維持するため最新版のみ保持する。
+  # 過去 image での即時 rollback は捨てる (必要なら git から再ビルド)。
+  cleanup_policy_dry_run = false
+
+  cleanup_policies {
+    id     = "keep-latest"
+    action = "KEEP"
+    most_recent_versions {
+      keep_count = 1
+    }
+  }
+
+  cleanup_policies {
+    id     = "delete-others"
+    action = "DELETE"
+    condition {
+      tag_state  = "ANY"
+      older_than = "0s"
+    }
+  }
 }
 
 # Cloud Run の実行 ID (Firestore へのアクセス権はここに付ける。最小権限)
