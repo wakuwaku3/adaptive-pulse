@@ -39,28 +39,37 @@ sdkmanager --install \
   "build-tools;35.0.0" \
   "emulator" >/dev/null
 
-# Wear OS の x86_64 system image は API レベルごとに提供が異なるため、
-# 利用可能な最新を動的に選ぶ
+# system image は API レベルごとに提供が異なるため、利用可能な最新を動的に選ぶ
+ensure_avd() {
+  local name="$1" image="$2" device="$3"
+  if [ -z "$image" ]; then
+    echo "WARN: $name 用の system image が見つからず。sdkmanager --list で確認してください" >&2
+    return
+  fi
+  echo "==> $image を導入"
+  sdkmanager --install "$image" >/dev/null
+
+  if ! "$SDK/cmdline-tools/latest/bin/avdmanager" list avd 2>/dev/null | grep -q "Name: $name$"; then
+    echo "==> AVD $name を作成"
+    echo no | "$SDK/cmdline-tools/latest/bin/avdmanager" create avd \
+      --name "$name" --package "$image" --device "$device" >/dev/null || \
+      echo "WARN: $name AVD 作成に失敗 (--device 名が変わった可能性)。avdmanager list device で確認して手動作成してください" >&2
+  fi
+}
+
 echo "==> Wear OS system image を探索"
 wear_image="$(sdkmanager --list 2>/dev/null \
   | grep -oE 'system-images;android-[0-9]+;android-wear;x86_64' \
   | sort -t- -k2 -V | tail -1)"
-if [ -n "$wear_image" ]; then
-  echo "==> $wear_image を導入"
-  sdkmanager --install "$wear_image" >/dev/null
+ensure_avd adaptivepulse_wear "$wear_image" wearos_small_round
 
-  avd_home="${ANDROID_AVD_HOME:-$HOME/.config/.android/avd}"
-  if [ ! -d "$avd_home/adaptivepulse_wear.avd" ] && ! "$SDK/cmdline-tools/latest/bin/avdmanager" list avd 2>/dev/null | grep -q adaptivepulse_wear; then
-    echo "==> AVD adaptivepulse_wear を作成"
-    echo no | "$SDK/cmdline-tools/latest/bin/avdmanager" create avd \
-      --name adaptivepulse_wear \
-      --package "$wear_image" \
-      --device wearos_small_round >/dev/null || \
-      echo "WARN: AVD 作成に失敗 (--device 名が変わった可能性)。avdmanager list device で確認して手動作成してください" >&2
-  fi
-else
-  echo "WARN: Wear OS system image が見つからず。sdkmanager --list で確認してください" >&2
-fi
+# phone 側は :mobile の動作確認用 (Firebase Auth / Firestore は Play 系 SDK
+# しか動かないので google_apis を選ぶ。実機は別途用意する)
+echo "==> Phone (google_apis) system image を探索"
+phone_image="$(sdkmanager --list 2>/dev/null \
+  | grep -oE 'system-images;android-[0-9]+;google_apis;x86_64' \
+  | sort -t- -k2 -V | tail -1)"
+ensure_avd adaptivepulse_phone "$phone_image" pixel_7
 
 # エミュレータ (qemu/Qt) が要求するシステムライブラリ。WSL の素の Ubuntu には無い
 missing_pkgs=""

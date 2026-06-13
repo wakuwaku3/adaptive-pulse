@@ -20,7 +20,7 @@ paths = [
   '''(^|/)\.gradle/''',
   '''(^|/)\.kotlin/''',
   '''(^|/)captures/''',
-  '''(^|/)\.terraform/''',
   '''(^|/)\.devbox/''',
   '''(^|/)\.direnv/''',
+  '''(^|/)node_modules/''',
 ]

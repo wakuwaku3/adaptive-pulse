@@ -25,9 +25,8 @@ captures/
 .devbox/
 .direnv/
 
-# Terraform (init で取得するプロバイダ・state ロックは作業ツリーに残さない)
-.terraform/
-.terraform.lock.hcl
-*.tfplan
-*.tfstate
-*.tfstate.backup
+# node (rules-test 用)
+node_modules/
+firebase-debug.log
+firestore-debug.log
+ui-debug.log

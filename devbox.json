@@ -5,7 +5,7 @@
     "gitleaks@latest",
     "jq@latest",
     "unzip@latest",
-    "terraform@latest",
-    "google-cloud-sdk@latest"
+    "google-cloud-sdk@latest",
+    "nodejs@latest"
   ]
 }

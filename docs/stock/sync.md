@@ -52,6 +52,7 @@ users/{uid}/settings/current         # 設定の正本 (LWW: Rules が updatedAt
 - `sessions/{id}` は create/update のみ許可、delete は禁止 (append-only 履歴)。
 - `settings/current` の update は `request.resource.data.updatedAtMs > resource.data.updatedAtMs` のときだけ許可 (LWW を Rules で強制)。古い更新は PermissionDenied になり、クライアントはサーバ値を読み直して反映する。
 - Rules の deploy は `firebase deploy --only firestore:rules` (`deploy-firestore-rules` workflow が main push で自動実行する)。
+- Rules の挙動は `rules-test/` の Firebase Emulator 自動テストで CI 上検証してから deploy する (uid 一致 / append-only / LWW / 未認証拒否を 14 ケースでカバー)。
 
 ## モジュール構成
 
