@@ -14,4 +14,6 @@ paths = [
   '''.*\.keystore$''',
   '''.*\.jks$''',
   '''^secrets/''',
+  '''(^|/)google-services\.json$''',
+  '''(^|/)GoogleService-Info\.plist$''',
 ]
