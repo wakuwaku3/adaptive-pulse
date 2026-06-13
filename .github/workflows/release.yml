@@ -86,10 +86,8 @@ jobs:
         run: |
           IFS=. read -r maj min pat <<<"$ADAPTIVE_PULSE_VERSION_NAME"
           export ADAPTIVE_PULSE_VERSION_CODE=$((maj * 10000 + min * 100 + pat))
-          # SERVER_BASE_URL は repo variable (未設定なら phone のサーバー同期は保留動作)
           ./gradlew :app:bundleRelease :app:assembleRelease \
-            :mobile:bundleRelease :mobile:assembleRelease \
-            -PadaptivePulse.serverUrl="${{ vars.SERVER_BASE_URL }}"
+            :mobile:bundleRelease :mobile:assembleRelease
         env:
           ADAPTIVE_PULSE_VERSION_NAME: ${{ steps.ver.outputs.version }}
           ADAPTIVE_PULSE_KEYSTORE_PATH: /tmp/upload.jks

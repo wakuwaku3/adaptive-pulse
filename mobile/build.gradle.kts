@@ -24,13 +24,6 @@ android {
         targetSdk = 35
         versionCode = System.getenv("ADAPTIVE_PULSE_VERSION_CODE")?.toInt() ?: 1
         versionName = System.getenv("ADAPTIVE_PULSE_VERSION_NAME") ?: "0.0.0-dev"
-
-        // 同期先サーバー。未設定 (空) ならサーバー同期を保留し、ローカル動作する
-        buildConfigField(
-            "String",
-            "SERVER_BASE_URL",
-            "\"${providers.gradleProperty("adaptivePulse.serverUrl").getOrElse("")}\"",
-        )
     }
 
     val keystorePath = System.getenv("ADAPTIVE_PULSE_KEYSTORE_PATH")
@@ -59,7 +52,6 @@ android {
 
     buildFeatures {
         compose = true
-        buildConfig = true
     }
 
     compileOptions {
@@ -87,15 +79,14 @@ dependencies {
     implementation(libs.androidx.credentials.play.services)
     implementation(libs.googleid)
 
+    // 履歴・設定の同期 (Firestore に直接書き込む。docs/stock/sync.md)
+    implementation(libs.firebase.firestore)
+    implementation(libs.kotlinx.serialization.json)
+
     // watch との同期 (Wearable Data Layer)
     implementation(libs.play.services.wearable)
     implementation(libs.kotlinx.coroutines.play.services)
     implementation(libs.androidx.fragment)
-
-    // サーバー同期 (ktor client)
-    implementation(libs.ktor.client.okhttp)
-    implementation(libs.ktor.client.content.negotiation)
-    implementation(libs.ktor.serialization.kotlinx.json)
 
     implementation(libs.androidx.datastore.preferences)
 }

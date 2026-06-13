@@ -1,0 +1,54 @@
+rules_version = '2';
+
+// 個人利用前提のシンプル設計: 認証済みユーザは自分の uid 配下だけを読み書きできる
+// (docs/stock/sync.md)。
+// セッションは append-only (削除禁止)。設定は LWW を Rules で強制する
+// (更新は updatedAtMs が前より新しい場合のみ通す)。
+// json 文字列内の妥当性は Rules では検証しない (本人しか書き換えられない領域なので、
+// 破損しても自分の履歴/設定が壊れるだけ。サイズ上限だけ持つ)。
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /users/{uid} {
+      function isOwner() {
+        return request.auth != null && request.auth.uid == uid;
+      }
+
+      allow read: if isOwner();
+      allow write: if isOwner()
+        && request.resource.data.keys().hasOnly(['providers', 'createdAtMs', 'updatedAtMs'])
+        && request.resource.data.providers is list
+        && request.resource.data.createdAtMs is number
+        && request.resource.data.updatedAtMs is number;
+
+      match /sessions/{sessionId} {
+        allow read: if isOwner();
+        allow create, update: if isOwner()
+          && request.resource.data.keys().hasOnly(['startedAtMs', 'json'])
+          && request.resource.data.startedAtMs is number
+          && request.resource.data.json is string
+          && request.resource.data.json.size() < 100000;
+        allow delete: if false;
+      }
+
+      match /settings/{settingsId} {
+        allow read: if isOwner();
+        allow create: if isOwner()
+          && settingsId == 'current'
+          && request.resource.data.keys().hasOnly(['updatedAtMs', 'json'])
+          && request.resource.data.updatedAtMs is number
+          && request.resource.data.json is string
+          && request.resource.data.json.size() < 10000;
+        // LWW: updatedAtMs が現値より大きい更新だけ通す。
+        // 古い更新は PermissionDenied になり、クライアントは現値を取り直して終わる。
+        allow update: if isOwner()
+          && settingsId == 'current'
+          && request.resource.data.keys().hasOnly(['updatedAtMs', 'json'])
+          && request.resource.data.updatedAtMs is number
+          && request.resource.data.updatedAtMs > resource.data.updatedAtMs
+          && request.resource.data.json is string
+          && request.resource.data.json.size() < 10000;
+        allow delete: if false;
+      }
+    }
+  }
+}

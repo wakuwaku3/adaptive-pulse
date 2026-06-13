@@ -2,7 +2,6 @@
 # release 対象かどうかを判定し、GITHUB_OUTPUT 形式 (key=value) で出力する。
 # 前回 tag 以降にアプリ実体 (app/ mobile/ core/ spec/ gradle 系) の変更が無い
 # main push では release を作らない (flame の リリース起動契機 に準拠)。
-# server のみの変更はアプリ release を作らない (deploy-server workflow が担う)。
 # 初版 (前回 tag 無し) は常に release する。
 set -euo pipefail
 

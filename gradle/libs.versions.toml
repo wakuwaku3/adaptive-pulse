@@ -13,11 +13,9 @@ wearTiles = "1.4.1"
 protolayout = "1.2.1"
 kotlinxSerialization = "1.7.3"
 playServicesWearable = "18.2.0"
-ktor = "3.0.3"
-firebaseAdmin = "9.3.0"
-logback = "1.5.12"
 composeBom = "2024.12.01"
 firebaseAuth = "23.1.0"
+firebaseFirestore = "25.1.1"
 credentials = "1.3.0"
 googleid = "1.1.1"
 googleServices = "4.4.2"
@@ -38,21 +36,13 @@ wear-protolayout-material = { group = "androidx.wear.protolayout", name = "proto
 kotlinx-serialization-json = { group = "org.jetbrains.kotlinx", name = "kotlinx-serialization-json", version.ref = "kotlinxSerialization" }
 play-services-wearable = { group = "com.google.android.gms", name = "play-services-wearable", version.ref = "playServicesWearable" }
 androidx-fragment = { group = "androidx.fragment", name = "fragment", version = "1.8.5" }
-ktor-server-netty = { group = "io.ktor", name = "ktor-server-netty", version.ref = "ktor" }
-ktor-server-content-negotiation = { group = "io.ktor", name = "ktor-server-content-negotiation", version.ref = "ktor" }
-ktor-server-auth = { group = "io.ktor", name = "ktor-server-auth", version.ref = "ktor" }
-ktor-serialization-kotlinx-json = { group = "io.ktor", name = "ktor-serialization-kotlinx-json", version.ref = "ktor" }
-ktor-server-test-host = { group = "io.ktor", name = "ktor-server-test-host", version.ref = "ktor" }
-ktor-client-content-negotiation = { group = "io.ktor", name = "ktor-client-content-negotiation", version.ref = "ktor" }
-firebase-admin = { group = "com.google.firebase", name = "firebase-admin", version.ref = "firebaseAdmin" }
-logback-classic = { group = "ch.qos.logback", name = "logback-classic", version.ref = "logback" }
 compose-bom = { group = "androidx.compose", name = "compose-bom", version.ref = "composeBom" }
 compose-material3 = { group = "androidx.compose.material3", name = "material3" }
 firebase-auth = { group = "com.google.firebase", name = "firebase-auth", version.ref = "firebaseAuth" }
+firebase-firestore = { group = "com.google.firebase", name = "firebase-firestore", version.ref = "firebaseFirestore" }
 androidx-credentials = { group = "androidx.credentials", name = "credentials", version.ref = "credentials" }
 androidx-credentials-play-services = { group = "androidx.credentials", name = "credentials-play-services-auth", version.ref = "credentials" }
 googleid = { group = "com.google.android.libraries.identity.googleid", name = "googleid", version.ref = "googleid" }
-ktor-client-okhttp = { group = "io.ktor", name = "ktor-client-okhttp", version.ref = "ktor" }
 kotlinx-coroutines-play-services = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-play-services", version.ref = "coroutinesGuava" }
 
 [plugins]

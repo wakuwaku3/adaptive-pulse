@@ -1,0 +1,43 @@
+# Firestore Security Rules を Firebase に deploy する。
+# Rules はサーバ層の代わりにアクセス制御と LWW を強制する唯一の防衛線なので
+# firestore.rules の変更を main push で即時反映する (docs/stock/sync.md)。
+name: deploy-firestore-rules
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "firestore.rules"
+      - "firebase.json"
+      - ".github/workflows/deploy-firestore-rules.yml"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-firestore-rules
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    if: vars.FIREBASE_PROJECT_ID != ''
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: npm install -g firebase-tools@13
+      - uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.FIREBASE_RULES_DEPLOYER_KEY }}
+      - name: Rules を deploy
+        run: firebase deploy --only firestore:rules --project "${{ vars.FIREBASE_PROJECT_ID }}" --non-interactive
+
+  skipped:
+    runs-on: ubuntu-latest
+    if: vars.FIREBASE_PROJECT_ID == ''
+    steps:
+      - name: bootstrap 未実施のためスキップ
+        run: echo "scripts/setup-firebase-rules-deploy.sh が未実行 (FIREBASE_PROJECT_ID 未設定)。docs/stock/setup-firebase.md を参照。"

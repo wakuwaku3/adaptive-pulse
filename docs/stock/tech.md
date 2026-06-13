@@ -12,9 +12,8 @@
 
 ## 履歴・設定同期 (docs/stock/sync.md)
 
-- **`:mobile`** (phone アプリ): Compose Material3 / Firebase Auth (Google サインイン、Credential Manager) / Wearable Data Layer / ktor client
-- **`:server`** (同期 API): server side Kotlin + ktor / firebase-admin (ID トークン検証 + Firestore) / Cloud Run (無料枠、コンテナ化済み)
-- インフラは Firebase Spark (無料): Firebase Auth + Firestore。セットアップ手順は `docs/stock/setup-firebase.md`
+- **`:mobile`** (phone アプリ): Compose Material3 / Firebase Auth (Google サインイン、Credential Manager) / Wearable Data Layer / Firebase Firestore SDK
+- インフラは Firebase Spark (無料): Firebase Auth + Firestore + Firestore Security Rules。サーバ層は持たず phone が Firestore SDK で直接書き、Rules がアクセス制御と LWW を強制する。セットアップ手順は `docs/stock/setup-firebase.md`
 
 ## 開発環境
 
@@ -22,7 +21,7 @@
 
 - devbox + direnv で JDK 等の CLI ツールを再現する (`.claude/rules/devbox.md`)。
 - Android SDK は `scripts/setup_android.sh` で `~/Android/Sdk` に導入する (cmdline-tools / platform-tools / platforms / build-tools / emulator / Wear OS system image / AVD `adaptivepulse_wear`)。`.envrc` が `ANDROID_HOME` と PATH を通す。
-- ビルドは `./gradlew` (wrapper)。モジュール構成は `:core` (純 Kotlin ドメインロジック) + `:app` (Wear OS アプリ)。
+- ビルドは `./gradlew` (wrapper)。モジュール構成は `:core` (純 Kotlin ドメインロジック) + `:app` (Wear OS アプリ) + `:mobile` (phone アプリ) + `:spec` (公開 surface spec)。
 - エミュレータは WSL 内で実行する (/dev/kvm + nested virtualization、画面は WSLg)。ユーザが `kvm` グループに属している必要がある。素の Ubuntu には qemu/Qt が要求するシステムライブラリが無いため apt で導入する (不足分は `scripts/setup_android.sh` が検出して案内する)。
 - 実機 (Pixel Watch) へは WSL から Wi-Fi ADB で直接サイドロードする。
 - CI: GitHub Actions (public repo)。構成は `.claude/rules/feedback-loop.md`。

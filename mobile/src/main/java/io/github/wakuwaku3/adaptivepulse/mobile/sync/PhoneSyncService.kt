@@ -9,7 +9,6 @@ import com.google.android.gms.wearable.WearableListenerService
 import io.github.wakuwaku3.adaptivepulse.core.sync.SessionRecord
 import io.github.wakuwaku3.adaptivepulse.core.sync.SettingsDocument
 import io.github.wakuwaku3.adaptivepulse.core.sync.SyncPaths
-import io.github.wakuwaku3.adaptivepulse.mobile.auth.AuthManager
 import io.github.wakuwaku3.adaptivepulse.mobile.settings.PhoneSettingsRepository
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.tasks.await
@@ -19,7 +18,7 @@ private const val TAG = "AdaptivePulse"
 /**
  * watch からの履歴・設定を受信する (phone 側の受信口)。
  * セッションは永続キューに保存してから DataItem を削除し (受領 ack)、
- * サーバーへの反映はキューから行う (失敗してもアプリ起動時に再送される)。
+ * Firestore への反映はキューから行う (失敗してもアプリ起動時に再送される)。
  */
 class PhoneSyncService : WearableListenerService() {
 
@@ -68,8 +67,7 @@ class PhoneSyncService : WearableListenerService() {
             val applied = PhoneSettingsRepository(applicationContext).replaceIfNewer(doc)
             if (applied) {
                 Log.i(TAG, "watch からの設定を適用: $doc")
-                AuthManager(applicationContext).idToken()
-                    ?.let { ApiClient.putSettings(it, doc) }
+                FirestoreSync.putSettings(doc)
             }
         }
     }

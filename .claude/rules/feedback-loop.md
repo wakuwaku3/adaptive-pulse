@@ -15,7 +15,7 @@ flame の 3 層モデル (AI ターン内 hook / CI / 監視) のうち、本 re
 - **Stop hook** (`scripts/check.sh`): 毎ターン・軽量。gitleaks (秘密検査) + ドキュメント配置検査。失敗時 exit 2 で stderr を AI に返し、同ターンで fix させる。Gradle はターン内検査には遅すぎるため呼ばない。
 - **PreToolUse hook (Bash matcher)** (`scripts/pre_push.sh`): AI が `git push` しようとした瞬間だけ `./gradlew build` (compile + unit test + lint)。失敗時 exit 2 で push を止める。push 以外の Bash は素通り。`gradlew` が無い間 (アプリ scaffold 前) はスキップ。
 - **CI** (`.github/workflows/ci.yml`): push/PR で hook と同等の検査 (gitleaks / docs 配置 / gradle build) を再実行する。手動 push (`! git push`) が hook を素通りする抜け道を塞ぐ層。
-- **deploy-server workflow** (`.github/workflows/deploy-server.yml`): server/ 配下の main push で :server を Cloud Run へデプロイする。Firebase/GCP セットアップ完了まで repo variable `ENABLE_SERVER_DEPLOY` でゲート (`docs/stock/setup-firebase.md`)。
+- **deploy-firestore-rules workflow** (`.github/workflows/deploy-firestore-rules.yml`): `firestore.rules` / `firebase.json` の main push で Firestore Rules を deploy する。Firebase セットアップ完了まで repo variable `FIREBASE_PROJECT_ID` でゲート (`docs/stock/setup-firebase.md`)。
 - **release workflow** (`.github/workflows/release.yml`): main への push を契機に、flame の release policy のアプリ向け適応で自動 release する。
   - **bump の自動判定** (flame の公開 surface 差分方式): `:spec` モジュールが公開 surface (SessionConfig フィールド / SessionEvent / Phase / manifest の権限・コンポーネント) を JSON spec として生成し、前回 release の spec asset と比較する (`scripts/semver_bump.sh`)。同名要素の型変更 = major / 追加 = minor / それ以外 (削除のみ含む) = patch。spec.json は次回判定のため release asset に添付する。
   - 初版 1.0.0 (`scripts/next_version.sh`)。アプリ実体 (app/ core/ spec/ gradle 系) に変更が無い push は release を作らない (`scripts/release_target.sh`)。

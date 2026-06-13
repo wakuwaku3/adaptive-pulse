@@ -8,7 +8,6 @@ import io.github.wakuwaku3.adaptivepulse.core.SessionConfig
 import io.github.wakuwaku3.adaptivepulse.core.sync.SessionRecord
 import io.github.wakuwaku3.adaptivepulse.core.sync.SettingsDocument
 import io.github.wakuwaku3.adaptivepulse.core.sync.SyncPaths
-import io.github.wakuwaku3.adaptivepulse.mobile.auth.AuthManager
 import io.github.wakuwaku3.adaptivepulse.mobile.settings.PhoneSettingsRepository
 import java.io.File
 import kotlinx.coroutines.tasks.await
@@ -17,7 +16,7 @@ import kotlinx.serialization.json.Json
 private const val TAG = "AdaptivePulse"
 private const val MAX_PENDING = 500
 
-/** watch から受信してサーバー未反映のセッション記録の永続キュー */
+/** watch から受信して Firestore 未反映のセッション記録の永続キュー */
 class PendingSessionStore(context: Context) {
 
     private val dir = File(context.filesDir, "pending-sessions").apply { mkdirs() }
@@ -42,18 +41,17 @@ class PendingSessionStore(context: Context) {
     }
 }
 
-/** phone を起点とした同期処理 (watch ⇄ phone ⇄ server)。docs/stock/sync.md */
+/** phone を起点とした同期処理 (watch ⇄ phone ⇄ Firestore)。docs/stock/sync.md */
 object PhoneSync {
 
     val json = Json { ignoreUnknownKeys = true }
 
-    /** 未反映キューをサーバーへ送る。返り値は残件数 */
+    /** 未反映キューを Firestore に送る。返り値は残件数 */
     suspend fun syncPendingSessions(context: Context): Int {
         val store = PendingSessionStore(context)
-        val token = AuthManager(context).idToken() ?: return store.list().size
         var remaining = 0
         store.list().forEach { record ->
-            if (ApiClient.uploadSession(token, record)) {
+            if (FirestoreSync.uploadSession(record)) {
                 store.delete(record.id)
             } else {
                 remaining++
@@ -63,19 +61,18 @@ object PhoneSync {
     }
 
     /**
-     * 設定をサーバーと突き合わせる (LWW)。
+     * 設定を Firestore と突き合わせる (LWW)。
      * ローカルが新しければ送り、サーバーが新しければ取り込んで watch にも流す。
      */
     suspend fun reconcileSettings(context: Context) {
         val repo = PhoneSettingsRepository(context)
-        val token = AuthManager(context).idToken() ?: return
         val local = repo.loadDocument()
-        val server = ApiClient.getSettings(token)
+        val server = FirestoreSync.getSettings()
 
         when {
             server == null || local.updatedAtMs > server.updatedAtMs -> {
                 if (local.updatedAtMs > 0) {
-                    ApiClient.putSettings(token, local)?.let { repo.replaceIfNewer(it) }
+                    FirestoreSync.putSettings(local)?.let { repo.replaceIfNewer(it) }
                 }
             }
             else -> {
@@ -86,14 +83,14 @@ object PhoneSync {
         }
     }
 
-    /** phone UI 起点の設定変更: ローカル保存 → watch へ → サーバーへ */
+    /** phone UI 起点の設定変更: ローカル保存 → watch へ → Firestore へ */
     suspend fun updateSettingsEverywhere(
         context: Context,
         transform: (SessionConfig) -> SessionConfig,
     ) {
         val doc = PhoneSettingsRepository(context).update(transform)
         putSettingsToWatch(context, doc)
-        AuthManager(context).idToken()?.let { ApiClient.putSettings(it, doc) }
+        FirestoreSync.putSettings(doc)
     }
 
     suspend fun putSettingsToWatch(context: Context, doc: SettingsDocument) {

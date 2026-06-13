@@ -29,7 +29,7 @@ import androidx.compose.ui.unit.dp
 import io.github.wakuwaku3.adaptivepulse.core.SessionConfig
 import io.github.wakuwaku3.adaptivepulse.mobile.auth.AuthManager
 import io.github.wakuwaku3.adaptivepulse.mobile.settings.PhoneSettingsRepository
-import io.github.wakuwaku3.adaptivepulse.mobile.sync.ApiClient
+import io.github.wakuwaku3.adaptivepulse.mobile.sync.FirestoreSync
 import io.github.wakuwaku3.adaptivepulse.mobile.sync.PendingSessionStore
 import io.github.wakuwaku3.adaptivepulse.mobile.sync.PhoneSync
 import io.github.wakuwaku3.adaptivepulse.mobile.ui.AdaptivePulseMobileTheme
@@ -113,15 +113,14 @@ class MainActivity : ComponentActivity() {
             PhoneSync.reconcileSettings(applicationContext)
             val pending = PendingSessionStore(applicationContext).list()
                 .map { HistoryItem(it, pending = true) }
-            val token = AuthManager(applicationContext).idToken()
-            val server = token?.let { ApiClient.listSessions(it) }
+            val remote = FirestoreSync.listSessions()
                 ?.map { HistoryItem(it, pending = false) }
-            history = (pending + server.orEmpty())
+            history = (pending + remote.orEmpty())
                 .distinctBy { it.record.id }
                 .sortedByDescending { it.record.startedAtMs }
             status = when {
-                server == null && pending.isEmpty() -> "Server sync not available."
-                server == null -> "Server sync not available · ${pending.size} local sessions"
+                remote == null && pending.isEmpty() -> "Sync not available."
+                remote == null -> "Sync not available · ${pending.size} local sessions"
                 pendingLeft > 0 -> "$pendingLeft sessions waiting to sync"
                 else -> null
             }

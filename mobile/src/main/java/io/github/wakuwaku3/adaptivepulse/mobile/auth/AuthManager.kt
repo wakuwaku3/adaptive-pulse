@@ -10,6 +10,7 @@ import com.google.firebase.FirebaseApp
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseUser
 import com.google.firebase.auth.GoogleAuthProvider
+import io.github.wakuwaku3.adaptivepulse.mobile.sync.FirestoreSync
 import kotlinx.coroutines.tasks.await
 
 /**
@@ -48,15 +49,14 @@ class AuthManager(private val context: Context) {
             .getCredential(activity, request).credential
         val googleIdToken = GoogleIdTokenCredential.createFrom(credential.data).idToken
 
-        FirebaseAuth.getInstance()
+        val user = FirebaseAuth.getInstance()
             .signInWithCredential(GoogleAuthProvider.getCredential(googleIdToken, null))
             .await()
             .user ?: error("サインイン結果にユーザーがいません")
+        // users/{uid} のプロバイダ列を Firestore に記録 (server 廃止後はクライアント主導)
+        FirestoreSync.ensureUser("google.com")
+        user
     }
-
-    /** サーバー API に渡す ID トークン。未サインインなら null */
-    suspend fun idToken(): String? =
-        runCatching { currentUser?.getIdToken(false)?.await()?.token }.getOrNull()
 
     fun signOut() {
         if (isConfigured) FirebaseAuth.getInstance().signOut()
