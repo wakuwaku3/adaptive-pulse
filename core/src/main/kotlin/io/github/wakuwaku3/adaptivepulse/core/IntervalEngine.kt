@@ -20,6 +20,10 @@ class IntervalEngine(private val config: SessionConfig) {
     var currentCycle: Int = 1
         private set
 
+    /** 高強度→回復まで完走したサイクル数 (履歴の cycles はこの値で記録する) */
+    var completedCycles: Int = 0
+        private set
+
     /** 疲労ブレーキで短縮されうる、このセッションの最終サイクル番号 */
     var finalCycle: Int = config.targetCycles
         private set
@@ -32,7 +36,7 @@ class IntervalEngine(private val config: SessionConfig) {
     val highDurations: List<Duration> get() = measuredHighDurations
     private val measuredHighDurations = mutableListOf<Duration>()
 
-    /** 疲労ブレーキが発動したか (履歴用) */
+    /** 疲労ブレーキが発動したか (タイムアウトによる強制終了も含める。履歴用) */
     var fatigueBrakeFired: Boolean = false
         private set
 
@@ -59,7 +63,11 @@ class IntervalEngine(private val config: SessionConfig) {
         }
     }
 
-    /** 心拍サンプルが途絶えてもタイムアウト遷移が動くよう、定期 tick からも呼べる */
+    /**
+     * 心拍サンプルが途絶えてもタイムアウト遷移が動くよう、定期 tick からも呼べる。
+     * 閾値に到達しないままフェーズ上限時間を超えた場合は「想定通り運動できていない」
+     * 疲労ブレーキ扱いでセッション自体を終了する (次サイクルには進めない)。
+     */
     fun onTimePassed(elapsed: Duration): SessionEvent? {
         val limit = when (phase) {
             Phase.HIGH_INTENSITY -> config.highPhaseTimeout
@@ -68,16 +76,10 @@ class IntervalEngine(private val config: SessionConfig) {
         }
         if (elapsed - phaseStartedAt <= limit) return null
 
-        return when (phase) {
-            Phase.HIGH_INTENSITY -> {
-                // 上限閾値に到達していないので所要時間は測れない。
-                // このサイクルは基準設定にも疲労判定にも使わない
-                enterRecovery(elapsed)
-                SessionEvent.PhaseTimeout
-            }
-            Phase.RECOVERY -> completeCycle(elapsed, forced = true)
-            Phase.FINISHED -> null
-        }
+        fatigueBrakeFired = true
+        finalCycle = currentCycle
+        phase = Phase.FINISHED
+        return SessionEvent.SessionFinished
     }
 
     private fun onHighIntensitySample(bpm: Int, elapsed: Duration): SessionEvent? {
@@ -115,10 +117,11 @@ class IntervalEngine(private val config: SessionConfig) {
 
     private fun onRecoverySample(bpm: Int, elapsed: Duration): SessionEvent? {
         if (bpm >= config.lowerBpm) return null
-        return completeCycle(elapsed, forced = false)
+        return completeCycle(elapsed)
     }
 
-    private fun completeCycle(elapsed: Duration, forced: Boolean): SessionEvent {
+    private fun completeCycle(elapsed: Duration): SessionEvent {
+        completedCycles++
         if (currentCycle >= finalCycle) {
             phase = Phase.FINISHED
             return SessionEvent.SessionFinished
@@ -128,7 +131,7 @@ class IntervalEngine(private val config: SessionConfig) {
         phaseStartedAt = elapsed
         // 回復で下限を下回ってから始まるので、次の上向き超過を待って計測する
         measureStartedAt = null
-        return if (forced) SessionEvent.PhaseTimeout else SessionEvent.EnterHighIntensity
+        return SessionEvent.EnterHighIntensity
     }
 
     private fun enterRecovery(elapsed: Duration) {

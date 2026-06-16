@@ -14,7 +14,7 @@ data class SessionConfig(
     val targetCycles: Int = 7,
     val fatigueRatio: Double = 0.5,
     val minBaseline: Duration = 45.seconds,
-    val highPhaseTimeout: Duration = 4.minutes,
+    val highPhaseTimeout: Duration = 3.minutes,
     val recoveryTimeout: Duration = 3.minutes,
 ) {
     init {

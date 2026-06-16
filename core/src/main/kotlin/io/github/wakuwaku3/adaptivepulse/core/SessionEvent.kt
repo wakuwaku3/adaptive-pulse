@@ -11,9 +11,6 @@ sealed interface SessionEvent {
     /** 回復→高強度 (下限閾値下回り、サイクル完了) */
     data object EnterHighIntensity : SessionEvent
 
-    /** 閾値未到達のままフェーズ上限時間を超えたため強制遷移 (遷移先は phase で判別) */
-    data object PhaseTimeout : SessionEvent
-
     /** 疲労検知: 回復へ遷移しつつ現サイクルを最終サイクル化 */
     data object FatigueBrake : SessionEvent
 

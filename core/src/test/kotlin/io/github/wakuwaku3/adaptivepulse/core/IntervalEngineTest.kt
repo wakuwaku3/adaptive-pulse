@@ -16,7 +16,7 @@ class IntervalEngineTest {
         targetCycles = 3,
         fatigueRatio = 0.5,
         minBaseline = 45.seconds,
-        highPhaseTimeout = 4.minutes,
+        highPhaseTimeout = 3.minutes,
         recoveryTimeout = 3.minutes,
     )
 
@@ -150,42 +150,26 @@ class IntervalEngineTest {
     }
 
     @Test
-    fun `高強度タイムアウト - 上限未到達のまま上限時間を超えたら強制的に回復へ`() {
+    fun `高強度タイムアウト - 上限未到達のまま上限時間を超えたら疲労ブレーキ扱いで終了する`() {
         val engine = IntervalEngine(config)
         val events = run(
             engine,
-            hold(0, 245, 150), // 140-155 の間に張り付いたまま 4 分超過
+            hold(0, 185, 150), // 140-155 の間に張り付いたまま 3 分超過
         )
-        assertEquals(listOf(241 to SessionEvent.PhaseTimeout), events)
-        assertEquals(Phase.RECOVERY, engine.phase)
+        assertEquals(listOf(181 to SessionEvent.SessionFinished), events)
+        assertEquals(Phase.FINISHED, engine.phase)
+        kotlin.test.assertTrue(engine.fatigueBrakeFired)
+        assertEquals(0, engine.completedCycles)
         // タイムアウトしたサイクルは所要時間を測れないので基準にしない
         assertNull(engine.baseline)
     }
 
     @Test
-    fun `回復タイムアウト - 下限まで下がらないまま上限時間を超えたら強制的に高強度へ`() {
+    fun `回復タイムアウト - 下限まで下がらないまま上限時間を超えたら疲労ブレーキ扱いで終了する`() {
         val engine = IntervalEngine(config)
         val events = run(
             engine,
             listOf(0 to 141, 60 to 156) + hold(61, 245, 148), // 回復で 148 に張り付き 3 分超過
-        )
-        assertEquals(
-            listOf(
-                60 to SessionEvent.EnterRecovery,
-                241 to SessionEvent.PhaseTimeout,
-            ),
-            events,
-        )
-        assertEquals(Phase.HIGH_INTENSITY, engine.phase)
-        assertEquals(2, engine.currentCycle) // 強制遷移でもサイクルは完了扱い
-    }
-
-    @Test
-    fun `回復タイムアウト - 最終サイクルなら強制完了でセッション終了する`() {
-        val engine = IntervalEngine(config.copy(targetCycles = 1))
-        val events = run(
-            engine,
-            listOf(0 to 141, 60 to 156) + hold(61, 245, 148),
         )
         assertEquals(
             listOf(
@@ -195,14 +179,18 @@ class IntervalEngineTest {
             events,
         )
         assertEquals(Phase.FINISHED, engine.phase)
+        kotlin.test.assertTrue(engine.fatigueBrakeFired)
+        // 回復が途中で打ち切られたのでサイクル1 は完走扱いにしない
+        assertEquals(0, engine.completedCycles)
     }
 
     @Test
-    fun `心拍サンプルが途絶えても onTimePassed でタイムアウト遷移が動く`() {
+    fun `心拍サンプルが途絶えても onTimePassed でタイムアウト終了が動く`() {
         val engine = IntervalEngine(config)
-        assertNull(engine.onTimePassed(240.seconds))
-        assertEquals(SessionEvent.PhaseTimeout, engine.onTimePassed(241.seconds))
-        assertEquals(Phase.RECOVERY, engine.phase)
+        assertNull(engine.onTimePassed(180.seconds))
+        assertEquals(SessionEvent.SessionFinished, engine.onTimePassed(181.seconds))
+        assertEquals(Phase.FINISHED, engine.phase)
+        kotlin.test.assertTrue(engine.fatigueBrakeFired)
     }
 
     @Test
@@ -249,6 +237,33 @@ class IntervalEngineTest {
         )
         assertEquals(listOf(60.seconds, 25.seconds), engine.highDurations)
         kotlin.test.assertTrue(engine.fatigueBrakeFired)
+    }
+
+    @Test
+    fun `completedCycles - 高強度→回復まで完走したサイクル数を返し、未完了サイクルは含めない`() {
+        val engine = IntervalEngine(config)
+        // 初期は 0
+        assertEquals(0, engine.completedCycles)
+        run(engine, listOf(0 to 141, 60 to 156)) // サイクル1 高強度のみ
+        assertEquals(0, engine.completedCycles)
+        run(engine, listOf(120 to 139)) // サイクル1 完走
+        assertEquals(1, engine.completedCycles)
+        run(engine, listOf(130 to 141, 190 to 156, 250 to 139)) // サイクル2 完走
+        assertEquals(2, engine.completedCycles)
+    }
+
+    @Test
+    fun `completedCycles - 疲労ブレーキ発動時は最終サイクルの回復完了までを完走に数える`() {
+        val engine = IntervalEngine(config.copy(targetCycles = 7))
+        run(
+            engine,
+            listOf(
+                0 to 141, 60 to 156, 120 to 139, // サイクル1
+                130 to 141, 155 to 156,          // サイクル2 高強度 25 秒 → 疲労ブレーキ
+                215 to 139,                       // サイクル2 (最終化) 回復完了
+            ),
+        )
+        assertEquals(2, engine.completedCycles)
     }
 
     @Test

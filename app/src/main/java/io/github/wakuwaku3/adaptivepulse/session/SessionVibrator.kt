@@ -18,7 +18,6 @@ class SessionVibrator(private val vibrator: Vibrator) {
         val timings = when (event) {
             SessionEvent.EnterRecovery -> longArrayOf(0, 800) // 長 1: 減速しろ
             SessionEvent.EnterHighIntensity -> longArrayOf(0, 150, 100, 150, 100, 150) // 短 3: 加速しろ
-            SessionEvent.PhaseTimeout -> longArrayOf(0, 400, 200, 400) // 中 2: 強制遷移
             SessionEvent.FatigueBrake -> longArrayOf(0, 150, 100, 150, 100, 800) // 短短長: 疲労・これが最終
             SessionEvent.SessionFinished -> longArrayOf(0, 800, 300, 800, 300, 800) // 長 3: 終了
         }

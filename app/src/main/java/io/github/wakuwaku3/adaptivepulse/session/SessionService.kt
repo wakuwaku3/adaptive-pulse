@@ -24,9 +24,11 @@ import io.github.wakuwaku3.adaptivepulse.sync.WearSync
 import java.util.UUID
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 private const val TAG = "AdaptivePulse"
 private const val CHANNEL_ID = "session"
@@ -74,25 +76,32 @@ class SessionService : LifecycleService() {
         val vibrator = SessionVibrator.from(applicationContext)
         val settings = SettingsRepository(applicationContext)
         sessionJob = lifecycleScope.launch {
+            val config = settings.load()
+            Log.i(TAG, "セッション開始: $config")
+            val startedAtMs = System.currentTimeMillis()
+            val runner = SessionRunner(
+                config = config,
+                sourceFactory = { phaseProvider ->
+                    AutoExerciseSource(applicationContext, phaseProvider)
+                },
+                onSessionEvent = vibrator::vibrate,
+                onState = { _state.value = it },
+            )
             try {
-                val config = settings.load()
-                Log.i(TAG, "セッション開始: $config")
-                val startedAtMs = System.currentTimeMillis()
-                val result = SessionRunner(
-                    config = config,
-                    sourceFactory = { phaseProvider ->
-                        AutoExerciseSource(applicationContext, phaseProvider)
-                    },
-                    onSessionEvent = vibrator::vibrate,
-                    onState = { _state.value = it },
-                ).run()
-                // 完走: 結果 (Finished) は表示し続け、サービスだけ畳む
+                val result = runner.run()
+                // 完走 (タイムアウトでの強制終了も含む): 結果 (Finished) は表示し続けサービスだけ畳む
                 recordSession(startedAtMs, result)
             } catch (e: CancellationException) {
-                throw e // 手動停止 (stopSession) の正常経路
+                // 手動停止: 1 サイクル以上完走していれば部分履歴を残す
+                val snap = runner.snapshot()
+                if (snap.cycles >= 1) {
+                    withContext(NonCancellable) { recordSession(startedAtMs, snap) }
+                }
+                throw e
             } catch (e: Exception) {
-                // センサー経路の失敗でアプリごと落とさない。Idle に戻して再開可能にする
+                // センサー経路の失敗でアプリごと落とさない。途中までの履歴は残し、Idle で再開可能にする
                 Log.e(TAG, "セッションが異常終了", e)
+                withContext(NonCancellable) { recordSession(startedAtMs, runner.snapshot()) }
                 _state.value = SessionUiState.Idle
             } finally {
                 sessionJob = null
