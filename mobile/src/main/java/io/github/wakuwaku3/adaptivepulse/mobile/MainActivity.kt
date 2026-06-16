@@ -40,6 +40,7 @@ import io.github.wakuwaku3.adaptivepulse.mobile.ui.HistoryItem
 import io.github.wakuwaku3.adaptivepulse.mobile.ui.HistoryScreen
 import io.github.wakuwaku3.adaptivepulse.mobile.ui.MobileColors
 import io.github.wakuwaku3.adaptivepulse.mobile.ui.SettingsScreen
+import io.github.wakuwaku3.adaptivepulse.mobile.ui.appVersionName
 import kotlinx.coroutines.launch
 
 private enum class Screen { History, Settings }
@@ -149,7 +150,15 @@ class MainActivity : ComponentActivity() {
             topBar = {
                 TopAppBar(
                     title = {
-                        Text(if (screen == Screen.History) "AdaptivePulse" else "Settings")
+                        Column {
+                            Text(if (screen == Screen.History) "AdaptivePulse" else "Settings")
+                            // sideload 後にどの release が入っているか TopAppBar で常時確認できる
+                            Text(
+                                text = "v${appVersionName()}",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
                     },
                     navigationIcon = {
                         if (screen == Screen.Settings) {

@@ -19,6 +19,7 @@ import androidx.wear.compose.material.MaterialTheme
 import androidx.wear.compose.material.Text
 import io.github.wakuwaku3.adaptivepulse.core.Phase
 import io.github.wakuwaku3.adaptivepulse.ui.IconActionButton
+import io.github.wakuwaku3.adaptivepulse.ui.appVersionName
 import io.github.wakuwaku3.adaptivepulse.ui.theme.APColors
 import kotlin.time.Duration
 
@@ -57,6 +58,12 @@ private fun IdleScreen(onStart: () -> Unit, onOpenSettings: () -> Unit) {
             text = "PULSE",
             color = APColors.Text,
             style = MaterialTheme.typography.title1,
+        )
+        // sideload 後にどの release が入っているかすぐ確認できるよう、Idle 画面に versionName を出す
+        Text(
+            text = "v${appVersionName()}",
+            color = APColors.TextDim,
+            style = MaterialTheme.typography.caption2,
         )
         // 操作はテキストラベルではなく記号アイコンの小円ボタンで表現 (ユーザ FB 2026-06-11)
         Row(
