@@ -23,5 +23,5 @@
 - Android SDK は `scripts/setup_android.sh` で `~/Android/Sdk` に導入する (cmdline-tools / platform-tools / platforms / build-tools / emulator / Wear OS system image / AVD `adaptivepulse_wear`)。`.envrc` が `ANDROID_HOME` と PATH を通す。
 - ビルドは `./gradlew` (wrapper)。モジュール構成は `:core` (純 Kotlin ドメインロジック) + `:app` (Wear OS アプリ) + `:mobile` (phone アプリ) + `:spec` (公開 surface spec)。
 - エミュレータは WSL 内で実行する (/dev/kvm + nested virtualization、画面は WSLg)。ユーザが `kvm` グループに属している必要がある。素の Ubuntu には qemu/Qt が要求するシステムライブラリが無いため apt で導入する (不足分は `scripts/setup_android.sh` が検出して案内する)。
-- 実機 (Pixel Watch) へは WSL から Wi-Fi ADB で直接サイドロードする。
+- 実機 (Pixel Watch) へは WSL から Wi-Fi ADB で直接サイドロードする (`scripts/sideload.sh watch`。ウォッチ側ワンタイム設定は `docs/stock/setup-watch.md`)。
 - CI: GitHub Actions (public repo)。構成は `.claude/rules/feedback-loop.md`。
