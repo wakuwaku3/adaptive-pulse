@@ -19,6 +19,7 @@ import androidx.wear.compose.material.MaterialTheme
 import androidx.wear.compose.material.Text
 import io.github.wakuwaku3.adaptivepulse.core.Phase
 import io.github.wakuwaku3.adaptivepulse.ui.IconActionButton
+import io.github.wakuwaku3.adaptivepulse.ui.KeepScreenOn
 import io.github.wakuwaku3.adaptivepulse.ui.appVersionName
 import io.github.wakuwaku3.adaptivepulse.ui.theme.APColors
 import kotlin.time.Duration
@@ -78,6 +79,10 @@ private fun IdleScreen(onStart: () -> Unit, onOpenSettings: () -> Unit) {
 
 @Composable
 private fun RunningScreen(state: SessionUiState.Running, onStop: () -> Unit) {
+    // 画面オフで Health Services のサンプリングが落ちる挙動を避けるため、
+    // セッション中は強制的に画面 ON を維持する (実機 FB)
+    KeepScreenOn()
+
     val (label, color) = when {
         // 下限閾値を超えるまでは計測対象外のウォームアップ区間 (画面が嘘をつかない)
         state.isWarmingUp -> "WARM-UP" to APColors.WarmUp
@@ -85,10 +90,11 @@ private fun RunningScreen(state: SessionUiState.Running, onStop: () -> Unit) {
         state.phase == Phase.RECOVERY -> "RECOVER" to APColors.Recover
         else -> "DONE" to APColors.Done
     }
-    // リングは完了サイクル数を示す。回復まで到達したサイクルは半分進んだ扱い
+    // ring 進捗: currentCycle = 完走 (上限到達による回復遷移) 済みのサイクル数。
+    // 回復中はその cycle の前半 (高強度) が終わって後半に居ると見なし 0.5 引く
     val ringProgress =
-        (state.currentCycle - 1 + if (state.phase == Phase.RECOVERY) 0.5f else 0f) /
-            state.finalCycle
+        (state.currentCycle - if (state.phase == Phase.RECOVERY) 0.5f else 0f) /
+            state.finalCycle.toFloat()
 
     CycleRing(progress = ringProgress, color = color)
     Column(
@@ -110,14 +116,24 @@ private fun RunningScreen(state: SessionUiState.Running, onStop: () -> Unit) {
             )
         }
         Text(
-            text = buildString {
-                append("CYCLE ${state.currentCycle}/${state.finalCycle} · ${format(state.elapsed)}")
-                state.calories?.let { append(" · ${it.toInt()} kcal") }
-            },
+            text = "CYCLE ${state.currentCycle}/${state.finalCycle}",
             color = APColors.TextDim,
             style = MaterialTheme.typography.caption1,
         )
-        Box(modifier = Modifier.padding(top = 4.dp)) {
+        // T = total / C = current cycle / P = current phase の経過時間
+        Text(
+            text = "T ${format(state.elapsed)} · C ${format(state.cycleElapsed)} · P ${format(state.phaseElapsed)}",
+            color = APColors.TextDim,
+            style = MaterialTheme.typography.caption2,
+        )
+        state.calories?.let {
+            Text(
+                text = "${it.toInt()} kcal",
+                color = APColors.TextDim,
+                style = MaterialTheme.typography.caption2,
+            )
+        }
+        Box(modifier = Modifier.padding(top = 2.dp)) {
             IconActionButton(
                 glyph = "■",
                 tint = APColors.Text,

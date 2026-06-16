@@ -75,7 +75,7 @@ class SessionRunner(
     }
 
     fun snapshot(): SessionResult = SessionResult(
-        cycles = engine.completedCycles,
+        cycles = engine.currentCycle,
         elapsed = mark.elapsedNow(),
         calories = calories,
         zoneRatio = metrics.zoneRatio,
@@ -92,7 +92,7 @@ class SessionRunner(
         onState(
             if (engine.phase == Phase.FINISHED) {
                 SessionUiState.Finished(
-                    cycles = engine.completedCycles,
+                    cycles = engine.currentCycle,
                     elapsed = elapsed,
                     calories = calories,
                     zoneRatio = metrics.zoneRatio,
@@ -105,6 +105,8 @@ class SessionRunner(
                     currentCycle = engine.currentCycle,
                     finalCycle = engine.finalCycle,
                     elapsed = elapsed,
+                    cycleElapsed = elapsed - engine.cycleStartedAt,
+                    phaseElapsed = elapsed - engine.phaseStartedAt,
                     calories = calories,
                 )
             },

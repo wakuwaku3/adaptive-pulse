@@ -16,12 +16,12 @@ class IntervalEngine(private val config: SessionConfig) {
     var phase: Phase = Phase.HIGH_INTENSITY
         private set
 
-    /** 1 始まり。高強度→回復の完了で 1 サイクル */
-    var currentCycle: Int = 1
-        private set
-
-    /** 高強度→回復まで完走したサイクル数 (履歴の cycles はこの値で記録する) */
-    var completedCycles: Int = 0
+    /**
+     * 完了した高強度フェーズの数 = 上限到達によって回復に切り替わった回数。
+     * 0 で開始し「上限到達 → 回復へ」のタイミングでインクリメントする。
+     * 完了した「サイクル」のカウントとして UI と履歴に出す。
+     */
+    var currentCycle: Int = 0
         private set
 
     /** 疲労ブレーキで短縮されうる、このセッションの最終サイクル番号 */
@@ -40,7 +40,13 @@ class IntervalEngine(private val config: SessionConfig) {
     var fatigueBrakeFired: Boolean = false
         private set
 
-    private var phaseStartedAt: Duration = Duration.ZERO
+    /** 現フェーズが始まった時刻 (セッション開始からの経過)。UI のフェーズ経過時間に使う */
+    var phaseStartedAt: Duration = Duration.ZERO
+        private set
+
+    /** 現サイクルの高強度フェーズが始まった時刻 (= サイクル開始時刻)。UI のサイクル経過時間に使う */
+    var cycleStartedAt: Duration = Duration.ZERO
+        private set
 
     // 高強度所要時間は「下限閾値を上向きに超えてから上限到達まで」で測る。
     // セッション開始直後のウォームアップ区間を計測から外し、全サイクルを公平に比較するため。
@@ -48,7 +54,7 @@ class IntervalEngine(private val config: SessionConfig) {
 
     /** セッション開始直後、まだ下限閾値を上向きに超えていないウォームアップ区間か */
     val isWarmingUp: Boolean
-        get() = phase == Phase.HIGH_INTENSITY && currentCycle == 1 && measureStartedAt == null
+        get() = phase == Phase.HIGH_INTENSITY && currentCycle == 0 && measureStartedAt == null
 
     /** 心拍サンプルを処理する。遷移が起きたときだけイベントを 1 つ返す */
     fun onHeartRate(bpm: Int, elapsed: Duration): SessionEvent? {
@@ -88,6 +94,8 @@ class IntervalEngine(private val config: SessionConfig) {
         }
         if (bpm <= config.upperBpm) return null
 
+        // 上限到達 = この高強度フェーズ完了 → cycle カウントをここで進める
+        currentCycle++
         // 1 サンプルで下限未満→上限超えに飛んだ場合は所要時間 0 として扱う
         val highDuration = elapsed - (measureStartedAt ?: elapsed)
         val event = judgeFatigue(highDuration)
@@ -121,14 +129,13 @@ class IntervalEngine(private val config: SessionConfig) {
     }
 
     private fun completeCycle(elapsed: Duration): SessionEvent {
-        completedCycles++
         if (currentCycle >= finalCycle) {
             phase = Phase.FINISHED
             return SessionEvent.SessionFinished
         }
-        currentCycle++
         phase = Phase.HIGH_INTENSITY
         phaseStartedAt = elapsed
+        cycleStartedAt = elapsed
         // 回復で下限を下回ってから始まるので、次の上向き超過を待って計測する
         measureStartedAt = null
         return SessionEvent.EnterHighIntensity

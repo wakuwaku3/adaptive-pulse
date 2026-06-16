@@ -159,7 +159,8 @@ class IntervalEngineTest {
         assertEquals(listOf(181 to SessionEvent.SessionFinished), events)
         assertEquals(Phase.FINISHED, engine.phase)
         kotlin.test.assertTrue(engine.fatigueBrakeFired)
-        assertEquals(0, engine.completedCycles)
+        // 上限到達せず終了 = サイクルカウント加算なし
+        assertEquals(0, engine.currentCycle)
         // タイムアウトしたサイクルは所要時間を測れないので基準にしない
         assertNull(engine.baseline)
     }
@@ -180,8 +181,8 @@ class IntervalEngineTest {
         )
         assertEquals(Phase.FINISHED, engine.phase)
         kotlin.test.assertTrue(engine.fatigueBrakeFired)
-        // 回復が途中で打ち切られたのでサイクル1 は完走扱いにしない
-        assertEquals(0, engine.completedCycles)
+        // 高強度→回復までは完了したのでカウントは 1 (回復タイムアウトでもこの 1 は残す)
+        assertEquals(1, engine.currentCycle)
     }
 
     @Test
@@ -240,30 +241,32 @@ class IntervalEngineTest {
     }
 
     @Test
-    fun `completedCycles - 高強度→回復まで完走したサイクル数を返し、未完了サイクルは含めない`() {
+    fun `currentCycle - 0 開始で、上限到達による回復遷移のタイミングで +1 する`() {
         val engine = IntervalEngine(config)
-        // 初期は 0
-        assertEquals(0, engine.completedCycles)
-        run(engine, listOf(0 to 141, 60 to 156)) // サイクル1 高強度のみ
-        assertEquals(0, engine.completedCycles)
-        run(engine, listOf(120 to 139)) // サイクル1 完走
-        assertEquals(1, engine.completedCycles)
-        run(engine, listOf(130 to 141, 190 to 156, 250 to 139)) // サイクル2 完走
-        assertEquals(2, engine.completedCycles)
+        assertEquals(0, engine.currentCycle)
+        run(engine, listOf(0 to 141)) // ウォームアップ
+        assertEquals(0, engine.currentCycle)
+        run(engine, listOf(60 to 156)) // 高強度1 → 回復遷移
+        assertEquals(1, engine.currentCycle)
+        run(engine, listOf(120 to 139)) // 回復完了 (次の高強度へ) → カウントは増やさない
+        assertEquals(1, engine.currentCycle)
+        run(engine, listOf(130 to 141, 190 to 156)) // 高強度2 → 回復遷移
+        assertEquals(2, engine.currentCycle)
     }
 
     @Test
-    fun `completedCycles - 疲労ブレーキ発動時は最終サイクルの回復完了までを完走に数える`() {
+    fun `currentCycle - 疲労ブレーキ発動時もカウントは進める (最終サイクルとして扱う)`() {
         val engine = IntervalEngine(config.copy(targetCycles = 7))
         run(
             engine,
             listOf(
                 0 to 141, 60 to 156, 120 to 139, // サイクル1
-                130 to 141, 155 to 156,          // サイクル2 高強度 25 秒 → 疲労ブレーキ
+                130 to 141, 155 to 156,          // サイクル2 高強度 25 秒 → 疲労ブレーキ (currentCycle=2)
                 215 to 139,                       // サイクル2 (最終化) 回復完了
             ),
         )
-        assertEquals(2, engine.completedCycles)
+        assertEquals(2, engine.currentCycle)
+        assertEquals(2, engine.finalCycle)
     }
 
     @Test
