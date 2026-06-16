@@ -56,8 +56,25 @@ else
   elif [ "${#REAL[@]}" -eq 0 ]; then
     SERIAL="${DEVICES[0]}"
   else
-    echo "実機が複数あり選べません: ${REAL[*]}。ANDROID_SERIAL=<serial> を export して再実行してください" >&2
-    exit 1
+    # phone と watch が同時接続のときは ro.build.characteristics で form factor を判別する
+    # (Wear OS は "watch" を含む。それ以外は phone とみなす)
+    MATCH=()
+    for d in "${REAL[@]}"; do
+      chars="$(adb -s "$d" shell getprop ro.build.characteristics 2>/dev/null | tr -d '\r')"
+      kind="phone"
+      case "$chars" in *watch*) kind="watch" ;; esac
+      if [ "$kind" = "$FORM" ]; then MATCH+=("$d"); fi
+    done
+    if [ "${#MATCH[@]}" -eq 1 ]; then
+      SERIAL="${MATCH[0]}"
+      echo "==> $FORM と判定: $SERIAL (他: ${REAL[*]/$SERIAL})"
+    elif [ "${#MATCH[@]}" -eq 0 ]; then
+      echo "実機の中に $FORM が見つかりません (接続: ${REAL[*]})" >&2
+      exit 1
+    else
+      echo "$FORM が複数あり選べません: ${MATCH[*]}。ANDROID_SERIAL=<serial> を export して再実行してください" >&2
+      exit 1
+    fi
   fi
 fi
 echo "==> install 先: $SERIAL ($FORM)"
