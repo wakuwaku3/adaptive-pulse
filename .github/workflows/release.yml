@@ -1,15 +1,18 @@
-# main への push を契機に自動 release する (flame の release policy のアプリ向け適応。
-# .claude/rules/feedback-loop.md)。
-# semver bump は「公開 surface spec」(:spec モジュールが生成) を前回 release の
-# spec asset と比較して自動判定する (scripts/semver_bump.sh)。commit message には
-# 依存しない。アプリ実体に変更が無い push では release を作らない。
+# main への push を契機に watch と phone を独立に自動 release する。
+# それぞれ form 別 tag (watch-v* / phone-v*) を持ち、該当 module が前回
+# form 別 tag 以降に変わったときだけ新 release を作る。
+# 変更が watch だけなら watch だけが、phone だけなら phone だけが新版になる。
+# 旧 v* tag は legacy。新しい採番は各 form の form 別 tag 列から導出する。
+# semver bump: watch は :spec モジュールの公開 surface spec を前回 spec asset と
+# 比較して判定 (scripts/semver_bump.sh)。phone は public surface spec を導入して
+# おらず patch 固定。
 # 署名は Secrets (ADAPTIVE_PULSE_*)。upload key なので Play アプリ署名でリセット可能。
 name: release
 
 on:
   push:
     branches: [main]
-  # release 経路の挙動を tag/release を作らずに検証するドライラン入口 (flame 準拠)
+  # release 経路を tag/release を作らずに検証するドライラン入口
   workflow_dispatch:
     inputs:
       dry_run:
@@ -21,22 +24,21 @@ on:
 permissions:
   contents: write # tag push と gh release create に必要
 
-# 連続 push で採番が競合しないよう release は直列化する
-concurrency:
-  group: release
-  cancel-in-progress: false
-
 jobs:
-  release:
+  release-watch:
+    name: release watch
     runs-on: ubuntu-latest
+    concurrency:
+      group: release-watch
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # tag と全履歴が採番・notes 生成に必要
+          fetch-depth: 0
 
-      - name: release 対象か判定
+      - name: release 対象か判定 (watch)
         id: target
-        run: bash scripts/release_target.sh | tee -a "$GITHUB_OUTPUT"
+        run: bash scripts/release_target.sh watch | tee -a "$GITHUB_OUTPUT"
 
       - uses: actions/setup-java@v4
         if: steps.target.outputs.skip != 'true'
@@ -80,24 +82,13 @@ jobs:
         env:
           KEYSTORE_B64: ${{ secrets.ADAPTIVE_PULSE_KEYSTORE_B64 }}
 
-      # google-services.json は repo では gitignored (.claude/rules/secret.md)。
-      # google-services プラグインが有効でないと FirebaseApp が auto-init されず
-      # phone アプリの Auth / Firestore SDK が「未設定」状態に倒れるため、
-      # base64 secret から復元してから build する。
-      - name: google-services.json を復元
-        if: steps.target.outputs.skip != 'true' && env.GS_B64 != ''
-        run: echo "$GS_B64" | base64 -d > mobile/google-services.json
-        env:
-          GS_B64: ${{ secrets.MOBILE_GOOGLE_SERVICES_JSON }}
-
-      - name: 署名済み AAB / APK をビルド (watch + phone)
+      - name: 署名済み AAB / APK をビルド
         if: steps.target.outputs.skip != 'true'
         # versionCode は semver から決定的に導出する (MAJOR*10000 + MINOR*100 + PATCH)
         run: |
           IFS=. read -r maj min pat <<<"$ADAPTIVE_PULSE_VERSION_NAME"
           export ADAPTIVE_PULSE_VERSION_CODE=$((maj * 10000 + min * 100 + pat))
-          ./gradlew :app:bundleRelease :app:assembleRelease \
-            :mobile:bundleRelease :mobile:assembleRelease
+          ./gradlew :app:bundleRelease :app:assembleRelease
         env:
           ADAPTIVE_PULSE_VERSION_NAME: ${{ steps.ver.outputs.version }}
           ADAPTIVE_PULSE_KEYSTORE_PATH: /tmp/upload.jks
@@ -110,21 +101,18 @@ jobs:
         run: bash scripts/release_notes.sh "${{ steps.target.outputs.prior_tag }}" | tee /tmp/notes.md
 
       - name: Release を作成 (tag + notes + assets)
-        # spec.json は次回 bump 判定の入力になるため必ず添付する (flame 準拠)
+        # spec.json は次回 bump 判定の入力になるため必ず添付する
         if: >-
           steps.target.outputs.skip != 'true' &&
           (github.event_name != 'workflow_dispatch' || inputs.dry_run != true)
         run: |
           cp app/build/outputs/bundle/release/app-release.aab "adaptive-pulse-watch-v${VERSION}.aab"
           cp app/build/outputs/apk/release/app-release.apk "adaptive-pulse-watch-v${VERSION}.apk"
-          cp mobile/build/outputs/bundle/release/mobile-release.aab "adaptive-pulse-phone-v${VERSION}.aab"
-          cp mobile/build/outputs/apk/release/mobile-release.apk "adaptive-pulse-phone-v${VERSION}.apk"
-          gh release create "v${VERSION}" \
-            --title "v${VERSION}" \
+          gh release create "watch-v${VERSION}" \
+            --title "watch v${VERSION}" \
             --notes-file /tmp/notes.md \
             --target "$GITHUB_SHA" \
             "adaptive-pulse-watch-v${VERSION}.aab" "adaptive-pulse-watch-v${VERSION}.apk" \
-            "adaptive-pulse-phone-v${VERSION}.aab" "adaptive-pulse-phone-v${VERSION}.apk" \
             "spec/build/spec.json"
         env:
           GH_TOKEN: ${{ github.token }}
@@ -132,4 +120,89 @@ jobs:
 
       - name: skip 理由を記録
         if: steps.target.outputs.skip == 'true'
-        run: echo "アプリ実体 (app/ core/ spec/ gradle 系) に変更が無いため release を skip しました"
+        run: echo "watch 側の module (app/ core/ spec/ gradle 系) に変更が無いため watch release を skip しました"
+
+  release-phone:
+    name: release phone
+    runs-on: ubuntu-latest
+    concurrency:
+      group: release-phone
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: release 対象か判定 (phone)
+        id: target
+        run: bash scripts/release_target.sh phone | tee -a "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-java@v4
+        if: steps.target.outputs.skip != 'true'
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: gradle/actions/setup-gradle@v4
+        if: steps.target.outputs.skip != 'true'
+
+      - name: 次バージョンを決定 (phone は spec 未導入なので bump=patch 固定)
+        id: ver
+        if: steps.target.outputs.skip != 'true'
+        run: |
+          version="$(bash scripts/next_version.sh "$PRIOR_TAG" patch)"
+          echo "version=$version" | tee -a "$GITHUB_OUTPUT"
+        env:
+          PRIOR_TAG: ${{ steps.target.outputs.prior_tag }}
+
+      - name: keystore を復元
+        if: steps.target.outputs.skip != 'true'
+        run: echo "$KEYSTORE_B64" | base64 -d > /tmp/upload.jks
+        env:
+          KEYSTORE_B64: ${{ secrets.ADAPTIVE_PULSE_KEYSTORE_B64 }}
+
+      # google-services.json は repo では gitignored (.claude/rules/secret.md)。
+      # google-services プラグインが有効でないと FirebaseApp が auto-init されず
+      # phone アプリの Auth / Firestore SDK が「未設定」状態に倒れるため、
+      # base64 secret から復元してから build する。
+      - name: google-services.json を復元
+        if: steps.target.outputs.skip != 'true' && env.GS_B64 != ''
+        run: echo "$GS_B64" | base64 -d > mobile/google-services.json
+        env:
+          GS_B64: ${{ secrets.MOBILE_GOOGLE_SERVICES_JSON }}
+
+      - name: 署名済み AAB / APK をビルド
+        if: steps.target.outputs.skip != 'true'
+        run: |
+          IFS=. read -r maj min pat <<<"$ADAPTIVE_PULSE_VERSION_NAME"
+          export ADAPTIVE_PULSE_VERSION_CODE=$((maj * 10000 + min * 100 + pat))
+          ./gradlew :mobile:bundleRelease :mobile:assembleRelease
+        env:
+          ADAPTIVE_PULSE_VERSION_NAME: ${{ steps.ver.outputs.version }}
+          ADAPTIVE_PULSE_KEYSTORE_PATH: /tmp/upload.jks
+          ADAPTIVE_PULSE_KEYSTORE_PASSWORD: ${{ secrets.ADAPTIVE_PULSE_KEYSTORE_PASSWORD }}
+          ADAPTIVE_PULSE_KEY_ALIAS: ${{ secrets.ADAPTIVE_PULSE_KEY_ALIAS }}
+          ADAPTIVE_PULSE_KEY_PASSWORD: ${{ secrets.ADAPTIVE_PULSE_KEY_PASSWORD }}
+
+      - name: Release Notes を生成
+        if: steps.target.outputs.skip != 'true'
+        run: bash scripts/release_notes.sh "${{ steps.target.outputs.prior_tag }}" | tee /tmp/notes.md
+
+      - name: Release を作成 (tag + notes + assets)
+        if: >-
+          steps.target.outputs.skip != 'true' &&
+          (github.event_name != 'workflow_dispatch' || inputs.dry_run != true)
+        run: |
+          cp mobile/build/outputs/bundle/release/mobile-release.aab "adaptive-pulse-phone-v${VERSION}.aab"
+          cp mobile/build/outputs/apk/release/mobile-release.apk "adaptive-pulse-phone-v${VERSION}.apk"
+          gh release create "phone-v${VERSION}" \
+            --title "phone v${VERSION}" \
+            --notes-file /tmp/notes.md \
+            --target "$GITHUB_SHA" \
+            "adaptive-pulse-phone-v${VERSION}.aab" "adaptive-pulse-phone-v${VERSION}.apk"
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.ver.outputs.version }}
+
+      - name: skip 理由を記録
+        if: steps.target.outputs.skip == 'true'
+        run: echo "phone 側の module (mobile/ core/ gradle 系) に変更が無いため phone release を skip しました"

@@ -77,12 +77,16 @@ echo "==> install 対象 ($FORM, ${#TARGETS[@]} 台): ${TARGETS[*]}"
 echo "==> 古い $FORM APK を片付け"
 rm -f adaptive-pulse-${FORM}-*.apk
 
-echo "==> release から APK を DL${TAG:+ ($TAG)}"
-if [ -n "$TAG" ]; then
-  gh release download "$TAG" --pattern "$PATTERN"
-else
-  gh release download --pattern "$PATTERN"
+if [ -z "$TAG" ]; then
+  # form 別 tag 列の latest を取る (watch-v* / phone-v*)。
+  # 単に `gh release download --pattern` だと他 form の最新 release がヒットして
+  # APK が無く失敗するため、tag を明示する。
+  TAG="$(gh release list --limit 30 --json tagName \
+    --jq "[.[].tagName | select(startswith(\"${FORM}-v\"))][0]")"
+  [ -n "$TAG" ] || { echo "${FORM}-v* な release が見つかりません" >&2; exit 1; }
 fi
+echo "==> release から APK を DL ($TAG)"
+gh release download "$TAG" --pattern "$PATTERN"
 
 apk="$(ls -t adaptive-pulse-${FORM}-*.apk 2>/dev/null | head -1)"
 [ -n "$apk" ] || { echo "APK が見つかりません" >&2; exit 1; }
