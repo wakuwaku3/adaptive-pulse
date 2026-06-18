@@ -89,4 +89,7 @@ dependencies {
     implementation(libs.androidx.fragment)
 
     implementation(libs.androidx.datastore.preferences)
+
+    // Health Connect から日次の健康指標 (心拍/体重/食事 etc.) を取り込み JSON で書き出す
+    implementation(libs.androidx.health.connect.client)
 }

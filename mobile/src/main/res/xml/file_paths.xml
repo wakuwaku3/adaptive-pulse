@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- FileProvider 経由で他アプリに共有する JSON エクスポートの置き場 -->
+<paths>
+    <cache-path
+        name="exports"
+        path="exports/" />
+</paths>

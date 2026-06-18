@@ -29,8 +29,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.activity.compose.rememberLauncherForActivityResult
 import io.github.wakuwaku3.adaptivepulse.core.SessionConfig
 import io.github.wakuwaku3.adaptivepulse.mobile.auth.AuthManager
+import io.github.wakuwaku3.adaptivepulse.mobile.health.HealthDataExporter
+import io.github.wakuwaku3.adaptivepulse.mobile.health.HealthDataSource
 import io.github.wakuwaku3.adaptivepulse.mobile.settings.PhoneSettingsRepository
 import io.github.wakuwaku3.adaptivepulse.mobile.sync.FirestoreSync
 import io.github.wakuwaku3.adaptivepulse.mobile.sync.PendingSessionStore
@@ -122,6 +125,22 @@ class MainActivity : ComponentActivity() {
         val settingsRepo = remember { PhoneSettingsRepository(applicationContext) }
         val settingsDoc by settingsRepo.document.collectAsState(initial = null)
 
+        // Health Connect の権限管理 + JSON export
+        val healthSource = remember { HealthDataSource(applicationContext) }
+        var hcConnected by remember { mutableStateOf(false) }
+        LaunchedEffect(Unit) {
+            hcConnected = healthSource.available &&
+                healthSource.grantedPermissions().containsAll(HealthDataSource.PERMISSIONS)
+        }
+        val hcLauncher = rememberLauncherForActivityResult(
+            contract = HealthDataSource.permissionRequestContract(),
+        ) { granted ->
+            hcConnected = granted.containsAll(HealthDataSource.PERMISSIONS)
+            if (!hcConnected && granted.isNotEmpty()) {
+                status = "Health Connect: some permissions denied"
+            }
+        }
+
         suspend fun refresh() {
             val pendingLeft = PhoneSync.syncPendingSessions(applicationContext)
             PhoneSync.reconcileSettings(applicationContext)
@@ -190,6 +209,21 @@ class MainActivity : ComponentActivity() {
                                 )
                             }
                             DropdownMenuItem(
+                                text = { Text("Export 30 days") },
+                                enabled = hcConnected,
+                                onClick = {
+                                    menuOpen = false
+                                    scope.launch {
+                                        status = "Exporting…"
+                                        val export = HealthDataExporter(applicationContext).build(30)
+                                        val intent = HealthDataExporter(applicationContext).shareIntent(export)
+                                        status =
+                                            "Exported ${export.dailyMetrics.size} days + ${export.sessions.size} sessions"
+                                        startActivity(intent)
+                                    }
+                                },
+                            )
+                            DropdownMenuItem(
                                 text = { Text("Sign out") },
                                 onClick = {
                                     menuOpen = false
@@ -211,6 +245,17 @@ class MainActivity : ComponentActivity() {
                                 PhoneSync.updateSettingsEverywhere(applicationContext) { config ->
                                     item.write(config, newValue)
                                 }
+                            }
+                        },
+                        healthConnectConnected = hcConnected,
+                        healthConnectAvailable = healthSource.available,
+                        onHealthConnectToggle = { wantConnect ->
+                            if (wantConnect) {
+                                hcLauncher.launch(HealthDataSource.PERMISSIONS)
+                            } else {
+                                // OS 設定アプリで revoke してもらう運用にする (in-app での個別 revoke は HC に無い)
+                                status = "Revoke in Settings → Health Connect"
+                                hcConnected = false
                             }
                         },
                     )
