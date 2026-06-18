@@ -270,6 +270,64 @@ class IntervalEngineTest {
     }
 
     @Test
+    fun `閾値の動的調整 - 高強度中は上限を、回復中は下限を動かす`() {
+        val engine = IntervalEngine(config)
+        assertEquals(155, engine.upperBpm)
+        assertEquals(140, engine.lowerBpm)
+        // 高強度フェーズ (WARM-UP 含む) は上限が対象
+        assertEquals(157, engine.adjustActiveThreshold(+2))
+        assertEquals(157, engine.upperBpm)
+        assertEquals(140, engine.lowerBpm)
+        // 回復に入る
+        run(engine, listOf(0 to 141, 60 to 158))
+        assertEquals(Phase.RECOVERY, engine.phase)
+        // 回復中は下限が対象
+        assertEquals(142, engine.adjustActiveThreshold(+2))
+        assertEquals(157, engine.upperBpm)
+        assertEquals(142, engine.lowerBpm)
+    }
+
+    @Test
+    fun `閾値の動的調整 - 調整後の閾値で次の遷移が判定される`() {
+        val engine = IntervalEngine(config)
+        engine.adjustActiveThreshold(-5) // 上限 155 → 150
+        val events = run(engine, listOf(0 to 141, 60 to 151))
+        assertEquals(listOf(60 to SessionEvent.EnterRecovery), events)
+    }
+
+    @Test
+    fun `閾値の動的調整 - 最小ギャップ 5bpm を侵さないよう clamp する`() {
+        val engine = IntervalEngine(config) // 155/140
+        engine.adjustActiveThreshold(-100)
+        assertEquals(145, engine.upperBpm) // 下限 140 + ギャップ 5
+        // 上限が下がった状態で回復に入って下限を上げる
+        run(engine, listOf(0 to 141, 60 to 146))
+        assertEquals(Phase.RECOVERY, engine.phase)
+        engine.adjustActiveThreshold(+100)
+        assertEquals(140, engine.lowerBpm) // 上限 145 - ギャップ 5
+    }
+
+    @Test
+    fun `閾値の動的調整 - 終了後は無視する`() {
+        val engine = IntervalEngine(config.copy(targetCycles = 1))
+        run(engine, listOf(0 to 141, 60 to 156, 120 to 139))
+        assertEquals(Phase.FINISHED, engine.phase)
+        val upperBefore = engine.upperBpm
+        val lowerBefore = engine.lowerBpm
+        engine.adjustActiveThreshold(+10)
+        assertEquals(upperBefore, engine.upperBpm)
+        assertEquals(lowerBefore, engine.lowerBpm)
+    }
+
+    @Test
+    fun `閾値の動的調整 - 永続化しない (config 本体は不変)`() {
+        val engine = IntervalEngine(config)
+        engine.adjustActiveThreshold(+3)
+        assertEquals(158, engine.upperBpm)
+        assertEquals(155, config.upperBpm) // 引数の config 自身は触らない
+    }
+
+    @Test
     fun `設定の不変条件 - 閾値の逆転や不正な係数を弾く`() {
         kotlin.test.assertFailsWith<IllegalArgumentException> { SessionConfig(upperBpm = 140, lowerBpm = 155) }
         kotlin.test.assertFailsWith<IllegalArgumentException> { SessionConfig(targetCycles = 0) }

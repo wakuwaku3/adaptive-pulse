@@ -47,6 +47,11 @@ class SessionService : LifecycleService() {
         private val _state = MutableStateFlow<SessionUiState>(SessionUiState.Idle)
         val state: StateFlow<SessionUiState> = _state
 
+        // クラウン回転はミリ秒単位で連射されうるため、Intent 経由ではなく直接呼べる関数で経路化する。
+        // Service 生存期間 = セッション生存期間と一致するので、開始時にセット・終了時にクリアする
+        @Volatile
+        private var activeAdjust: ((Int) -> Unit)? = null
+
         fun start(context: Context) {
             context.startForegroundService(Intent(context, SessionService::class.java))
         }
@@ -55,6 +60,11 @@ class SessionService : LifecycleService() {
             context.startService(
                 Intent(context, SessionService::class.java).setAction(ACTION_STOP),
             )
+        }
+
+        /** 現フェーズが見ている閾値を delta だけ動かす (高強度=上限、回復=下限)。セッション外は no-op */
+        fun adjustActiveThreshold(delta: Int) {
+            activeAdjust?.invoke(delta)
         }
     }
 
@@ -87,6 +97,11 @@ class SessionService : LifecycleService() {
                 onSessionEvent = vibrator::vibrate,
                 onState = { _state.value = it },
             )
+            // クラウン回転を runner に橋渡しする (振動 tap で操作を体感確認できるようにする)
+            activeAdjust = { delta ->
+                runner.adjustActiveThreshold(delta)
+                vibrator.vibrateTap()
+            }
             try {
                 val result = runner.run()
                 // 完走 (タイムアウトでの強制終了も含む): 結果 (Finished) は表示し続けサービスだけ畳む
@@ -104,6 +119,7 @@ class SessionService : LifecycleService() {
                 withContext(NonCancellable) { recordSession(startedAtMs, runner.snapshot()) }
                 _state.value = SessionUiState.Idle
             } finally {
+                activeAdjust = null
                 sessionJob = null
                 stopSelf()
             }

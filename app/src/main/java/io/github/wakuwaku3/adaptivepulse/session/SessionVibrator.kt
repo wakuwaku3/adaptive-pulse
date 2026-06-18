@@ -24,6 +24,11 @@ class SessionVibrator(private val vibrator: Vibrator) {
         vibrator.vibrate(VibrationEffect.createWaveform(timings, -1))
     }
 
+    /** 閾値調整 (クラウン 1 detent) の確認振動。フェーズ遷移とは別物だと体感でわかる極短 1 発 */
+    fun vibrateTap() {
+        vibrator.vibrate(VibrationEffect.createOneShot(40, VibrationEffect.DEFAULT_AMPLITUDE))
+    }
+
     companion object {
         fun from(context: Context): SessionVibrator {
             // minSdk 30 (API 30) では VibratorManager (API 31+) が使えない

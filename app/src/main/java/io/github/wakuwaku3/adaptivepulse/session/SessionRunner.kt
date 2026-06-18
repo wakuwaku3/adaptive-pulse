@@ -49,6 +49,16 @@ class SessionRunner(
     private var lastBpm: Int? = null
     private var calories: Double? = null
 
+    /**
+     * 現フェーズが監視している閾値を delta だけ動かす (UI のクラウン回転から呼ぶ)。
+     * 調整後の状態を即時 [onState] に反映するため、UI のキャプション表示も追従する。
+     * 永続化はしないので、次セッションは設定本体の値に戻る。
+     */
+    fun adjustActiveThreshold(delta: Int) {
+        engine.adjustActiveThreshold(delta)
+        update(event = null)
+    }
+
     /** セッション完走で結果を返す。キャンセル時は [snapshot] で部分結果を取れる */
     suspend fun run(): SessionResult = coroutineScope {
         update(event = null)
@@ -108,6 +118,8 @@ class SessionRunner(
                     cycleElapsed = elapsed - engine.cycleStartedAt,
                     phaseElapsed = elapsed - engine.phaseStartedAt,
                     calories = calories,
+                    upperBpm = engine.upperBpm,
+                    lowerBpm = engine.lowerBpm,
                 )
             },
         )

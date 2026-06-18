@@ -74,6 +74,7 @@ class MainActivity : ComponentActivity() {
                 onStart = ::startWithPermissions,
                 onStop = { SessionService.stop(this) },
                 onOpenSettings = { screen = AppScreen.Settings },
+                onAdjustThreshold = { delta -> SessionService.adjustActiveThreshold(delta) },
             )
 
             AppScreen.Settings -> SwipeToDismissBox(

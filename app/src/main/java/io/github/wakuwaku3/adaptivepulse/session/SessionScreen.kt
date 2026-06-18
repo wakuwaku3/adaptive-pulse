@@ -1,20 +1,37 @@
 package io.github.wakuwaku3.adaptivepulse.session
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.focusable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.input.rotary.onRotaryScrollEvent
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.wear.compose.material.MaterialTheme
 import androidx.wear.compose.material.Text
 import io.github.wakuwaku3.adaptivepulse.core.Phase
@@ -30,6 +47,7 @@ fun SessionScreen(
     onStart: () -> Unit,
     onStop: () -> Unit,
     onOpenSettings: () -> Unit,
+    onAdjustThreshold: (Int) -> Unit,
 ) {
     Box(
         modifier = Modifier.fillMaxSize(),
@@ -37,7 +55,7 @@ fun SessionScreen(
     ) {
         when (state) {
             SessionUiState.Idle -> IdleScreen(onStart = onStart, onOpenSettings = onOpenSettings)
-            is SessionUiState.Running -> RunningScreen(state, onStop = onStop)
+            is SessionUiState.Running -> RunningScreen(state, onStop = onStop, onAdjustThreshold = onAdjustThreshold)
             is SessionUiState.Finished -> FinishedScreen(state, onReset = onStop)
         }
     }
@@ -78,7 +96,11 @@ private fun IdleScreen(onStart: () -> Unit, onOpenSettings: () -> Unit) {
 }
 
 @Composable
-private fun RunningScreen(state: SessionUiState.Running, onStop: () -> Unit) {
+private fun RunningScreen(
+    state: SessionUiState.Running,
+    onStop: () -> Unit,
+    onAdjustThreshold: (Int) -> Unit,
+) {
     // 画面オフで Health Services のサンプリングが落ちる挙動を避けるため、
     // セッション中は強制的に画面 ON を維持する (実機 FB)
     KeepScreenOn()
@@ -100,26 +122,40 @@ private fun RunningScreen(state: SessionUiState.Running, onStop: () -> Unit) {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(0.dp),
+        modifier = Modifier.rotaryThresholdAdjust(onAdjustThreshold),
     ) {
         Text(text = label, color = color, style = MaterialTheme.typography.title3)
         Row(verticalAlignment = Alignment.Bottom) {
+            // ボタン行追加でラウンド枠を超えていたので display1 (40sp) → display2 (34sp) に縮小。
+            // 数字は依然として画面内で最大サイズ (要件「心拍数字は最大サイズ」を満たす)
             Text(
                 text = state.bpm?.toString() ?: "--",
                 color = color,
-                style = MaterialTheme.typography.display1,
+                style = MaterialTheme.typography.display2,
             )
             Text(
                 text = "bpm",
                 color = APColors.TextDim,
-                style = MaterialTheme.typography.caption1,
-                modifier = Modifier.padding(start = 4.dp, bottom = 10.dp),
+                style = MaterialTheme.typography.caption2,
+                modifier = Modifier.padding(start = 3.dp, bottom = 6.dp),
             )
         }
-        Text(
-            text = "CYCLE ${state.currentCycle}/${state.finalCycle}",
-            color = APColors.TextDim,
-            style = MaterialTheme.typography.caption1,
-        )
+        // ▲/▼ + 残サイクルを 1 行にまとめ、両端に閾値と同色の裸グリフ ± を置く。
+        // チップを外し、テキストの一部のように見える「触れる文字」として扱う
+        val activeUpper = state.phase == Phase.HIGH_INTENSITY
+        val thresholdColor = if (activeUpper) APColors.High else APColors.Recover
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(2.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            NudgeGlyph(glyph = "−", color = thresholdColor, onClick = { onAdjustThreshold(-1) })
+            Text(
+                text = "▲${state.upperBpm} ▼${state.lowerBpm} · ${state.currentCycle}/${state.finalCycle}",
+                color = thresholdColor,
+                style = MaterialTheme.typography.caption2,
+            )
+            NudgeGlyph(glyph = "+", color = thresholdColor, onClick = { onAdjustThreshold(+1) })
+        }
         // T = total / C = current cycle / P = current phase の経過時間
         Text(
             text = "T ${format(state.elapsed)} · C ${format(state.cycleElapsed)} · P ${format(state.phaseElapsed)}",
@@ -133,16 +169,83 @@ private fun RunningScreen(state: SessionUiState.Running, onStop: () -> Unit) {
                 style = MaterialTheme.typography.caption2,
             )
         }
-        Box(modifier = Modifier.padding(top = 2.dp)) {
-            IconActionButton(
-                glyph = "■",
-                tint = APColors.Text,
-                background = APColors.StopChip,
-                onClick = onStop,
-            )
+        Box(modifier = Modifier.padding(top = 6.dp)) {
+            StopButton(onClick = onStop)
         }
     }
 }
+
+/** 閾値テキストの両脇に置く、ボタン感を抑えた裸の ± グリフ */
+@Composable
+private fun NudgeGlyph(glyph: String, color: Color, onClick: () -> Unit) {
+    Text(
+        text = glyph,
+        color = color,
+        fontSize = 18.sp,
+        modifier = Modifier
+            .clip(CircleShape)
+            .clickable(
+                // ripple は重い印象を生むので消す
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = onClick,
+            )
+            // tap 領域確保 (見た目より広く取る)
+            .padding(horizontal = 6.dp, vertical = 2.dp),
+    )
+}
+
+/** Stop: 塗り円ではなく、ヘアライン外周 + 小さな実塗り正方形 (designed-stop) */
+@Composable
+private fun StopButton(onClick: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .size(34.dp)
+            .clip(CircleShape)
+            .border(width = 1.dp, color = APColors.TextDim, shape = CircleShape)
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = onClick,
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(10.dp)
+                .background(APColors.TextDim),
+        )
+    }
+}
+
+/**
+ * クラウン回転で閾値を ±1 する modifier。
+ * Wear OS のクラウンは 1 detent で数十 px 分の verticalScrollPixels を出すので、
+ * 蓄積して [PIXELS_PER_STEP] ごとに 1 ステップ発火する (高速回転時に取りこぼさない)。
+ */
+@Composable
+private fun Modifier.rotaryThresholdAdjust(onStep: (Int) -> Unit): Modifier {
+    val focusRequester = remember { FocusRequester() }
+    var accum by remember { mutableFloatStateOf(0f) }
+    LaunchedEffect(Unit) { focusRequester.requestFocus() }
+    return this
+        .focusRequester(focusRequester)
+        .focusable()
+        .onRotaryScrollEvent { event ->
+            accum += event.verticalScrollPixels
+            while (accum >= PIXELS_PER_STEP) {
+                onStep(+1)
+                accum -= PIXELS_PER_STEP
+            }
+            while (accum <= -PIXELS_PER_STEP) {
+                onStep(-1)
+                accum += PIXELS_PER_STEP
+            }
+            true
+        }
+}
+
+private const val PIXELS_PER_STEP = 48f
 
 @Composable
 private fun FinishedScreen(state: SessionUiState.Finished, onReset: () -> Unit) {

@@ -16,6 +16,14 @@ class IntervalEngine(private val config: SessionConfig) {
     var phase: Phase = Phase.HIGH_INTENSITY
         private set
 
+    /** 現在有効な上限閾値。セッション中に [adjustActiveThreshold] で動かせるが、永続化はされない */
+    var upperBpm: Int = config.upperBpm
+        private set
+
+    /** 現在有効な下限閾値。セッション中に [adjustActiveThreshold] で動かせるが、永続化はされない */
+    var lowerBpm: Int = config.lowerBpm
+        private set
+
     /**
      * 完了した高強度フェーズの数 = 上限到達によって回復に切り替わった回数。
      * 0 で開始し「上限到達 → 回復へ」のタイミングでインクリメントする。
@@ -89,10 +97,10 @@ class IntervalEngine(private val config: SessionConfig) {
     }
 
     private fun onHighIntensitySample(bpm: Int, elapsed: Duration): SessionEvent? {
-        if (measureStartedAt == null && bpm > config.lowerBpm) {
+        if (measureStartedAt == null && bpm > lowerBpm) {
             measureStartedAt = elapsed
         }
-        if (bpm <= config.upperBpm) return null
+        if (bpm <= upperBpm) return null
 
         // 上限到達 = この高強度フェーズ完了 → cycle カウントをここで進める
         currentCycle++
@@ -124,8 +132,43 @@ class IntervalEngine(private val config: SessionConfig) {
     }
 
     private fun onRecoverySample(bpm: Int, elapsed: Duration): SessionEvent? {
-        if (bpm >= config.lowerBpm) return null
+        if (bpm >= lowerBpm) return null
         return completeCycle(elapsed)
+    }
+
+    /**
+     * 現フェーズで「次の遷移を起こす閾値」を delta だけ動かす。
+     * 高強度フェーズ (WARM-UP 含む) では上限、回復フェーズでは下限を対象にする。
+     * 上限 > 下限 + [MIN_THRESHOLD_GAP] を常に保ち、それを侵す動きは clamp する。
+     * セッション終了後は何もしない。
+     * 戻り値は調整後の対象閾値 (clamp 後の値)。永続化はせず、このセッション内だけ有効。
+     */
+    fun adjustActiveThreshold(delta: Int): Int {
+        when (phase) {
+            Phase.HIGH_INTENSITY -> {
+                upperBpm = (upperBpm + delta).coerceIn(lowerBpm + MIN_THRESHOLD_GAP, MAX_BPM)
+                return upperBpm
+            }
+            Phase.RECOVERY -> {
+                lowerBpm = (lowerBpm + delta).coerceIn(MIN_BPM, upperBpm - MIN_THRESHOLD_GAP)
+                return lowerBpm
+            }
+            Phase.FINISHED -> return upperBpm
+        }
+    }
+
+    /** 現フェーズが監視している閾値 (UI のフィードバック表示用) */
+    fun activeThreshold(): Int = when (phase) {
+        Phase.HIGH_INTENSITY -> upperBpm
+        Phase.RECOVERY -> lowerBpm
+        Phase.FINISHED -> upperBpm
+    }
+
+    companion object {
+        /** チャタリング防止の最小ヒステリシス幅 (要件のデフォルト 15bpm より小さくしすぎない) */
+        const val MIN_THRESHOLD_GAP = 5
+        const val MIN_BPM = 100
+        const val MAX_BPM = 200
     }
 
     private fun completeCycle(elapsed: Duration): SessionEvent {

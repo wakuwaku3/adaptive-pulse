@@ -19,6 +19,10 @@ sealed interface SessionUiState {
         /** 現フェーズ (高強度 or 回復) 開始からの経過時間 */
         val phaseElapsed: Duration,
         val calories: Double?,
+        /** セッション中に動かしうる現在の上限閾値 */
+        val upperBpm: Int,
+        /** セッション中に動かしうる現在の下限閾値 */
+        val lowerBpm: Int,
     ) : SessionUiState
 
     data class Finished(
