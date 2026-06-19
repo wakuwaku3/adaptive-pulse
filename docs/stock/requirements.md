@@ -55,7 +55,7 @@
 | 設定 | デフォルト | 備考 |
 |---|---|---|
 | 年齢 | 39 歳 | Karvonen 式の入力。Tanaka 式で最大心拍に変換する |
-| 安静時心拍 | 60bpm | Karvonen 式の入力。心拍予備能の底上げに使う |
+| 安静時心拍 | 60bpm | Karvonen 式の入力。Health Connect 連携 ON のとき日次自動更新 |
 | 上限閾値 | Karvonen 86% | デフォルト = 安静時心拍 + 0.86 × 心拍予備能。明示指定で上書き可 |
 | 下限閾値 | Karvonen 77% | デフォルト = 安静時心拍 + 0.77 × 心拍予備能。明示指定で上書き可 |
 | 目標サイクル数 | 7 | 6〜8 を想定 |
@@ -82,8 +82,9 @@
 - 最大心拍は Tanaka 式 (HRmax = 208 − 0.7 × 年齢, Tanaka et al. 2001) で推定する。
 - 目標心拍 = 安静時心拍 + 強度 × (HRmax − 安静時心拍)。デフォルト強度は上限 86% / 下限 77%。
 - 心拍ゾーンを決める主因は年齢と安静時心拍であり、身長・体重はゾーン算出に使わない。
-- 年齢と安静時心拍は設定画面で編集できる。Health Connect から安静時心拍を自動取得する経路は今後の拡張。
-- 明示指定された上限/下限閾値はそちらが優先される (Karvonen は default に流れるだけで上書きはしない)。
+- 年齢は設定画面で編集する。
+- 安静時心拍は phone 側の Health Connect 連携が ON のとき日次自動更新する。`HealthIngestWorker` が日次同期 + 初回 back-fill のついでに直近の `RestingHeartRateRecord` を取り、`PhoneSync.updateSettingsEverywhere` 経由で LWW 同期する (phone DataStore → 共通 Firestore → watch Data Layer)。phone UI から手動編集することもでき、最後に書いたほうが勝つ。
+- 明示指定された上限/下限閾値はそちらが優先される (Karvonen は default に流れるだけで上書きはしない)。HC が安静時心拍だけを更新しても上限/下限は不変なので、ゾーンを追随させたいときは手動で調整するか、後続の「現プロファイルから再計算」アクションを使う。
 
 ## UI 方針
 
@@ -117,7 +118,6 @@
 
 - セッション結果 (時間・サイクル数・心拍推移) の Health Connect 書き込み。
 - Polar H10 (胸ストラップ) を BLE 標準 Heart Rate Profile (GATT, Service 0x180D) で接続し、手首光学センサーの代替にする。
-- 安静時心拍を Health Connect から自動取得 (現在は手入力)。
 - 設定画面に「現プロファイルから Karvonen で上下限を再計算する」アクション。
 - セッション履歴と体力トレンド (高強度所要時間・回復所要時間の推移)。可視化はスマートフォン向け画面を本リポジトリの別モジュール (同一 applicationId の phone APK。Play では同一アプリの別フォームファクター) として作り、Wearable Data Layer でウォッチから転送する。
 

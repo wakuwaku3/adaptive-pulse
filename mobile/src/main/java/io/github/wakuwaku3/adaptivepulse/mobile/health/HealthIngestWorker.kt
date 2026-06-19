@@ -12,7 +12,9 @@ import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
+import io.github.wakuwaku3.adaptivepulse.mobile.settings.PhoneSettingsRepository
 import io.github.wakuwaku3.adaptivepulse.mobile.sync.FirestoreSync
+import io.github.wakuwaku3.adaptivepulse.mobile.sync.PhoneSync
 import java.time.Duration
 import java.time.ZonedDateTime
 import java.util.concurrent.TimeUnit
@@ -56,6 +58,9 @@ class HealthIngestWorker(
                 anyFailed = true
             }
         }
+        // 直近の RHR を SessionConfig.restingBpm に反映 (Karvonen の入力として日々変動を吸収する)。
+        // LWW なので、phone UI で手動編集した直後は次の HC 取得まで手動値が残る。
+        syncRestingBpm(records.firstNotNullOfOrNull { it.restingHeartRateBpm })
         return if (anyFailed) {
             Log.w(TAG, "一部の upsert に失敗 → WorkManager に retry を任せる")
             Result.retry()
@@ -63,6 +68,19 @@ class HealthIngestWorker(
             Log.i(TAG, "dailyMetrics を ${records.size} 件 upsert 完了")
             Result.success()
         }
+    }
+
+    private suspend fun syncRestingBpm(latestRhr: Int?) {
+        if (latestRhr == null) return
+        // SessionConfig の require レンジ (30..120) を外れる値は無視。HC 側の異常値ガード
+        if (latestRhr !in 30..120) {
+            Log.w(TAG, "HC RHR が想定レンジ外: $latestRhr → 反映スキップ")
+            return
+        }
+        val current = PhoneSettingsRepository(applicationContext).loadDocument().toSessionConfig()
+        if (current.restingBpm == latestRhr) return
+        PhoneSync.updateSettingsEverywhere(applicationContext) { it.copy(restingBpm = latestRhr) }
+        Log.i(TAG, "restingBpm を HC 値で更新: ${current.restingBpm} → $latestRhr")
     }
 
     companion object {
