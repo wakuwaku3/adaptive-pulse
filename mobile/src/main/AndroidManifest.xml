@@ -43,12 +43,27 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-            <!-- Health Connect の権限ダイアログから「アプリの説明」リンクで戻る経路。
-                 専用画面は持たず MainActivity に飛ばす (設定画面のトグル + 説明文で十分) -->
+            <!-- Android 13 以前の Health Connect (Play ストア配信版) はこの intent で
+                 rationale activity を解決する。Android 14+ は下の activity-alias を使う -->
             <intent-filter>
                 <action android:name="androidx.health.ACTION_SHOW_PERMISSIONS_RATIONALE" />
             </intent-filter>
         </activity>
+
+        <!-- Android 14+ の OS 統合版 Health Connect はこの intent-filter で rationale を
+             解決する。これが無いと HC の PermissionsActivity が「App should support
+             rationale intent, finishing!」で即終了し、権限ダイアログが出ない。
+             専用画面は持たず MainActivity に飛ばす (設定トグル + 説明文で十分) -->
+        <activity-alias
+            android:name=".ViewPermissionUsageActivity"
+            android:exported="true"
+            android:targetActivity=".MainActivity"
+            android:permission="android.permission.START_VIEW_PERMISSION_USAGE">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW_PERMISSION_USAGE" />
+                <category android:name="android.intent.category.HEALTH_PERMISSIONS" />
+            </intent-filter>
+        </activity-alias>
 
         <!-- Health Connect から取り込んだ JSON エクスポートを他アプリと共有するための FileProvider。
              authorities は applicationId に依存させて衝突を避ける -->
