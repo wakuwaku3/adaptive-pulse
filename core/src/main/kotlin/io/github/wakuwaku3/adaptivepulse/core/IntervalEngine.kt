@@ -40,9 +40,21 @@ class IntervalEngine(private val config: SessionConfig) {
     var baseline: Duration? = null
         private set
 
+    /**
+     * 疲労判定の基準となる回復所要時間。回復が遅くなる = 副交感神経再活性が鈍る
+     * (Cole et al. 1999 NEJM の Heart Rate Recovery の指標) ので、初回サイクルの
+     * 回復時間を基準にする。未確定の間は null。
+     */
+    var recoveryBaseline: Duration? = null
+        private set
+
     /** 実測できたサイクルごとの高強度所要時間 (体力トレンドの源泉として履歴に残す) */
     val highDurations: List<Duration> get() = measuredHighDurations
     private val measuredHighDurations = mutableListOf<Duration>()
+
+    /** 実測できたサイクルごとの回復所要時間 (体力トレンド・回復遅延検知の源泉) */
+    val recoveryDurations: List<Duration> get() = measuredRecoveryDurations
+    private val measuredRecoveryDurations = mutableListOf<Duration>()
 
     /** 疲労ブレーキが発動したか (タイムアウトによる強制終了も含める。履歴用) */
     var fatigueBrakeFired: Boolean = false
@@ -172,6 +184,21 @@ class IntervalEngine(private val config: SessionConfig) {
     }
 
     private fun completeCycle(elapsed: Duration): SessionEvent {
+        val recoveryDuration = elapsed - phaseStartedAt
+        measuredRecoveryDurations += recoveryDuration
+
+        // 回復時間が初回基準の recoveryFatigueRatio 倍を超えたら自律神経の回復鈍化 =
+        // 疲労として、次サイクルには進めず終了する (上限到達短縮の鏡像判定)。
+        // 基準は「高強度基準が確定したサイクル」の回復時間にすることで、開始時点で
+        // 既に下限を超えていた短すぎ高強度 (筋トレ直後ケース) の歪んだ回復時間を避ける。
+        val base = recoveryBaseline
+        if (base == null && baseline != null) {
+            recoveryBaseline = recoveryDuration
+        } else if (base != null && recoveryDuration >= base * config.recoveryFatigueRatio && currentCycle < finalCycle) {
+            finalCycle = currentCycle
+            fatigueBrakeFired = true
+        }
+
         if (currentCycle >= finalCycle) {
             phase = Phase.FINISHED
             return SessionEvent.SessionFinished

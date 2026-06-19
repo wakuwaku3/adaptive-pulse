@@ -21,6 +21,8 @@ data class SessionRecord(
     val zoneRatio: Double? = null,
     /** per-cycle 高強度所要時間。体力トレンド (同負荷で上限到達が遅くなる = 向上) の源泉 */
     val highDurationsSec: List<Double> = emptyList(),
+    /** per-cycle 回復所要時間。同負荷で回復が速くなる = 向上の指標 */
+    val recoveryDurationsSec: List<Double> = emptyList(),
     val avgBpm: Int? = null,
     val maxBpm: Int? = null,
     val config: SessionConfigSnapshot,
@@ -37,6 +39,9 @@ data class SessionConfigSnapshot(
     val minBaselineSec: Long,
     val highTimeoutSec: Long,
     val recoveryTimeoutSec: Long,
+    val ageYears: Int = 39,
+    val restingBpm: Int = 60,
+    val recoveryFatigueRatio: Double = 1.5,
 ) {
     companion object {
         fun from(config: SessionConfig) = SessionConfigSnapshot(
@@ -47,6 +52,9 @@ data class SessionConfigSnapshot(
             minBaselineSec = config.minBaseline.inWholeSeconds,
             highTimeoutSec = config.highPhaseTimeout.inWholeSeconds,
             recoveryTimeoutSec = config.recoveryTimeout.inWholeSeconds,
+            ageYears = config.ageYears,
+            restingBpm = config.restingBpm,
+            recoveryFatigueRatio = config.recoveryFatigueRatio,
         )
     }
 }
@@ -66,12 +74,18 @@ data class SettingsDocument(
     val recoveryTimeoutSec: Long,
     val updatedAtMs: Long,
     val updatedBy: String,
+    val ageYears: Int = 39,
+    val restingBpm: Int = 60,
+    val recoveryFatigueRatio: Double = 1.5,
 ) {
     fun toSessionConfig() = SessionConfig(
+        ageYears = ageYears,
+        restingBpm = restingBpm,
         upperBpm = upperBpm,
         lowerBpm = lowerBpm,
         targetCycles = targetCycles,
         fatigueRatio = fatigueRatio,
+        recoveryFatigueRatio = recoveryFatigueRatio,
         minBaseline = minBaselineSec.seconds,
         highPhaseTimeout = highTimeoutSec.seconds,
         recoveryTimeout = recoveryTimeoutSec.seconds,
@@ -88,6 +102,9 @@ data class SettingsDocument(
             recoveryTimeoutSec = config.recoveryTimeout.inWholeSeconds,
             updatedAtMs = updatedAtMs,
             updatedBy = updatedBy,
+            ageYears = config.ageYears,
+            restingBpm = config.restingBpm,
+            recoveryFatigueRatio = config.recoveryFatigueRatio,
         )
     }
 }

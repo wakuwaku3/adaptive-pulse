@@ -332,5 +332,120 @@ class IntervalEngineTest {
         kotlin.test.assertFailsWith<IllegalArgumentException> { SessionConfig(upperBpm = 140, lowerBpm = 155) }
         kotlin.test.assertFailsWith<IllegalArgumentException> { SessionConfig(targetCycles = 0) }
         kotlin.test.assertFailsWith<IllegalArgumentException> { SessionConfig(fatigueRatio = 1.0) }
+        kotlin.test.assertFailsWith<IllegalArgumentException> { SessionConfig(recoveryFatigueRatio = 1.0) }
+        kotlin.test.assertFailsWith<IllegalArgumentException> { SessionConfig(ageYears = 5) }
+        kotlin.test.assertFailsWith<IllegalArgumentException> { SessionConfig(restingBpm = 20) }
+    }
+
+    @Test
+    fun `回復疲労ブレーキ - 回復時間が基準の係数倍を超えたらサイクル完了で終了する`() {
+        val engine = IntervalEngine(config.copy(targetCycles = 7))
+        val events = run(
+            engine,
+            listOf(
+                0 to 141,
+                60 to 156,   // 高強度1 60 秒 (基準)
+                120 to 139,  // 回復1 60 秒 (基準)
+                130 to 141,
+                190 to 156,  // 高強度2 60 秒
+                280 to 139,  // 回復2 90 秒 = 60×1.5 → 疲労 → 終了
+            ),
+        )
+        assertEquals(
+            listOf(
+                60 to SessionEvent.EnterRecovery,
+                120 to SessionEvent.EnterHighIntensity,
+                190 to SessionEvent.EnterRecovery,
+                280 to SessionEvent.SessionFinished,
+            ),
+            events,
+        )
+        assertEquals(Phase.FINISHED, engine.phase)
+        kotlin.test.assertTrue(engine.fatigueBrakeFired)
+        assertEquals(2, engine.currentCycle)
+        assertEquals(2, engine.finalCycle)
+        assertEquals(60.seconds, engine.recoveryBaseline)
+    }
+
+    @Test
+    fun `回復疲労ブレーキ - 基準内なら継続する`() {
+        val engine = IntervalEngine(config.copy(targetCycles = 7))
+        run(
+            engine,
+            listOf(
+                0 to 141, 60 to 156, 120 to 139,    // サイクル1: 回復 60 秒 (基準)
+                130 to 141, 190 to 156, 279 to 139, // サイクル2: 回復 89 秒 (< 60×1.5=90)
+            ),
+        )
+        kotlin.test.assertFalse(engine.fatigueBrakeFired)
+        assertEquals(Phase.HIGH_INTENSITY, engine.phase)
+        assertEquals(listOf(60.seconds, 89.seconds), engine.recoveryDurations)
+    }
+
+    @Test
+    fun `回復疲労ブレーキ - 高強度疲労で短縮された最終サイクルでは再発動しない`() {
+        val engine = IntervalEngine(config.copy(targetCycles = 7))
+        val events = run(
+            engine,
+            listOf(
+                0 to 141, 60 to 156, 120 to 139,  // サイクル1: 回復 60 秒 (基準)
+                130 to 141,
+                155 to 156,                        // サイクル2 高強度 25 秒 → 高強度疲労
+                250 to 139,                        // サイクル2 回復 95 秒 (> 60×1.5=90)
+            ),
+        )
+        // 高強度疲労で finalCycle=2 になっているので、回復が基準超えでも二重発動せず終了のみ
+        assertEquals(
+            listOf(
+                60 to SessionEvent.EnterRecovery,
+                120 to SessionEvent.EnterHighIntensity,
+                155 to SessionEvent.FatigueBrake,
+                250 to SessionEvent.SessionFinished,
+            ),
+            events,
+        )
+    }
+
+    @Test
+    fun `回復疲労ブレーキ - targetCycles=1 では発動しない (基準を設定して終了)`() {
+        val engine = IntervalEngine(config.copy(targetCycles = 1))
+        run(engine, listOf(0 to 141, 60 to 156, 120 to 139))
+        assertEquals(Phase.FINISHED, engine.phase)
+        kotlin.test.assertFalse(engine.fatigueBrakeFired)
+        assertEquals(60.seconds, engine.recoveryBaseline)
+    }
+
+    @Test
+    fun `回復基準 - 高強度基準が確定したサイクルの回復だけを基準にする (筋トレ直後ケース)`() {
+        val engine = IntervalEngine(config.copy(targetCycles = 7))
+        run(
+            engine,
+            listOf(
+                // サイクル1: 開始時点で既に下限超え。高強度 10 秒 (< 45 秒 minBaseline) → 高強度基準は持ち越し
+                0 to 150,
+                10 to 156,
+                40 to 139,   // サイクル1 回復 30 秒
+                // サイクル2: 高強度 60 秒 → ここで初めて高強度基準が確定
+                50 to 141,
+                100 to 156,
+                160 to 139,  // サイクル2 回復 60 秒 → recoveryBaseline = 60 秒
+            ),
+        )
+        // 高強度・回復ともサイクル2 を基準にしている (サイクル1 の歪んだ値は採用しない)
+        assertEquals(50.seconds, engine.baseline)
+        assertEquals(60.seconds, engine.recoveryBaseline)
+    }
+
+    @Test
+    fun `履歴 - 回復所要時間がサイクルごとに残る`() {
+        val engine = IntervalEngine(config)
+        run(
+            engine,
+            listOf(
+                0 to 141, 60 to 156, 120 to 139,
+                130 to 141, 190 to 156, 240 to 139,
+            ),
+        )
+        assertEquals(listOf(60.seconds, 50.seconds), engine.recoveryDurations)
     }
 }

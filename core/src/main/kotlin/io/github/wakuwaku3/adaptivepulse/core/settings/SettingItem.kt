@@ -44,6 +44,13 @@ enum class SettingItem(
         progression = { IntProgression.fromClosedRange(10, 90, 5) },
         format = { "$it %" },
     ),
+    RecoveryFatigueRatio(
+        title = "RECOVERY FATIGUE",
+        read = { (it.recoveryFatigueRatio * 100).roundToInt() },
+        write = { c, v -> c.copy(recoveryFatigueRatio = v / 100.0) },
+        progression = { IntProgression.fromClosedRange(110, 300, 10) },
+        format = { "$it %" },
+    ),
     MinBaseline(
         title = "MIN BASELINE",
         read = { it.minBaseline.inWholeSeconds.toInt() },
@@ -64,6 +71,20 @@ enum class SettingItem(
         write = { c, v -> c.copy(recoveryTimeout = v.seconds) },
         progression = { IntProgression.fromClosedRange(60, 600, 30) },
         format = ::formatMinSec,
+    ),
+    AgeYears(
+        title = "AGE",
+        read = { it.ageYears },
+        write = { c, v -> c.copy(ageYears = v) },
+        progression = { 18..80 },
+        format = { "$it y" },
+    ),
+    RestingBpm(
+        title = "RESTING HR",
+        read = { it.restingBpm },
+        write = { c, v -> c.copy(restingBpm = v) },
+        progression = { 30..100 },
+        format = { "$it bpm" },
     ),
 }
 

@@ -36,9 +36,12 @@ class SettingsRepository(private val context: Context) {
         val LowerBpm = intPreferencesKey("lower_bpm")
         val TargetCycles = intPreferencesKey("target_cycles")
         val FatigueRatio = doublePreferencesKey("fatigue_ratio")
+        val RecoveryFatigueRatio = doublePreferencesKey("recovery_fatigue_ratio")
         val MinBaselineSecs = longPreferencesKey("min_baseline_secs")
         val HighTimeoutSecs = longPreferencesKey("high_timeout_secs")
         val RecoveryTimeoutSecs = longPreferencesKey("recovery_timeout_secs")
+        val AgeYears = intPreferencesKey("age_years")
+        val RestingBpm = intPreferencesKey("resting_bpm")
         val UpdatedAtMs = longPreferencesKey("updated_at_ms")
         val UpdatedBy = stringPreferencesKey("updated_by")
     }
@@ -82,9 +85,12 @@ class SettingsRepository(private val context: Context) {
         this[Keys.LowerBpm] = config.lowerBpm
         this[Keys.TargetCycles] = config.targetCycles
         this[Keys.FatigueRatio] = config.fatigueRatio
+        this[Keys.RecoveryFatigueRatio] = config.recoveryFatigueRatio
         this[Keys.MinBaselineSecs] = config.minBaseline.inWholeSeconds
         this[Keys.HighTimeoutSecs] = config.highPhaseTimeout.inWholeSeconds
         this[Keys.RecoveryTimeoutSecs] = config.recoveryTimeout.inWholeSeconds
+        this[Keys.AgeYears] = config.ageYears
+        this[Keys.RestingBpm] = config.restingBpm
         this[Keys.UpdatedAtMs] = updatedAtMs
         this[Keys.UpdatedBy] = updatedBy
     }
@@ -99,10 +105,14 @@ class SettingsRepository(private val context: Context) {
         val defaults = SessionConfig()
         return runCatching {
             SessionConfig(
+                ageYears = this[Keys.AgeYears] ?: defaults.ageYears,
+                restingBpm = this[Keys.RestingBpm] ?: defaults.restingBpm,
                 upperBpm = this[Keys.UpperBpm] ?: defaults.upperBpm,
                 lowerBpm = this[Keys.LowerBpm] ?: defaults.lowerBpm,
                 targetCycles = this[Keys.TargetCycles] ?: defaults.targetCycles,
                 fatigueRatio = this[Keys.FatigueRatio] ?: defaults.fatigueRatio,
+                recoveryFatigueRatio = this[Keys.RecoveryFatigueRatio]
+                    ?: defaults.recoveryFatigueRatio,
                 minBaseline = this[Keys.MinBaselineSecs]?.seconds ?: defaults.minBaseline,
                 highPhaseTimeout = this[Keys.HighTimeoutSecs]?.seconds ?: defaults.highPhaseTimeout,
                 recoveryTimeout = this[Keys.RecoveryTimeoutSecs]?.seconds

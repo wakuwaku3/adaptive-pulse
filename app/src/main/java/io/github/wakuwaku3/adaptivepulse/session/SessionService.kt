@@ -138,6 +138,7 @@ class SessionService : LifecycleService() {
             calories = result.calories,
             zoneRatio = result.zoneRatio,
             highDurationsSec = result.highDurations.map { it.inWholeMilliseconds / 1000.0 },
+            recoveryDurationsSec = result.recoveryDurations.map { it.inWholeMilliseconds / 1000.0 },
             avgBpm = result.avgBpm,
             maxBpm = result.maxBpm,
             config = SessionConfigSnapshot.from(result.config),
