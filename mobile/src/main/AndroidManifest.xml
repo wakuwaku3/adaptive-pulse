@@ -4,6 +4,32 @@
     <!-- サーバー同期 (Firebase Auth / 同期 API) -->
     <uses-permission android:name="android.permission.INTERNET" />
 
+    <!-- Health Connect から日次の健康指標を読む。Pixel Watch / 体重計 / あすけん が
+         Health Connect に書いているのを読みに行く片方向 read のみ。
+         実際に grant してもらう権限は HealthDataSource の Activity Result で要求する -->
+    <uses-permission android:name="android.permission.health.READ_HEART_RATE" />
+    <uses-permission android:name="android.permission.health.READ_RESTING_HEART_RATE" />
+    <uses-permission android:name="android.permission.health.READ_HEART_RATE_VARIABILITY" />
+    <uses-permission android:name="android.permission.health.READ_SLEEP" />
+    <uses-permission android:name="android.permission.health.READ_STEPS" />
+    <uses-permission android:name="android.permission.health.READ_ACTIVE_CALORIES_BURNED" />
+    <uses-permission android:name="android.permission.health.READ_TOTAL_CALORIES_BURNED" />
+    <uses-permission android:name="android.permission.health.READ_EXERCISE" />
+    <uses-permission android:name="android.permission.health.READ_WEIGHT" />
+    <uses-permission android:name="android.permission.health.READ_BODY_FAT" />
+    <uses-permission android:name="android.permission.health.READ_LEAN_BODY_MASS" />
+    <uses-permission android:name="android.permission.health.READ_HEIGHT" />
+    <uses-permission android:name="android.permission.health.READ_NUTRITION" />
+
+    <!-- Android 11+ の package visibility 制限を解き、Health Connect の存在判定と
+         権限ダイアログ起動を可能にする -->
+    <queries>
+        <package android:name="com.google.android.apps.healthdata" />
+        <intent>
+            <action android:name="androidx.health.ACTION_SHOW_PERMISSIONS_RATIONALE" />
+        </intent>
+    </queries>
+
     <application
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher_round"
@@ -17,7 +43,24 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <!-- Health Connect の権限ダイアログから「アプリの説明」リンクで戻る経路。
+                 専用画面は持たず MainActivity に飛ばす (設定画面のトグル + 説明文で十分) -->
+            <intent-filter>
+                <action android:name="androidx.health.ACTION_SHOW_PERMISSIONS_RATIONALE" />
+            </intent-filter>
         </activity>
+
+        <!-- Health Connect から取り込んだ JSON エクスポートを他アプリと共有するための FileProvider。
+             authorities は applicationId に依存させて衝突を避ける -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
 
         <!-- watch からの履歴・設定を受信する (Wearable Data Layer) -->
         <service

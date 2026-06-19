@@ -38,6 +38,7 @@ beforeEach(async () => {
 
 const session = { startedAtMs: 100, json: '{}' };
 const settings = (ms) => ({ updatedAtMs: ms, json: '{}' });
+const dailyMetric = (date) => ({ date, json: '{}' });
 
 const seed = (path, data) =>
   env.withSecurityRulesDisabled((ctx) => setDoc(doc(ctx.firestore(), path), data));
@@ -99,6 +100,66 @@ describe('users/{uid}/sessions/{id} (履歴)', () => {
     const alice = env.authenticatedContext('alice').firestore();
     await assertFails(
       setDoc(doc(alice, 'users/alice/sessions/s1'), { ...session, extra: 'x' }),
+    );
+  });
+});
+
+describe('users/{uid}/dailyMetrics/{date} (Health Connect 取り込み)', () => {
+  test('オーナーは自分の dailyMetrics を書ける', async () => {
+    const alice = env.authenticatedContext('alice').firestore();
+    await assertSucceeds(
+      setDoc(doc(alice, 'users/alice/dailyMetrics/2026-06-19'), dailyMetric('2026-06-19')),
+    );
+  });
+
+  test('同じ日付の上書きは許される (冪等 upsert)', async () => {
+    await seed('users/alice/dailyMetrics/2026-06-19', dailyMetric('2026-06-19'));
+    const alice = env.authenticatedContext('alice').firestore();
+    await assertSucceeds(
+      setDoc(doc(alice, 'users/alice/dailyMetrics/2026-06-19'), dailyMetric('2026-06-19')),
+    );
+  });
+
+  test('doc id と date フィールドが一致しないと拒否される', async () => {
+    const alice = env.authenticatedContext('alice').firestore();
+    await assertFails(
+      setDoc(doc(alice, 'users/alice/dailyMetrics/2026-06-19'), dailyMetric('2026-06-20')),
+    );
+  });
+
+  test('YYYY-MM-DD 形式でない doc id は拒否される', async () => {
+    const alice = env.authenticatedContext('alice').firestore();
+    await assertFails(
+      setDoc(doc(alice, 'users/alice/dailyMetrics/today'), { date: 'today', json: '{}' }),
+    );
+  });
+
+  test('他人の dailyMetrics は書けない', async () => {
+    const bob = env.authenticatedContext('bob').firestore();
+    await assertFails(
+      setDoc(doc(bob, 'users/alice/dailyMetrics/2026-06-19'), dailyMetric('2026-06-19')),
+    );
+  });
+
+  test('他人の dailyMetrics は読めない', async () => {
+    await seed('users/alice/dailyMetrics/2026-06-19', dailyMetric('2026-06-19'));
+    const bob = env.authenticatedContext('bob').firestore();
+    await assertFails(getDoc(doc(bob, 'users/alice/dailyMetrics/2026-06-19')));
+  });
+
+  test('削除はできない (append-only)', async () => {
+    await seed('users/alice/dailyMetrics/2026-06-19', dailyMetric('2026-06-19'));
+    const alice = env.authenticatedContext('alice').firestore();
+    await assertFails(deleteDoc(doc(alice, 'users/alice/dailyMetrics/2026-06-19')));
+  });
+
+  test('未知フィールドは拒否される', async () => {
+    const alice = env.authenticatedContext('alice').firestore();
+    await assertFails(
+      setDoc(doc(alice, 'users/alice/dailyMetrics/2026-06-19'), {
+        ...dailyMetric('2026-06-19'),
+        extra: 'x',
+      }),
     );
   });
 });

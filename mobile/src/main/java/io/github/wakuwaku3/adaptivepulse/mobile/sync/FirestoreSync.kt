@@ -4,6 +4,7 @@ import android.util.Log
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
+import io.github.wakuwaku3.adaptivepulse.core.sync.DailyHealthRecord
 import io.github.wakuwaku3.adaptivepulse.core.sync.SessionRecord
 import io.github.wakuwaku3.adaptivepulse.core.sync.SettingsDocument
 import kotlinx.coroutines.tasks.await
@@ -121,5 +122,42 @@ object FirestoreSync {
             ref.get().await().getString("json")
                 ?.let { json.decodeFromString(SettingsDocument.serializer(), it) }
         }.onFailure { Log.w(TAG, "サーバ設定の読み直しに失敗", it) }.getOrNull()
+    }
+
+    /**
+     * Health Connect から取り込んだ 1 日分を upsert する。doc id を `record.date` 固定に
+     * することで「同じ日付の上書き」になり、初回 back-fill と日次同期で重複が出ない。
+     */
+    suspend fun upsertDailyHealth(record: DailyHealthRecord): Boolean {
+        val uid = uid() ?: return false
+        val ref = userDoc(uid)?.collection("dailyMetrics")?.document(record.date) ?: return false
+        return runCatching {
+            ref.set(
+                mapOf(
+                    "date" to record.date,
+                    "json" to json.encodeToString(DailyHealthRecord.serializer(), record),
+                ),
+            ).await()
+            true
+        }.onFailure { Log.w(TAG, "dailyMetrics の upsert に失敗: ${record.date}", it) }
+            .getOrDefault(false)
+    }
+
+    /** [from] 〜 [to] (inclusive, ISO YYYY-MM-DD) の dailyMetrics を取得 */
+    suspend fun listDailyHealth(from: String, to: String): List<DailyHealthRecord>? {
+        val uid = uid() ?: return null
+        val col = userDoc(uid)?.collection("dailyMetrics") ?: return null
+        return runCatching {
+            col.whereGreaterThanOrEqualTo("date", from)
+                .whereLessThanOrEqualTo("date", to)
+                .get().await().documents
+                .mapNotNull { doc ->
+                    doc.getString("json")?.let {
+                        runCatching {
+                            json.decodeFromString(DailyHealthRecord.serializer(), it)
+                        }.getOrNull()
+                    }
+                }
+        }.onFailure { Log.w(TAG, "dailyMetrics の取得に失敗", it) }.getOrNull()
     }
 }

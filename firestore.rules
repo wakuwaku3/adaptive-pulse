@@ -30,6 +30,20 @@ service cloud.firestore {
         allow delete: if false;
       }
 
+      match /dailyMetrics/{date} {
+        // Health Connect から取り込んだ 1 日分。doc id は ISO 日付 (YYYY-MM-DD) 固定。
+        // 同じ日の上書きを許す (back-fill と periodic ingest が衝突しても整合する)。
+        // 削除は禁止 (誤って消すと過去データが復元不能)。
+        allow read: if isOwner();
+        allow create, update: if isOwner()
+          && date.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
+          && request.resource.data.keys().hasOnly(['date', 'json'])
+          && request.resource.data.date == date
+          && request.resource.data.json is string
+          && request.resource.data.json.size() < 50000;
+        allow delete: if false;
+      }
+
       match /settings/{settingsId} {
         allow read: if isOwner();
         allow create: if isOwner()
