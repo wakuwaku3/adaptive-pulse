@@ -34,6 +34,7 @@ import io.github.wakuwaku3.adaptivepulse.core.SessionConfig
 import io.github.wakuwaku3.adaptivepulse.mobile.auth.AuthManager
 import io.github.wakuwaku3.adaptivepulse.mobile.health.HealthDataExporter
 import io.github.wakuwaku3.adaptivepulse.mobile.health.HealthDataSource
+import io.github.wakuwaku3.adaptivepulse.mobile.health.HealthIngestWorker
 import io.github.wakuwaku3.adaptivepulse.mobile.settings.PhoneSettingsRepository
 import io.github.wakuwaku3.adaptivepulse.mobile.sync.FirestoreSync
 import io.github.wakuwaku3.adaptivepulse.mobile.sync.PendingSessionStore
@@ -131,6 +132,8 @@ class MainActivity : ComponentActivity() {
         LaunchedEffect(Unit) {
             hcConnected = healthSource.available &&
                 healthSource.grantedPermissions().containsAll(HealthDataSource.PERMISSIONS)
+            // 既に grant 済みなら毎起動で日次同期を再保証する (KEEP policy なので冪等)
+            if (hcConnected) HealthIngestWorker.scheduleDaily(applicationContext)
         }
         val hcLauncher = rememberLauncherForActivityResult(
             contract = HealthDataSource.permissionRequestContract(),
@@ -138,6 +141,12 @@ class MainActivity : ComponentActivity() {
             hcConnected = granted.containsAll(HealthDataSource.PERMISSIONS)
             if (!hcConnected && granted.isNotEmpty()) {
                 status = "Health Connect: some permissions denied"
+            }
+            // 全権限揃った瞬間に初回 back-fill と日次同期を仕込む。アプリを閉じても続行する
+            if (hcConnected) {
+                HealthIngestWorker.scheduleBackfill(applicationContext)
+                HealthIngestWorker.scheduleDaily(applicationContext)
+                status = "Health Connect connected · back-filling last ${HealthIngestWorker.BACKFILL_DAYS} days in background"
             }
         }
 
@@ -254,6 +263,7 @@ class MainActivity : ComponentActivity() {
                                 hcLauncher.launch(HealthDataSource.PERMISSIONS)
                             } else {
                                 // OS 設定アプリで revoke してもらう運用にする (in-app での個別 revoke は HC に無い)
+                                HealthIngestWorker.cancelAll(applicationContext)
                                 status = "Revoke in Settings → Health Connect"
                                 hcConnected = false
                             }

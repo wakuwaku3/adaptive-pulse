@@ -92,4 +92,6 @@ dependencies {
 
     // Health Connect から日次の健康指標 (心拍/体重/食事 etc.) を取り込み JSON で書き出す
     implementation(libs.androidx.health.connect.client)
+    // アプリ未起動でも初回 back-fill と日次同期を走らせる
+    implementation(libs.androidx.work.runtime.ktx)
 }

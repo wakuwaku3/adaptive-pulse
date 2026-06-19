@@ -37,6 +37,34 @@ runtime grant は HC の `PermissionController.createRequestPermissionResultCont
 - HC の権限ダイアログから「アプリの説明」リンクで戻る経路として `MainActivity` が
   `androidx.health.ACTION_SHOW_PERMISSIONS_RATIONALE` を受ける。
 
+## バックグラウンド取り込み
+
+権限を初めて grant した瞬間に、`HealthIngestWorker` 経由で 2 種類の WorkManager
+ジョブを仕込む:
+
+- **初回 back-fill** (`OneTimeWorkRequest`, unique work `health-connect-backfill`):
+  過去 90 日分の `DailyHealthRecord` を Health Connect から読み、Firestore
+  `users/{uid}/dailyMetrics/{YYYY-MM-DD}` に upsert する。doc id を日付固定にして
+  いるため重複 ingest しても上書きで整合する (冪等)。`ExistingWorkPolicy.REPLACE`
+  なので「再 grant で過去データを取り直したい」ときも単純にトグル off → on で再走できる。
+- **日次同期** (`PeriodicWorkRequest`, unique work `health-connect-daily`, interval 1 day):
+  毎日 06:00 (初回は次の朝) に「昨日 + 一昨日」の 2 日分を冪等 upsert する。
+  `ExistingPeriodicWorkPolicy.KEEP` で複数回 schedule しても置き換わらない。
+  アプリ起動時にも `scheduleDaily` を呼んで、未スケジュール状態 (再インストール直後など)
+  から復帰できるようにしている。
+
+ジョブの constraint は `NetworkType.CONNECTED` のみ (Firestore 書き込みに必要)。
+それ以外の制約 (充電中・wifi 限定 etc.) は付けない。
+
+**アプリ起動状態への依存**: WorkManager は OS の JobScheduler に乗るのでアプリが
+killed されていても OS が条件を満たした時に走る。例外は次のいずれかに該当する間:
+
+- ユーザが Settings → Apps → Force stop した直後 (一度 phone を開けば復帰)
+- Battery Optimization で対象アプリを「制限」に倒した場合 (推奨しない設定)
+- HC の権限が revoke された場合 (worker は `Result.success()` で no-op に倒れる)
+
+OFF トグルで両ジョブを cancel する。Firestore に書かれたデータは消さない (履歴は残す)。
+
 ## エクスポート経路
 
 phone overflow メニューの「Export 30 days」から実行する。
