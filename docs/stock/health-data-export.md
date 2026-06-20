@@ -1,27 +1,41 @@
-# Health Connect → JSON エクスポート
+# Health Connect → ダッシュボード + エクスポート
 
-phone アプリ (`:mobile`) が Health Connect から日次の健康指標を集めて 1 つの JSON
-にまとめ、標準の Share Intent で外部に渡せるようにする。analysis (まずは Claude
-への手動投入、将来は MCP connector) の入り口を作るのが目的。
+phone アプリ (`:mobile`) が Health Connect から日次の健康指標と時系列を取り込み、
+端末ローカル Room キャッシュとアプリ内ダッシュボードに反映する。同時に日次集約は
+Firestore に upsert して機種変対応の正本を保つ。手動の JSON エクスポートは
+external (Claude 等) への取り出し口として残す。
 
 ## 入手するデータ
 
-`DailyHealthRecord` に 1 日 1 行で詰める。データ源は端末側で Health Connect に
-連携済みのアプリ:
+ダッシュボード表示の主役は `DailyHealthRecord` (1 日 1 行)。Pixel Watch / 体組成計 /
+Asken など、端末側で Health Connect に連携済みのアプリが書く範囲をカバーする。
 
-| フィールド | 単位 | データ源 (例) |
-|---|---|---|
-| `restingHeartRateBpm` | bpm | Pixel Watch |
-| `hrvRmssdMs` | ms | Pixel Watch (主に睡眠中) |
-| `avgHeartRateBpm` | bpm | Pixel Watch (当日全 HR サンプルの平均) |
-| `sleepDurationMin` / `sleep{Deep, Rem, Light, Awake}Min` | 分 | Pixel Watch |
-| `steps` | count | Pixel Watch |
-| `activeCaloriesKcal` / `totalCaloriesKcal` | kcal | Pixel Watch |
-| `weightKg` / `bodyFatPct` / `leanBodyMassKg` | kg / % / kg | スマート体重計 |
-| `heightCm` | cm | あすけん 等 (静的プロフィール) |
-| `intakeKcal` / `proteinG` / `fatG` / `carbsG` | kcal / g | 食事ログアプリ (あすけん 等) |
+| カテゴリ | フィールド | 単位 | データ源 (例) |
+|---|---|---|---|
+| 心拍 | `restingHeartRateBpm` / `hrvRmssdMs` / `avgHeartRateBpm` / `minHeartRateBpm` / `maxHeartRateBpm` | bpm / ms | Pixel Watch |
+| 睡眠 | `sleepDurationMin` / `sleep{Deep, Rem, Light, Awake}Min` | 分 | Pixel Watch |
+| 活動 | `steps` / `distanceMeters` / `floorsClimbed` / `elevationGainedMeters` | count / m | Pixel Watch / Phone |
+| カロリー | `activeCaloriesKcal` / `totalCaloriesKcal` / `basalCaloriesKcal` | kcal | Pixel Watch / Phone / Fit |
+| 体組成 | `weightKg` / `bodyFatPct` / `leanBodyMassKg` / `heightCm` | kg / % / cm | スマート体重計 |
+| 食事 | `intakeKcal` / `proteinG` / `fatG` / `carbsG` / `fiberG` / `sugarG` / `sodiumMg` | kcal / g / mg | Asken 等 |
+| バイタル | `spo2AvgPct` / `spo2MinPct` / `respiratoryRateAvg` / `skinTemperatureDeltaC` | % / /min / °C | Pixel Watch |
 
 欠損は null で残し、推定で埋めない。
+
+### データソース別 breakdown
+
+主要指標 (TDEE / 活動カロリー / 歩数 / 距離 / フロア / 摂取カロリー / 基礎代謝)
+は **どのデータソースが書いた値か** を別途保持する。watch / phone / Fit がそれぞれ
+独立に計算した値を並べることで、Google Health UI で見える「watch だけ過大評価」
+のような乖離を機械的に確認できる。
+
+`HealthConnectClient.aggregate` は dataOrigin 別 breakdown を返さないので、
+`readRecords` で生レコードを取って `Metadata.dataOrigin.packageName` 別に集計し直す。
+
+### 時系列
+
+容量制御のため `HeartRateRecord` の生サンプル (5 分粒度) と SpO2 / 呼吸数 / 皮膚温は
+**今日 + 昨日のみ** をローカル Room に保持する。詳細サブ画面でグラフ表示する。
 
 ## 権限
 
@@ -29,43 +43,73 @@ phone アプリ (`:mobile`) が Health Connect から日次の健康指標を集
 runtime grant は HC の `PermissionController.createRequestPermissionResultContract()`
 で取る (普通の Android runtime permission とは別経路)。
 
-- 取得 UI: phone の Settings 画面に「Health Connect」トグル。ON で権限ダイアログ起動、
-  全権限 grant されたら接続済み表示に切り替わる。一部 grant でも export 自体は動く
-  (取れた項目だけ埋まる)。
-- 個別 revoke は Android Settings → Health Connect から行う (in-app では一括 revoke
-  API が無いため案内のみ)。
-- HC の権限ダイアログから「アプリの説明」リンクで戻る経路として `MainActivity` が
-  `androidx.health.ACTION_SHOW_PERMISSIONS_RATIONALE` を受ける。
+主要な権限:
 
-## バックグラウンド取り込み
+- 心拍 / 睡眠 / 歩数 / カロリー / 体組成 / 栄養
+- 距離 / 階段 / 上昇高度 / 運動セッション
+- SpO2 / 呼吸数 / 皮膚温 / 基礎代謝
+- `READ_HEALTH_DATA_HISTORY` (Android 14+): 過去 30 日より前のデータ取得に必要。
+  許可されれば初回 5 年同期が回る。拒否時は HC が 30 日で打ち切る。
 
-権限を初めて grant した瞬間に、`HealthIngestWorker` 経由で 2 種類の WorkManager
-ジョブを仕込む:
+取得 UI / revoke 経路の運用は従来通り (Settings 画面のトグルで一括 grant、個別
+revoke は Android Settings → Health Connect)。
 
-- **初回 back-fill** (`OneTimeWorkRequest`, unique work `health-connect-backfill`):
-  過去 90 日分の `DailyHealthRecord` を Health Connect から読み、Firestore
-  `users/{uid}/dailyMetrics/{YYYY-MM-DD}` に upsert する。doc id を日付固定にして
-  いるため重複 ingest しても上書きで整合する (冪等)。`ExistingWorkPolicy.REPLACE`
-  なので「再 grant で過去データを取り直したい」ときも単純にトグル off → on で再走できる。
-- **日次同期** (`PeriodicWorkRequest`, unique work `health-connect-daily`, interval 1 day):
-  毎日 06:00 (初回は次の朝) に「昨日 + 一昨日」の 2 日分を冪等 upsert する。
-  `ExistingPeriodicWorkPolicy.KEEP` で複数回 schedule しても置き換わらない。
-  アプリ起動時にも `scheduleDaily` を呼んで、未スケジュール状態 (再インストール直後など)
-  から復帰できるようにしている。
+## ローカル Room キャッシュ
 
-ジョブの constraint は `NetworkType.CONNECTED` のみ (Firestore 書き込みに必要)。
-それ以外の制約 (充電中・wifi 限定 etc.) は付けない。
+ダッシュボード表示用のフルキャッシュ。テーブル:
 
-**アプリ起動状態への依存**: WorkManager は OS の JobScheduler に乗るのでアプリが
-killed されていても OS が条件を満たした時に走る。例外は次のいずれかに該当する間:
+| テーブル | 役割 | 保持期間 |
+|---|---|---|
+| `daily_snapshot` | 日次集約 (`DailyHealthRecord` 同等) | 過去 5 年 (初回 sync) + 通常 sync で today + 7 日 |
+| `metric_by_source` | 主要指標 × dataOrigin の breakdown | 通常 sync 範囲と同期 |
+| `heart_rate_sample` | HR 時系列 (5 分粒度) | 今日 + 昨日 |
+| `vital_sample` | SpO2 / 呼吸数 / 皮膚温の時系列 | 今日 + 昨日 |
+| `exercise_session` | 他アプリの運動セッション | 通常 sync 範囲と同期 |
 
-- ユーザが Settings → Apps → Force stop した直後 (一度 phone を開けば復帰)
-- Battery Optimization で対象アプリを「制限」に倒した場合 (推奨しない設定)
-- HC の権限が revoke された場合 (worker は `Result.success()` で no-op に倒れる)
+機種変時はローカルキャッシュが消えるが、HC が原本なので再同期で復元できる
+(Firestore に上げる必要のあるのは「機種をまたいでも消えてほしくない」日次集約のみ)。
 
-OFF トグルで両ジョブを cancel する。Firestore に書かれたデータは消さない (履歴は残す)。
+## 同期パイプライン
 
-## エクスポート経路
+3 系統が同じ `HealthSyncWorker` を呼ぶ:
+
+| トリガー | 範囲 | 用途 |
+|---|---|---|
+| Periodic 1h (WorkManager) | today + 過去 7 日 | バックグラウンドで「久々に開いた時の遅延」を抑える |
+| ProcessLifecycleOwner `ON_START` | today + 過去 7 日 | アプリ前景化時に Asken の最新入力を反映する |
+| pull-to-refresh / HC 連携初回 | today + 過去 7 日 | ユーザ操作 |
+| 初回限定 `InitialSyncWorker` | today + 過去 5 年 (1825 日) | インストール後 1 回だけ。`READ_HEALTH_DATA_HISTORY` 拒否時は HC 既定の 30 日に縮退 |
+
+初回完了マークは DataStore の `initial_sync_completed_at_ms` に永続化し、2 回目以降は
+スキップする。
+
+HC 読み込みはローカルなので network 不要だが、Firestore upsert を伴うため
+WorkManager の constraint は `NetworkType.CONNECTED` を要求する (network 不在時は
+OS が待機させる)。
+
+Worker は HC 権限が無ければ `Result.success()` で no-op に倒れる。`ExistingPeriodicWorkPolicy.KEEP`
+で複数回 enqueue しても置き換わらない。前景化時の one-time も `ExistingWorkPolicy.KEEP` で
+重複しない。
+
+## Firestore 連携
+
+- `users/{uid}/dailyMetrics/{YYYY-MM-DD}` に日次集約のみ upsert (Stream A)。
+- ドキュメント本体は `DailyHealthRecord` の JSON 文字列を `json` フィールドに持ち、
+  doc id を日付固定にすることで重複 ingest が単純上書きになる (冪等)。
+- 時系列・dataOrigin 別 breakdown は Firestore に上げない (端末ローカルで完結)。
+- Spark プランの 20K writes/日 制限: 通常 sync で 7 日 × 1 ドキュメント = 7 writes/h、
+  初回 5 年 sync で 1825 writes (1 回のみ) なので余裕。
+
+## ダッシュボード UI
+
+主画面 (HISTORY) 上部に Today カード (集約値) + 7-day trend (deficit / 体重) を統合。
+overflow menu から HR / Sleep / Calories / Nutrition / Vitals の詳細サブ画面を開く。
+
+Today カードで Mifflin-St Jeor BMR (体重 + 身長 + 年齢) を推定値として表示。HC の
+`totalCaloriesKcal` は BMR 込みの集計値 (休養日に ≒ BMR で確認済み) なので、deficit は
+`TDEE - intake` で素直に出す。
+
+## エクスポート経路 (Claude 等への手動取り出し)
 
 phone overflow メニューの「Export 30 days」から実行する。
 
@@ -80,9 +124,8 @@ phone overflow メニューの「Export 30 days」から実行する。
 
 ## 将来の拡張
 
-- **HC → Firestore daily 同期**: WorkManager で 1 日 1 回前日分を `users/{uid}/dailyMetrics/{YYYY-MM-DD}`
-  に upsert する。複数端末・端末紛失でも履歴が消えなくなる。Rules を `dailyMetrics` 用に
-  拡張する必要あり。
 - **Claude MCP connector**: Firestore 配下の `dailyMetrics` + `sessions` をそのまま
-  読ませる MCP server を立てる (Cloud Functions / Cloud Run のどちらか)。手動 JSON
-  エクスポートは将来も「困った時の救命ボート」として残す。
+  読ませる MCP server を立てる。手動 JSON エクスポートは「困った時の救命ボート」
+  として残す。
+- **watch tile**: その日の deficit を watch face から直接見られるようにする。
+- **deload 自動判定**: HRV / RHR / 睡眠から HIIT 強度の自動調整。

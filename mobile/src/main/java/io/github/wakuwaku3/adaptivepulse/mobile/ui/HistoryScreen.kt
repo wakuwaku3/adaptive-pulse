@@ -17,6 +17,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import io.github.wakuwaku3.adaptivepulse.core.sync.SessionRecord
+import io.github.wakuwaku3.adaptivepulse.mobile.ui.dashboard.DashboardComputed
+import io.github.wakuwaku3.adaptivepulse.mobile.ui.dashboard.TodayCard
+import io.github.wakuwaku3.adaptivepulse.mobile.ui.dashboard.TrendChart
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -26,8 +29,18 @@ private val dateFormat = DateTimeFormatter.ofPattern("yyyy/M/d HH:mm")
 /** 履歴 1 件 + 同期状態 */
 data class HistoryItem(val record: SessionRecord, val pending: Boolean)
 
+/**
+ * 主画面。Today カード + 7-day trend + Sessions 一覧を縦に並べる。
+ * UI ルール (`.claude/rules/ui.md`) で主画面 1 枚 + overflow menu サブ画面なので、ダッシュボードは
+ * ここに統合し、詳細はサブ画面から開く。
+ */
 @Composable
-fun HistoryScreen(items: List<HistoryItem>?, statusLine: String?) {
+fun HistoryScreen(
+    items: List<HistoryItem>?,
+    statusLine: String?,
+    today: DashboardComputed?,
+    recentDays: List<DashboardComputed>,
+) {
     if (items == null) {
         Column(
             modifier = Modifier.fillMaxSize(),
@@ -47,6 +60,16 @@ fun HistoryScreen(items: List<HistoryItem>?, statusLine: String?) {
             item {
                 Text(it, color = MobileColors.TextDim, style = MaterialTheme.typography.bodySmall)
             }
+        }
+        item { TodayCard(today = today) }
+        item { TrendChart(rows = recentDays) }
+        item {
+            Text(
+                "SESSIONS",
+                style = MaterialTheme.typography.labelMedium,
+                color = MobileColors.TextDim,
+                modifier = Modifier.padding(top = 8.dp),
+            )
         }
         if (items.isEmpty()) {
             item {

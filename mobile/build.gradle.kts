@@ -4,6 +4,7 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.compose.compiler)
+    alias(libs.plugins.ksp)
 }
 
 // google-services.json は Firebase プロジェクトに紐づく秘匿性の低い設定ファイルだが、
@@ -94,4 +95,14 @@ dependencies {
     implementation(libs.androidx.health.connect.client)
     // アプリ未起動でも初回 back-fill と日次同期を走らせる
     implementation(libs.androidx.work.runtime.ktx)
+
+    // ダッシュボード表示用に HC の取り込み結果と時系列をローカルにキャッシュする (Room)。
+    // Firestore は日次集約のみで、ダッシュボードのフル粒度は端末ローカルに閉じる
+    // (docs/notes/20260620__dashboard-redesign/index.md)
+    implementation(libs.androidx.room.runtime)
+    implementation(libs.androidx.room.ktx)
+    ksp(libs.androidx.room.compiler)
+
+    // アプリ前景化を検知して即時に HC を再同期する (ProcessLifecycleOwner)
+    implementation(libs.androidx.lifecycle.process)
 }

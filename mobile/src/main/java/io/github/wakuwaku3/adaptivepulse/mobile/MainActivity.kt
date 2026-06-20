@@ -3,6 +3,7 @@ package io.github.wakuwaku3.adaptivepulse.mobile
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -29,13 +30,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import androidx.activity.compose.rememberLauncherForActivityResult
 import io.github.wakuwaku3.adaptivepulse.core.SessionConfig
 import io.github.wakuwaku3.adaptivepulse.mobile.auth.AuthManager
+import io.github.wakuwaku3.adaptivepulse.mobile.health.DashboardSyncManager
 import io.github.wakuwaku3.adaptivepulse.mobile.health.HealthDataExporter
 import io.github.wakuwaku3.adaptivepulse.mobile.health.HealthDataSource
-import io.github.wakuwaku3.adaptivepulse.mobile.health.HealthIngestWorker
 import io.github.wakuwaku3.adaptivepulse.mobile.settings.PhoneSettingsRepository
+import io.github.wakuwaku3.adaptivepulse.mobile.store.DashboardRepository
 import io.github.wakuwaku3.adaptivepulse.mobile.sync.FirestoreSync
 import io.github.wakuwaku3.adaptivepulse.mobile.sync.PendingSessionStore
 import io.github.wakuwaku3.adaptivepulse.mobile.sync.PhoneSync
@@ -45,9 +46,24 @@ import io.github.wakuwaku3.adaptivepulse.mobile.ui.HistoryScreen
 import io.github.wakuwaku3.adaptivepulse.mobile.ui.MobileColors
 import io.github.wakuwaku3.adaptivepulse.mobile.ui.SettingsScreen
 import io.github.wakuwaku3.adaptivepulse.mobile.ui.appVersionName
+import io.github.wakuwaku3.adaptivepulse.mobile.ui.dashboard.CaloriesDetailScreen
+import io.github.wakuwaku3.adaptivepulse.mobile.ui.dashboard.HeartRateDetailScreen
+import io.github.wakuwaku3.adaptivepulse.mobile.ui.dashboard.NutritionDetailScreen
+import io.github.wakuwaku3.adaptivepulse.mobile.ui.dashboard.SleepDetailScreen
+import io.github.wakuwaku3.adaptivepulse.mobile.ui.dashboard.VitalsDetailScreen
+import io.github.wakuwaku3.adaptivepulse.mobile.ui.dashboard.computed
 import kotlinx.coroutines.launch
+import java.time.LocalDate
 
-private enum class Screen { History, Settings }
+private enum class Screen {
+    History,
+    Settings,
+    DetailHeartRate,
+    DetailSleep,
+    DetailCalories,
+    DetailNutrition,
+    DetailVitals,
+}
 
 class MainActivity : ComponentActivity() {
 
@@ -132,8 +148,10 @@ class MainActivity : ComponentActivity() {
         LaunchedEffect(Unit) {
             hcConnected = healthSource.available &&
                 healthSource.grantedPermissions().containsAll(HealthDataSource.PERMISSIONS)
-            // 既に grant 済みなら毎起動で日次同期を再保証する (KEEP policy なので冪等)
-            if (hcConnected) HealthIngestWorker.scheduleDaily(applicationContext)
+            if (hcConnected) {
+                DashboardSyncManager.enqueuePeriodic(applicationContext)
+                DashboardSyncManager.enqueueInitialSyncIfNeeded(applicationContext)
+            }
         }
         val hcLauncher = rememberLauncherForActivityResult(
             contract = HealthDataSource.permissionRequestContract(),
@@ -142,13 +160,27 @@ class MainActivity : ComponentActivity() {
             if (!hcConnected && granted.isNotEmpty()) {
                 status = "Health Connect: some permissions denied"
             }
-            // 全権限揃った瞬間に初回 back-fill と日次同期を仕込む。アプリを閉じても続行する
             if (hcConnected) {
-                HealthIngestWorker.scheduleBackfill(applicationContext)
-                HealthIngestWorker.scheduleDaily(applicationContext)
-                status = "Health Connect connected · back-filling last ${HealthIngestWorker.BACKFILL_DAYS} days in background"
+                DashboardSyncManager.enqueuePeriodic(applicationContext)
+                scope.launch {
+                    DashboardSyncManager.enqueueInitialSyncIfNeeded(applicationContext)
+                    DashboardSyncManager.enqueueForeground(applicationContext)
+                }
+                status = "Health Connect connected · back-filling last 5 years in background"
             }
         }
+
+        // ダッシュボード用のローカル Room を観測する。HC 同期は WorkManager が回す
+        val dashboard = remember { DashboardRepository(applicationContext) }
+        val today = LocalDate.now()
+        val todayEntity by dashboard.observeSnapshot(today).collectAsState(initial = null)
+        val recentEntities by dashboard.observeRecent(7, today).collectAsState(initial = emptyList())
+        val breakdown by dashboard.observeMetricBreakdown(today)
+            .collectAsState(initial = emptyList())
+        val hrSamples by dashboard.observeHeartRateForDate(today)
+            .collectAsState(initial = emptyList())
+        val todayComputed = todayEntity?.computed()
+        val recentComputed = recentEntities.sortedBy { it.date }.map { it.computed() }
 
         suspend fun refresh() {
             val pendingLeft = PhoneSync.syncPendingSessions(applicationContext)
@@ -166,11 +198,13 @@ class MainActivity : ComponentActivity() {
                 pendingLeft > 0 -> "$pendingLeft sessions waiting to sync"
                 else -> null
             }
+            // 取得操作と一緒に HC → Room の再同期も走らせる (pull-to-refresh 相当)
+            if (hcConnected) DashboardSyncManager.enqueueForeground(applicationContext)
         }
 
         LaunchedEffect(Unit) { refresh() }
 
-        BackHandler(enabled = screen == Screen.Settings) {
+        BackHandler(enabled = screen != Screen.History) {
             screen = Screen.History
         }
 
@@ -179,7 +213,7 @@ class MainActivity : ComponentActivity() {
                 TopAppBar(
                     title = {
                         Column {
-                            Text(if (screen == Screen.History) "AdaptivePulse" else "Settings")
+                            Text(titleFor(screen))
                             // sideload 後にどの release が入っているか TopAppBar で常時確認できる
                             Text(
                                 text = "v${appVersionName()}",
@@ -189,7 +223,7 @@ class MainActivity : ComponentActivity() {
                         }
                     },
                     navigationIcon = {
-                        if (screen == Screen.Settings) {
+                        if (screen != Screen.History) {
                             IconButton(onClick = { screen = Screen.History }) {
                                 Text("‹", style = MaterialTheme.typography.headlineMedium)
                             }
@@ -210,11 +244,33 @@ class MainActivity : ComponentActivity() {
                         ) {
                             if (screen == Screen.History) {
                                 DropdownMenuItem(
+                                    text = { Text("Heart rate") },
+                                    enabled = hcConnected,
+                                    onClick = { menuOpen = false; screen = Screen.DetailHeartRate },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Sleep") },
+                                    enabled = hcConnected,
+                                    onClick = { menuOpen = false; screen = Screen.DetailSleep },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Calories") },
+                                    enabled = hcConnected,
+                                    onClick = { menuOpen = false; screen = Screen.DetailCalories },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Nutrition") },
+                                    enabled = hcConnected,
+                                    onClick = { menuOpen = false; screen = Screen.DetailNutrition },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Vitals") },
+                                    enabled = hcConnected,
+                                    onClick = { menuOpen = false; screen = Screen.DetailVitals },
+                                )
+                                DropdownMenuItem(
                                     text = { Text("Settings") },
-                                    onClick = {
-                                        menuOpen = false
-                                        screen = Screen.Settings
-                                    },
+                                    onClick = { menuOpen = false; screen = Screen.Settings },
                                 )
                             }
                             DropdownMenuItem(
@@ -246,7 +302,12 @@ class MainActivity : ComponentActivity() {
         ) { padding ->
             Box(modifier = Modifier.padding(padding)) {
                 when (screen) {
-                    Screen.History -> HistoryScreen(items = history, statusLine = status)
+                    Screen.History -> HistoryScreen(
+                        items = history,
+                        statusLine = status,
+                        today = todayComputed,
+                        recentDays = recentComputed,
+                    )
                     Screen.Settings -> SettingsScreen(
                         config = settingsDoc?.toSessionConfig() ?: SessionConfig(),
                         onChange = { item, newValue ->
@@ -262,15 +323,35 @@ class MainActivity : ComponentActivity() {
                             if (wantConnect) {
                                 hcLauncher.launch(HealthDataSource.PERMISSIONS)
                             } else {
-                                // OS 設定アプリで revoke してもらう運用にする (in-app での個別 revoke は HC に無い)
-                                HealthIngestWorker.cancelAll(applicationContext)
+                                DashboardSyncManager.cancelAll(applicationContext)
                                 status = "Revoke in Settings → Health Connect"
                                 hcConnected = false
                             }
                         },
                     )
+                    Screen.DetailHeartRate -> HeartRateDetailScreen(
+                        samples = hrSamples,
+                        today = todayComputed,
+                    )
+                    Screen.DetailSleep -> SleepDetailScreen(recent = recentEntities)
+                    Screen.DetailCalories -> CaloriesDetailScreen(
+                        today = todayComputed,
+                        breakdown = breakdown,
+                    )
+                    Screen.DetailNutrition -> NutritionDetailScreen(recent = recentEntities)
+                    Screen.DetailVitals -> VitalsDetailScreen(recent = recentEntities)
                 }
             }
         }
     }
+}
+
+private fun titleFor(screen: Screen): String = when (screen) {
+    Screen.History -> "AdaptivePulse"
+    Screen.Settings -> "Settings"
+    Screen.DetailHeartRate -> "Heart rate"
+    Screen.DetailSleep -> "Sleep"
+    Screen.DetailCalories -> "Calories"
+    Screen.DetailNutrition -> "Nutrition"
+    Screen.DetailVitals -> "Vitals"
 }

@@ -4,38 +4,60 @@ import kotlinx.serialization.Serializable
 
 /**
  * 1 日分の集計健康指標。Health Connect 経由で日次に取り込み、JSON エクスポートや
- * 将来の Firestore 保存の共通シェイプとして使う。データ源は:
- *  - Pixel Watch: heart rate / sleep / steps / calories
+ * Firestore 保存の共通シェイプとして使う。データ源は:
+ *  - Pixel Watch: heart rate / sleep / steps / calories / SpO2 / 呼吸数 / 皮膚温
  *  - 体重計: weight / bodyFatPct / leanBodyMassKg
- *  - 食事ログアプリ (あすけん 等): intakeKcal / proteinG / fatG / carbsG
- *  - 任意の HC writer: heightCm
+ *  - 食事ログアプリ (あすけん 等): intakeKcal / proteinG / fatG / carbsG / fiberG / sugarG / sodiumMg
+ *  - 任意の HC writer: heightCm / distance / floors / elevation / BMR
  *
  * 取得できなかった項目は null で、復元時もそのまま欠損として残す (推定で埋めない)。
+ *
+ * 後方互換: 旧版で書かれた document は新フィールドが欠落するが、`@Serializable` のデフォルト
+ * null を経由してロードできる (`ignoreUnknownKeys = true`)。
  */
 @Serializable
 data class DailyHealthRecord(
     /** ISO 8601 (YYYY-MM-DD)、ローカルタイムゾーンの暦日 */
     val date: String,
+    // 心拍
     val restingHeartRateBpm: Int? = null,
     val hrvRmssdMs: Double? = null,
-    /** 平均心拍 (起きている間の平均ではなく、当日に記録された全 HR サンプルの平均) */
+    /** 平均心拍 (当日に記録された全 HR サンプルの平均) */
     val avgHeartRateBpm: Int? = null,
+    val minHeartRateBpm: Int? = null,
+    val maxHeartRateBpm: Int? = null,
+    // 睡眠 (分)
     val sleepDurationMin: Long? = null,
     val sleepDeepMin: Long? = null,
     val sleepRemMin: Long? = null,
     val sleepLightMin: Long? = null,
     val sleepAwakeMin: Long? = null,
+    // 活動
     val steps: Long? = null,
+    val distanceMeters: Double? = null,
+    val floorsClimbed: Double? = null,
+    val elevationGainedMeters: Double? = null,
     val activeCaloriesKcal: Double? = null,
     val totalCaloriesKcal: Double? = null,
+    val basalCaloriesKcal: Double? = null,
+    // 体組成
     val weightKg: Double? = null,
     val bodyFatPct: Double? = null,
     val leanBodyMassKg: Double? = null,
     val heightCm: Double? = null,
+    // 食事
     val intakeKcal: Double? = null,
     val proteinG: Double? = null,
     val fatG: Double? = null,
     val carbsG: Double? = null,
+    val fiberG: Double? = null,
+    val sugarG: Double? = null,
+    val sodiumMg: Double? = null,
+    // バイタル
+    val spo2AvgPct: Double? = null,
+    val spo2MinPct: Double? = null,
+    val respiratoryRateAvg: Double? = null,
+    val skinTemperatureDeltaC: Double? = null,
 )
 
 /** エクスポート 1 ファイルの top-level シェイプ */

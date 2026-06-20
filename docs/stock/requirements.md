@@ -83,7 +83,7 @@
 - 目標心拍 = 安静時心拍 + 強度 × (HRmax − 安静時心拍)。デフォルト強度は上限 86% / 下限 77%。
 - 心拍ゾーンを決める主因は年齢と安静時心拍であり、身長・体重はゾーン算出に使わない。
 - 年齢は設定画面で編集する。
-- 安静時心拍は phone 側の Health Connect 連携が ON のとき日次自動更新する。`HealthIngestWorker` が日次同期 + 初回 back-fill のついでに直近の `RestingHeartRateRecord` を取り、`PhoneSync.updateSettingsEverywhere` 経由で LWW 同期する (phone DataStore → 共通 Firestore → watch Data Layer)。phone UI から手動編集することもでき、最後に書いたほうが勝つ。
+- 安静時心拍は phone 側の Health Connect 連携が ON のとき日次自動更新する。`HealthSyncWorker` が通常同期 (今日 + 過去 7 日) + 初回 backfill (過去 5 年) のついでに直近の `RestingHeartRateRecord` を取り、`PhoneSync.updateSettingsEverywhere` 経由で LWW 同期する (phone DataStore → 共通 Firestore → watch Data Layer)。phone UI から手動編集することもでき、最後に書いたほうが勝つ。
 - 明示指定された上限/下限閾値はそちらが優先される (Karvonen は default に流れるだけで上書きはしない)。HC が安静時心拍だけを更新しても上限/下限は不変なので、ゾーンを追随させたいときは手動で調整するか、後続の「現プロファイルから再計算」アクションを使う。
 
 ## UI 方針

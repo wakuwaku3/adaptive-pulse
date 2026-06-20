@@ -20,6 +20,19 @@
     <uses-permission android:name="android.permission.health.READ_LEAN_BODY_MASS" />
     <uses-permission android:name="android.permission.health.READ_HEIGHT" />
     <uses-permission android:name="android.permission.health.READ_NUTRITION" />
+    <!-- ダッシュボード拡張: Google Health で見える主要指標を全部 phone 側で表示するため
+         追加で読む。Pixel Watch / Asken / 体組成計が書く範囲をカバーする
+         (docs/notes/20260620__dashboard-redesign/index.md) -->
+    <uses-permission android:name="android.permission.health.READ_DISTANCE" />
+    <uses-permission android:name="android.permission.health.READ_FLOORS_CLIMBED" />
+    <uses-permission android:name="android.permission.health.READ_ELEVATION_GAINED" />
+    <uses-permission android:name="android.permission.health.READ_OXYGEN_SATURATION" />
+    <uses-permission android:name="android.permission.health.READ_RESPIRATORY_RATE" />
+    <uses-permission android:name="android.permission.health.READ_SKIN_TEMPERATURE" />
+    <uses-permission android:name="android.permission.health.READ_BASAL_METABOLIC_RATE" />
+    <!-- 過去 30 日より前のデータを読むには Android 14+ で別途必要。
+         初回 5 年同期 (HealthSyncWorker) のためにリクエストする。拒否時は HC が 30 日で打ち切る -->
+    <uses-permission android:name="android.permission.health.READ_HEALTH_DATA_HISTORY" />
 
     <!-- Android 11+ の package visibility 制限を解き、Health Connect の存在判定と
          権限ダイアログ起動を可能にする -->
@@ -31,6 +44,7 @@
     </queries>
 
     <application
+        android:name=".AdaptivePulseApplication"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:label="@string/app_name"
