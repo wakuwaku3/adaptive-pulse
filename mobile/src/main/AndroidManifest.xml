@@ -4,6 +4,11 @@
     <!-- サーバー同期 (Firebase Auth / 同期 API) -->
     <uses-permission android:name="android.permission.INTERNET" />
 
+    <!-- watch のセッション開始通知 + ライブ画面の自動起動。
+         Android 13+ は通知に実行時許可、Android 14+ は full-screen intent にユーザ許可が要る -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
+
     <!-- Health Connect から日次の健康指標を読む。Pixel Watch / 体重計 / あすけん が
          Health Connect に書いているのを読みに行く片方向 read のみ。
          実際に grant してもらう権限は HealthDataSource の Activity Result で要求する -->
@@ -91,7 +96,7 @@
                 android:resource="@xml/file_paths" />
         </provider>
 
-        <!-- watch からの履歴・設定を受信する (Wearable Data Layer) -->
+        <!-- watch からの履歴・設定・ライブ状態 + セッション開始 ping を受信する (Wearable Data Layer) -->
         <service
             android:name=".sync.PhoneSyncService"
             android:exported="true">
@@ -108,6 +113,20 @@
                     android:scheme="wear"
                     android:host="*"
                     android:pathPrefix="/settings" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="com.google.android.gms.wearable.DATA_CHANGED" />
+                <data
+                    android:scheme="wear"
+                    android:host="*"
+                    android:pathPrefix="/session/live" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="com.google.android.gms.wearable.MESSAGE_RECEIVED" />
+                <data
+                    android:scheme="wear"
+                    android:host="*"
+                    android:pathPrefix="/session/start-foreground" />
             </intent-filter>
         </service>
     </application>

@@ -1,10 +1,13 @@
 package io.github.wakuwaku3.adaptivepulse.sync
 
 import android.content.Context
+import android.net.Uri
 import android.util.Log
+import com.google.android.gms.wearable.Node
 import com.google.android.gms.wearable.PutDataRequest
 import com.google.android.gms.wearable.Wearable
 import io.github.wakuwaku3.adaptivepulse.core.SessionConfig
+import io.github.wakuwaku3.adaptivepulse.core.sync.SessionLiveSnapshot
 import io.github.wakuwaku3.adaptivepulse.core.sync.SessionRecord
 import io.github.wakuwaku3.adaptivepulse.core.sync.SettingsDocument
 import io.github.wakuwaku3.adaptivepulse.core.sync.SyncPaths
@@ -30,6 +33,36 @@ object WearSync {
     /** 設定の現在値を共有する (LWW。受け手は updatedAtMs が新しいときだけ適用) */
     suspend fun putSettings(context: Context, doc: SettingsDocument) {
         putItem(context, SyncPaths.SETTINGS, json.encodeToString(SettingsDocument.serializer(), doc))
+    }
+
+    /** ライブセッション状態を phone へ書く (最新スナップショットの上書き保存) */
+    suspend fun putLiveSnapshot(context: Context, snapshot: SessionLiveSnapshot) {
+        putItem(
+            context,
+            SyncPaths.SESSION_LIVE,
+            json.encodeToString(SessionLiveSnapshot.serializer(), snapshot),
+        )
+    }
+
+    /** セッション終了時にライブ DataItem を消す (phone のライブ画面を自動で閉じるトリガー) */
+    suspend fun deleteLiveSnapshot(context: Context) {
+        runCatching {
+            // wear://*/<path> の host=local node 形式で削除を投げる
+            val uri = Uri.parse("wear:" + SyncPaths.SESSION_LIVE)
+            Wearable.getDataClient(context).deleteDataItems(uri).await()
+        }.onFailure { Log.w(TAG, "ライブ DataItem の削除に失敗", it) }
+    }
+
+    /** phone を前面化する ping (MessageClient: 一発撃って忘れる) */
+    suspend fun sendStartForeground(context: Context) {
+        runCatching {
+            val nodes: List<Node> = Wearable.getNodeClient(context).connectedNodes.await()
+            val messageClient = Wearable.getMessageClient(context)
+            nodes.forEach { node ->
+                messageClient.sendMessage(node.id, SyncPaths.SESSION_START_FOREGROUND, ByteArray(0))
+                    .await()
+            }
+        }.onFailure { Log.w(TAG, "start-foreground ping の送信に失敗", it) }
     }
 
     private suspend fun putItem(context: Context, path: String, payload: String) {

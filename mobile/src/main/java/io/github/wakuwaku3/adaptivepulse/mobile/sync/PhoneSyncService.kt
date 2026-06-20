@@ -4,11 +4,15 @@ import android.net.Uri
 import android.util.Log
 import com.google.android.gms.wearable.DataEvent
 import com.google.android.gms.wearable.DataEventBuffer
+import com.google.android.gms.wearable.MessageEvent
 import com.google.android.gms.wearable.Wearable
 import com.google.android.gms.wearable.WearableListenerService
+import io.github.wakuwaku3.adaptivepulse.core.sync.SessionLiveSnapshot
 import io.github.wakuwaku3.adaptivepulse.core.sync.SessionRecord
 import io.github.wakuwaku3.adaptivepulse.core.sync.SettingsDocument
 import io.github.wakuwaku3.adaptivepulse.core.sync.SyncPaths
+import io.github.wakuwaku3.adaptivepulse.mobile.session.LiveSessionLauncher
+import io.github.wakuwaku3.adaptivepulse.mobile.session.LiveSessionStore
 import io.github.wakuwaku3.adaptivepulse.mobile.settings.PhoneSettingsRepository
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.tasks.await
@@ -24,14 +28,38 @@ class PhoneSyncService : WearableListenerService() {
 
     override fun onDataChanged(events: DataEventBuffer) {
         for (event in events) {
-            if (event.type != DataEvent.TYPE_CHANGED) continue
             val path = event.dataItem.uri.path ?: continue
             when {
+                // ライブ状態は DELETE もハンドルしてライブ画面を閉じる
+                path == SyncPaths.SESSION_LIVE -> when (event.type) {
+                    DataEvent.TYPE_CHANGED -> onLiveSnapshotReceived(event.dataItem.data)
+                    DataEvent.TYPE_DELETED -> LiveSessionStore.clear()
+                }
+                event.type != DataEvent.TYPE_CHANGED -> continue
                 path.startsWith(SyncPaths.SESSIONS_PREFIX) ->
                     onSessionReceived(event.dataItem.uri, event.dataItem.data)
                 path == SyncPaths.SETTINGS -> onSettingsReceived(event.dataItem.data)
             }
         }
+    }
+
+    override fun onMessageReceived(event: MessageEvent) {
+        if (event.path == SyncPaths.SESSION_START_FOREGROUND) {
+            // watch が今セッションを開始した → phone をライブ画面で前面化する
+            LiveSessionLauncher.notifyAndLaunch(applicationContext)
+        }
+    }
+
+    private fun onLiveSnapshotReceived(payload: ByteArray?) {
+        val snapshot = payload?.let {
+            runCatching {
+                PhoneSync.json.decodeFromString(
+                    SessionLiveSnapshot.serializer(),
+                    it.toString(Charsets.UTF_8),
+                )
+            }.onFailure { e -> Log.w(TAG, "live DataItem の解釈に失敗", e) }.getOrNull()
+        } ?: return
+        LiveSessionStore.update(snapshot)
     }
 
     private fun onSessionReceived(uri: Uri, payload: ByteArray?) {

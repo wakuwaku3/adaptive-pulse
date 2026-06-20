@@ -5,6 +5,7 @@ import io.github.wakuwaku3.adaptivepulse.core.Phase
 import io.github.wakuwaku3.adaptivepulse.core.SessionConfig
 import io.github.wakuwaku3.adaptivepulse.core.SessionEvent
 import io.github.wakuwaku3.adaptivepulse.core.SessionMetrics
+import io.github.wakuwaku3.adaptivepulse.core.cadence.RollingMedian
 import io.github.wakuwaku3.adaptivepulse.hr.ExerciseSource
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
@@ -49,6 +50,8 @@ class SessionRunner(
     private val mark = timeSource.markNow()
     private var lastBpm: Int? = null
     private var calories: Double? = null
+    // 瞬時値はノイジーなので 5 秒窓の median を掛ける (pace-metric note の方針)
+    private val cadenceSpmWindow = RollingMedian(window = 5.seconds)
 
     /**
      * 現フェーズが監視している閾値を delta だけ動かす (UI のクラウン回転から呼ぶ)。
@@ -76,6 +79,7 @@ class SessionRunner(
         sourceFactory { engine.phase }.samples().first { sample ->
             lastBpm = sample.bpm
             sample.totalCalories?.let { calories = it }
+            sample.stepsPerMinute?.let { cadenceSpmWindow.add(mark.elapsedNow(), it) }
             metrics.onHeartRate(sample.bpm)
             update(engine.onHeartRate(sample.bpm, mark.elapsedNow()))
             engine.phase == Phase.FINISHED
@@ -122,6 +126,8 @@ class SessionRunner(
                     calories = calories,
                     upperBpm = engine.upperBpm,
                     lowerBpm = engine.lowerBpm,
+                    // SPM (step/min) を RPS (Hz) に変換して載せる。DTO の契約は Hz
+                    currentRps = cadenceSpmWindow.median(elapsed)?.let { it / 60.0 },
                 )
             },
         )

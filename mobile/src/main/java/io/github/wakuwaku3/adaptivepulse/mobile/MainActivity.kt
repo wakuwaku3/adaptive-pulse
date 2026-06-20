@@ -1,10 +1,14 @@
 package io.github.wakuwaku3.adaptivepulse.mobile
 
+import android.Manifest
+import android.os.Build
 import android.os.Bundle
+import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,6 +24,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -29,6 +34,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
 import io.github.wakuwaku3.adaptivepulse.core.SessionConfig
 import io.github.wakuwaku3.adaptivepulse.mobile.BuildConfig
@@ -36,12 +43,15 @@ import io.github.wakuwaku3.adaptivepulse.mobile.auth.AuthManager
 import io.github.wakuwaku3.adaptivepulse.mobile.health.DashboardSyncManager
 import io.github.wakuwaku3.adaptivepulse.mobile.health.HealthDataExporter
 import io.github.wakuwaku3.adaptivepulse.mobile.health.HealthDataSource
+import io.github.wakuwaku3.adaptivepulse.mobile.session.LiveSessionLauncher
+import io.github.wakuwaku3.adaptivepulse.mobile.session.LiveSessionStore
 import io.github.wakuwaku3.adaptivepulse.mobile.settings.PhoneSettingsRepository
 import io.github.wakuwaku3.adaptivepulse.mobile.store.DashboardRepository
 import io.github.wakuwaku3.adaptivepulse.mobile.store.DemoSeed
 import io.github.wakuwaku3.adaptivepulse.mobile.sync.FirestoreSync
 import io.github.wakuwaku3.adaptivepulse.mobile.sync.PendingSessionStore
 import io.github.wakuwaku3.adaptivepulse.mobile.sync.PhoneSync
+import io.github.wakuwaku3.adaptivepulse.mobile.ui.ActiveSessionScreen
 import io.github.wakuwaku3.adaptivepulse.mobile.ui.AdaptivePulseMobileTheme
 import io.github.wakuwaku3.adaptivepulse.mobile.ui.HistoryItem
 import io.github.wakuwaku3.adaptivepulse.mobile.ui.HistoryScreen
@@ -58,6 +68,12 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Android 8.1+ では full-screen intent 起動時にロック画面の上で表示するためのフラグ。
+        // 普段のフォアグラウンドでは影響しない
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+            setShowWhenLocked(true)
+            setTurnScreenOn(true)
+        }
         setContent {
             AdaptivePulseMobileTheme {
                 Root()
@@ -67,6 +83,13 @@ class MainActivity : ComponentActivity() {
 
     @Composable
     private fun Root() {
+        // ライブ画面はサインイン状態に関係なく出す (受け手は本人 phone なので、
+        // セッション中の表示の方が認証より優先される)。
+        val live by LiveSessionStore.snapshot.collectAsState()
+        live?.let {
+            ActiveSession(it)
+            return
+        }
         val auth = remember { AuthManager(applicationContext) }
         var signedIn by remember { mutableStateOf(auth.currentUser != null) }
         if (signedIn) {
@@ -77,6 +100,28 @@ class MainActivity : ComponentActivity() {
         } else {
             SignInScreen(auth, onSignedIn = { signedIn = true })
         }
+    }
+
+    @Composable
+    private fun ActiveSession(snapshot: io.github.wakuwaku3.adaptivepulse.core.sync.SessionLiveSnapshot) {
+        // ライブ画面表示中は画面オフを抑止する (要件「セッション中は画面オフを抑止」)
+        val view = LocalView.current
+        DisposableEffect(Unit) {
+            val window = (view.context as? android.app.Activity)?.window
+            window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            onDispose {
+                window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                LiveSessionLauncher.dismiss(applicationContext)
+            }
+        }
+        // Android 13+ の通知許可を 1 度だけ要求する (拒否されても fallback の挙動は変わらない)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            val launcher = rememberLauncherForActivityResult(
+                ActivityResultContracts.RequestPermission(),
+            ) { /* 結果は無視: 通知が出るかどうかだけが変わり、機能は壊れない */ }
+            LaunchedEffect(Unit) { launcher.launch(Manifest.permission.POST_NOTIFICATIONS) }
+        }
+        ActiveSessionScreen(snapshot)
     }
 
     @Composable
