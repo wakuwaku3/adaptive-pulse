@@ -8,8 +8,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
-import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -26,6 +24,7 @@ import io.github.wakuwaku3.adaptivepulse.mobile.ui.dashboard.HeartRate24hChart
 import io.github.wakuwaku3.adaptivepulse.mobile.ui.dashboard.HrvChart
 import io.github.wakuwaku3.adaptivepulse.mobile.ui.dashboard.ProteinChart
 import io.github.wakuwaku3.adaptivepulse.mobile.ui.dashboard.RestingHrChart
+import io.github.wakuwaku3.adaptivepulse.mobile.ui.dashboard.SessionAvgBpmChart
 import io.github.wakuwaku3.adaptivepulse.mobile.ui.dashboard.SessionHighDurationChart
 import io.github.wakuwaku3.adaptivepulse.mobile.ui.dashboard.SessionMaxBpmChart
 import io.github.wakuwaku3.adaptivepulse.mobile.ui.dashboard.SessionZoneRatioChart
@@ -35,18 +34,14 @@ import io.github.wakuwaku3.adaptivepulse.mobile.ui.dashboard.StepsChart
 import io.github.wakuwaku3.adaptivepulse.mobile.ui.dashboard.TdeeIntakeChart
 import io.github.wakuwaku3.adaptivepulse.mobile.ui.dashboard.TodayCard
 import io.github.wakuwaku3.adaptivepulse.mobile.ui.dashboard.WeightChart
-import java.time.Instant
-import java.time.ZoneId
-import java.time.format.DateTimeFormatter
 
-private val dateFormat = DateTimeFormatter.ofPattern("yyyy/M/d HH:mm")
-
-/** 履歴 1 件 + 同期状態 */
+/** 履歴 1 件 + 同期状態 (statusLine の "n local sessions" 表示用に保持) */
 data class HistoryItem(val record: SessionRecord, val pending: Boolean)
 
 /**
- * 主画面 = 唯一の画面。スクロール 1 本に Today カード + 2 列ミニチャートグリッド + Sessions を並べる。
- * 詳細用のサブ画面は持たず、全部このスクロール上で把握できる粒度に倒す。
+ * 主画面 = 唯一の画面。スクロール 1 本に Today カード + 2 列ミニチャートグリッドを並べる。
+ * セッション履歴はカードリストではなく TRAINING セクションのグラフで把握する
+ * (個別 1 件の情報よりトレンドが重要)。
  */
 @Composable
 fun HistoryScreen(
@@ -55,6 +50,8 @@ fun HistoryScreen(
     today: DashboardComputed?,
     recentDays: List<DashboardComputed>,
     hrSamples: List<HeartRateSampleEntity>,
+    upperBpm: Int,
+    lowerBpm: Int,
 ) {
     if (items == null) {
         Column(
@@ -78,25 +75,7 @@ fun HistoryScreen(
         }
         item { TodayCard(today = today) }
 
-        chartGrid(recentDays, hrSamples, items.map { it.record })
-
-        item {
-            Text(
-                "SESSIONS",
-                style = MaterialTheme.typography.labelMedium,
-                color = MobileColors.TextDim,
-                modifier = Modifier.padding(top = 8.dp),
-            )
-        }
-        if (items.isEmpty()) {
-            item {
-                Text(
-                    "No sessions yet. Finish a workout on the watch!",
-                    color = MobileColors.TextDim,
-                )
-            }
-        }
-        items(items, key = { it.record.id }) { item -> SessionCard(item) }
+        chartGrid(recentDays, hrSamples, items.map { it.record }, upperBpm, lowerBpm)
     }
 }
 
@@ -107,14 +86,14 @@ fun HistoryScreen(
  *  3. 歩数・タンパク質 (行動指標)
  *  4. 睡眠・HRV (回復)
  *  5. RHR・SpO2 (コンディション)
- *  6. HR 24h (詳細)
- *  7. セッション高強度区間秒数・最大心拍 (トレーニング品質)
- *  8. セッションゾーン滞在率 (品質)
+ *  6. TRAINING: 高強度区間・ゾーン滞在率・avg/max HR・HR 24h
  */
 private fun LazyListScope.chartGrid(
     rows: List<DashboardComputed>,
     hrSamples: List<HeartRateSampleEntity>,
-    sessions: List<io.github.wakuwaku3.adaptivepulse.core.sync.SessionRecord>,
+    sessions: List<SessionRecord>,
+    upperBpm: Int,
+    lowerBpm: Int,
 ) {
     item { ChartRow({ WeightChart(rows, it) }, { BmiChart(rows, it) }) }
     item { ChartRow({ DeficitChart(rows, it) }, { TdeeIntakeChart(rows, it) }) }
@@ -129,14 +108,19 @@ private fun LazyListScope.chartGrid(
             modifier = Modifier.padding(top = 8.dp),
         )
     }
-    item { ChartRow({ SessionHighDurationChart(sessions, it) }, { SessionMaxBpmChart(sessions, it) }) }
-    item { ChartRow({ SessionZoneRatioChart(sessions, it) }, { HeartRate24hChart(hrSamples, it) }) }
+    item { ChartRow({ SessionHighDurationChart(sessions, it) }, { SessionZoneRatioChart(sessions, it) }) }
+    item {
+        ChartRow(
+            { SessionAvgBpmChart(sessions, upperBpm, lowerBpm, it) },
+            { SessionMaxBpmChart(sessions, upperBpm, lowerBpm, it) },
+        )
+    }
+    item {
+        // HR 24h は時系列なので 2 列の片側だと細すぎる。フルワイドで 1 枚として置く
+        HeartRate24hChart(hrSamples, upperBpm, lowerBpm, Modifier.fillMaxWidth())
+    }
 }
 
-/**
- * 2 列レイアウトの薄いヘルパー。各セルに `Modifier.fillMaxWidth()` を渡し、
- * 親 Row 側で weight(1f) を割って幅を半々にする。
- */
 @Composable
 private fun ChartRow(left: @Composable (Modifier) -> Unit, right: @Composable (Modifier) -> Unit) {
     Row(
@@ -147,60 +131,3 @@ private fun ChartRow(left: @Composable (Modifier) -> Unit, right: @Composable (M
         Column(modifier = Modifier.weight(1f)) { right(Modifier.fillMaxWidth()) }
     }
 }
-
-@Composable
-private fun SessionCard(item: HistoryItem) {
-    val r = item.record
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column(
-            modifier = Modifier.padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
-        ) {
-            Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
-                Text(
-                    Instant.ofEpochMilli(r.startedAtMs)
-                        .atZone(ZoneId.systemDefault()).format(dateFormat),
-                    style = MaterialTheme.typography.titleMedium,
-                )
-                if (item.pending) {
-                    Text("NOT SYNCED", color = MobileColors.Done, style = MaterialTheme.typography.labelSmall)
-                }
-            }
-            Text(
-                buildString {
-                    append("${r.cycles}/${r.plannedCycles} cycles · ${formatDuration(r.durationSec)}")
-                    r.calories?.let { append(" · ${it.toInt()} kcal") }
-                    r.zoneRatio?.let { append(" · zone ${(it * 100).toInt()}%") }
-                },
-                color = MobileColors.Recover,
-                style = MaterialTheme.typography.bodyMedium,
-            )
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                if (r.highDurationsSec.isNotEmpty()) {
-                    Text(
-                        "high avg ${formatDuration(r.highDurationsSec.average().toLong())}",
-                        color = MobileColors.TextDim,
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                }
-                r.avgBpm?.let {
-                    Text(
-                        "avg $it bpm",
-                        color = MobileColors.TextDim,
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                }
-                if (r.fatigueBrake) {
-                    Text(
-                        "FATIGUE BRAKE",
-                        color = MobileColors.High,
-                        style = MaterialTheme.typography.labelSmall,
-                    )
-                }
-            }
-        }
-    }
-}
-
-private fun formatDuration(totalSecs: Long): String =
-    "%d:%02d".format(totalSecs / 60, totalSecs % 60)

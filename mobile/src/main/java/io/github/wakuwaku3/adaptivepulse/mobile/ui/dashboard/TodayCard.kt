@@ -86,7 +86,7 @@ private fun DeficitRow(today: DashboardComputed) {
         Column {
             Text("Deficit", style = MaterialTheme.typography.labelSmall, color = MobileColors.TextDim)
             Text(
-                deficit?.let { "%+,.0f kcal".format(-it) } ?: "—",
+                deficit?.let { "%+,.0f kcal".format(it) } ?: "—",
                 style = MaterialTheme.typography.titleMedium,
                 color = accent,
                 fontWeight = FontWeight.SemiBold,

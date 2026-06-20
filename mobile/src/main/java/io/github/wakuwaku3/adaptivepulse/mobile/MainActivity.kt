@@ -277,13 +277,18 @@ class MainActivity : ComponentActivity() {
         ) { padding ->
             Box(modifier = Modifier.padding(padding)) {
                 when (screen) {
-                    Screen.History -> HistoryScreen(
-                        items = history,
-                        statusLine = status,
-                        today = todayComputed,
-                        recentDays = recentComputed,
-                        hrSamples = hrSamples,
-                    )
+                    Screen.History -> {
+                        val cfg = settingsDoc?.toSessionConfig() ?: SessionConfig()
+                        HistoryScreen(
+                            items = history,
+                            statusLine = status,
+                            today = todayComputed,
+                            recentDays = recentComputed,
+                            hrSamples = hrSamples,
+                            upperBpm = cfg.upperBpm,
+                            lowerBpm = cfg.lowerBpm,
+                        )
+                    }
                     Screen.Settings -> SettingsScreen(
                         config = settingsDoc?.toSessionConfig() ?: SessionConfig(),
                         onChange = { item, newValue ->

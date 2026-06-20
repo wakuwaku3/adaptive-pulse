@@ -17,6 +17,7 @@ import io.github.wakuwaku3.adaptivepulse.mobile.ui.MobileColors
 data class DashboardComputed(
     val date: String,
     val weightKg: Double?,
+    val heightCm: Double?,
     val bmi: Double?,
     val tdeeKcal: Double?,
     val intakeKcal: Double?,
@@ -47,6 +48,7 @@ fun DailySnapshotEntity.computed(ageYears: Int = 39): DashboardComputed {
     return DashboardComputed(
         date = date,
         weightKg = weightKg,
+        heightCm = heightCm,
         bmi = bmi,
         tdeeKcal = totalCaloriesKcal,
         intakeKcal = intakeKcal,
@@ -174,4 +176,40 @@ object Spo2 {
     )
 
     fun categoryOf(v: Double): String = bands.firstOrNull { v in it.from..it.to }?.label ?: "—"
+}
+
+/**
+ * 体重の適正帯。BMI バンドを身長から逆算する (kg = BMI × (身長 m)²)。
+ * 身長が不明なら空配列を返す = チャートには帯を描かない。
+ */
+fun weightBandsForHeight(heightCm: Double?): List<Band> {
+    if (heightCm == null || heightCm <= 0) return emptyList()
+    val m = heightCm / 100.0
+    val mm = m * m
+    return Bmi.bands.map { Band(it.label, it.from * mm, it.to * mm, it.color) }
+}
+
+fun weightCategoryFor(weightKg: Double, heightCm: Double?): String? {
+    if (heightCm == null || heightCm <= 0) return null
+    val mm = (heightCm / 100.0).let { it * it }
+    val bmi = weightKg / mm
+    return Bmi.categoryOf(bmi)
+}
+
+/**
+ * 心拍ゾーン (本アプリの session 設定基準)。
+ * - upper 以上 = 高強度
+ * - lower〜upper = 中強度
+ * - lower 未満 = 低強度
+ */
+fun hrZonesFor(upperBpm: Int, lowerBpm: Int): List<Band> = listOf(
+    Band("低強度", 30.0, lowerBpm.toDouble(), MildGoodBand),
+    Band("中強度", lowerBpm.toDouble(), upperBpm.toDouble(), NeutralBand),
+    Band("高強度", upperBpm.toDouble(), 220.0, BadBand),
+)
+
+fun hrCategoryFor(bpm: Double, upperBpm: Int, lowerBpm: Int): String = when {
+    bpm >= upperBpm -> "高強度"
+    bpm >= lowerBpm -> "中強度"
+    else -> "低強度"
 }
