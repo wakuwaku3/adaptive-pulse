@@ -40,7 +40,8 @@ data class DashboardComputed(
 
 fun DailySnapshotEntity.computed(ageYears: Int = 39): DashboardComputed {
     val bmr = bmrMifflinStJeor(weightKg, heightCm, ageYears)
-    val deficit = if (totalCaloriesKcal != null && intakeKcal != null) totalCaloriesKcal - intakeKcal else null
+    // deficit = intake - TDEE。負 = 痩せ方向 (緑) / 正 = サープラス (赤) で 1 本化
+    val deficit = if (totalCaloriesKcal != null && intakeKcal != null) intakeKcal - totalCaloriesKcal else null
     val sleepHours = sleepDurationMin?.let { it / 60.0 }
     val protKg = if (proteinG != null && weightKg != null) proteinG / weightKg else null
     val fatKg = if (fatG != null && weightKg != null) fatG / weightKg else null
@@ -109,19 +110,20 @@ object Bmi {
     fun categoryOf(bmi: Double): String = bands.firstOrNull { bmi in it.from..it.to }?.label ?: "—"
 }
 
-/** 1 日あたりカロリー赤字 (deficit) — 上下に対称帯 */
+/**
+ * 1 日あたり intake − TDEE。
+ * 負 = 赤字 (痩せ方向、緑) / 正 = サープラス (太る方向、赤)。
+ */
 object Deficit {
     val bands = listOf(
-        Band("大幅サープラス", -10_000.0, -500.0, BadBand),
-        Band("微サープラス", -500.0, 0.0, MildBadBand),
-        Band("微赤字", 0.0, 500.0, MildGoodBand),
-        Band("適正赤字", 500.0, 10_000.0, GoodBand),
+        Band("適正赤字", -10_000.0, -500.0, GoodBand),
+        Band("微赤字", -500.0, 0.0, MildGoodBand),
+        Band("微サープラス", 0.0, 500.0, MildBadBand),
+        Band("大幅サープラス", 500.0, 10_000.0, BadBand),
     )
 
-    fun categoryOf(deficit: Double): String {
-        // deficit は TDEE - intake (赤字なら正)
-        return bands.firstOrNull { deficit in it.from..it.to }?.label ?: "—"
-    }
+    fun categoryOf(deficit: Double): String =
+        bands.firstOrNull { deficit in it.from..it.to }?.label ?: "—"
 }
 
 /** 1 日あたり歩数 — WHO/CDC 系の目安 */
@@ -227,6 +229,15 @@ fun weightCategoryFor(weightKg: Double, heightCm: Double?): String? {
 }
 
 /**
+ * 栄養素 (g) の絶対量帯を体重から逆算する。チャートを g/kg ではなく g で表示するため、
+ * 帯の境界も g に変換しておく。
+ */
+fun nutrientBandsForWeight(gPerKgBands: List<Band>, weightKg: Double?): List<Band> {
+    val w = weightKg ?: return emptyList()
+    return gPerKgBands.map { Band(it.label, it.from * w, it.to * w, it.color) }
+}
+
+/**
  * 心拍ゾーン (本アプリの session 設定基準)。
  * - upper 以上 = 高強度
  * - lower〜upper = 中強度
@@ -242,6 +253,14 @@ fun hrCategoryFor(bpm: Double, upperBpm: Int, lowerBpm: Int): String = when {
     bpm >= upperBpm -> "高強度"
     bpm >= lowerBpm -> "中強度"
     else -> "低強度"
+}
+
+/** ダッシュボードの表示期間 */
+enum class Period(val days: Int, val label: String) {
+    DAY(1, "Day"),
+    WEEK(7, "Week"),
+    MONTH(30, "Month"),
+    YEAR(365, "Year"),
 }
 
 /**

@@ -25,12 +25,14 @@ object DemoSeed {
         val now = System.currentTimeMillis()
         val zone = ZoneId.systemDefault()
 
-        // 7 日ぶん。直近 (today) は intake が deficit を作る、6 日前にチートデイ風スパイクを置く
-        val snapshots = (0 until 7).map { offset ->
+        // 過去 365 日 (Year ビュー対応)。週末はチートデイ風スパイクを混ぜる
+        val snapshots = (0 until 365).map { offset ->
             val date = today.minusDays(offset.toLong()).format(DateTimeFormatter.ISO_LOCAL_DATE)
-            val isCheatDay = offset == 5
-            val isHighActivity = offset == 0 || offset == 4
-            val weight = 91.4 + sin(offset.toDouble()) * 0.5 + if (isCheatDay) 2.8 else 0.0
+            val isCheatDay = offset % 7 == 5 // 週末風
+            val isHighActivity = offset % 7 == 0 || offset % 7 == 4
+            // 体重は long-term には微減トレンド (1 年で -3kg 程度) + 短期変動
+            val longTermDrift = offset * 0.008
+            val weight = 91.4 + longTermDrift + sin(offset.toDouble() / 7.0) * 0.5 + if (isCheatDay) 1.8 else 0.0
             val steps = when {
                 isHighActivity -> 16000L + Random.nextLong(2000)
                 isCheatDay -> 14000L
@@ -187,11 +189,13 @@ object DemoSeed {
             highTimeoutSec = 180,
             recoveryTimeoutSec = 180,
         )
-        // 過去 14 日のうち平日朝のジムセッションだけ生成 (週 5 想定 = 10 件)
+        // 過去 365 日のうち平日朝のジムセッションを生成 (週 5 想定 → 約 250 件)
         var produced = 0
         var d = today
-        while (produced < 10) {
+        var daysScanned = 0
+        while (produced < 220 && daysScanned < 365) {
             d = d.minusDays(1)
+            daysScanned++
             val dayOfWeek = d.dayOfWeek.value
             if (dayOfWeek > 5) continue // 週末スキップ
             val startMs = d.atStartOfDay(zone).plusHours(6).plusMinutes(40 + Random.nextLong(0, 25)).toInstant().toEpochMilli()

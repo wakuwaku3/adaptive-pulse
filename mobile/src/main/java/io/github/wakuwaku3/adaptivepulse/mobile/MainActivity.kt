@@ -168,8 +168,9 @@ class MainActivity : ComponentActivity() {
         // ダッシュボード用のローカル Room を観測する。HC 同期は WorkManager が回す
         val dashboard = remember { DashboardRepository(applicationContext) }
         val today = LocalDate.now()
+        var period by remember { mutableStateOf(io.github.wakuwaku3.adaptivepulse.mobile.ui.dashboard.Period.WEEK) }
         val todayEntity by dashboard.observeSnapshot(today).collectAsState(initial = null)
-        val recentEntities by dashboard.observeRecent(7, today).collectAsState(initial = emptyList())
+        val recentEntities by dashboard.observeRecent(period.days, today).collectAsState(initial = emptyList())
         val hrSamples by dashboard.observeHeartRateForDate(today)
             .collectAsState(initial = emptyList())
         val todayComputed = todayEntity?.computed()
@@ -287,6 +288,8 @@ class MainActivity : ComponentActivity() {
                             hrSamples = hrSamples,
                             upperBpm = cfg.upperBpm,
                             lowerBpm = cfg.lowerBpm,
+                            period = period,
+                            onPeriodChange = { period = it },
                         )
                     }
                     Screen.Settings -> SettingsScreen(

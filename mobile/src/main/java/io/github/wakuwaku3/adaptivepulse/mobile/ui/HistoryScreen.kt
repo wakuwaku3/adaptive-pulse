@@ -24,6 +24,8 @@ import io.github.wakuwaku3.adaptivepulse.mobile.ui.dashboard.DeficitChart
 import io.github.wakuwaku3.adaptivepulse.mobile.ui.dashboard.FatChart
 import io.github.wakuwaku3.adaptivepulse.mobile.ui.dashboard.HeartRate24hChart
 import io.github.wakuwaku3.adaptivepulse.mobile.ui.dashboard.HrvChart
+import io.github.wakuwaku3.adaptivepulse.mobile.ui.dashboard.Period
+import io.github.wakuwaku3.adaptivepulse.mobile.ui.dashboard.PeriodSelector
 import io.github.wakuwaku3.adaptivepulse.mobile.ui.dashboard.ProteinChart
 import io.github.wakuwaku3.adaptivepulse.mobile.ui.dashboard.RestingHrChart
 import io.github.wakuwaku3.adaptivepulse.mobile.ui.dashboard.SessionAvgBpmChart
@@ -54,6 +56,8 @@ fun HistoryScreen(
     hrSamples: List<HeartRateSampleEntity>,
     upperBpm: Int,
     lowerBpm: Int,
+    period: Period,
+    onPeriodChange: (Period) -> Unit,
 ) {
     if (items == null) {
         Column(
@@ -75,9 +79,15 @@ fun HistoryScreen(
                 Text(it, color = MobileColors.TextDim, style = MaterialTheme.typography.bodySmall)
             }
         }
+        item { PeriodSelector(current = period, onChange = onPeriodChange) }
         item { TodayCard(today = today) }
 
-        chartGrid(recentDays, hrSamples, items.map { it.record }, upperBpm, lowerBpm)
+        // セッションも period に追従させる: 期間内に開始したものだけ通す
+        val sessions = run {
+            val sinceMs = System.currentTimeMillis() - period.days.toLong() * 86_400_000L
+            items.map { it.record }.filter { it.startedAtMs >= sinceMs }
+        }
+        chartGrid(recentDays, hrSamples, sessions, upperBpm, lowerBpm)
     }
 }
 

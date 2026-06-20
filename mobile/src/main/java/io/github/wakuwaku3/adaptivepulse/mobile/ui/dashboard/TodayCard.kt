@@ -55,24 +55,21 @@ fun TodayCard(today: DashboardComputed?) {
             }
             // カロリー収支
             DeficitRow(today)
-            // 栄養素 (P/F/C)
+            // 栄養素 (P/F/C) — 絶対量 g のみ。色は g/kg ベースの band で判定
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                 MetricCell(
                     "Protein",
                     today.proteinG?.let { "%.0f g".format(it) } ?: "—",
-                    sub = today.proteinPerKg?.let { "%.2f g/kg".format(it) },
                     accent = bandStateColor(today.proteinPerKg, Protein.bands),
                 )
                 MetricCell(
                     "Fat",
                     today.fatG?.let { "%.0f g".format(it) } ?: "—",
-                    sub = today.fatPerKg?.let { "%.2f g/kg".format(it) },
                     accent = bandStateColor(today.fatPerKg, Fat.bands),
                 )
                 MetricCell(
                     "Carbs",
                     today.carbsG?.let { "%.0f g".format(it) } ?: "—",
-                    sub = today.carbsPerKg?.let { "%.2f g/kg".format(it) },
                     accent = bandStateColor(today.carbsPerKg, Carbs.bands),
                 )
             }
