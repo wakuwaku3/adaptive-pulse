@@ -257,7 +257,7 @@ fun hrCategoryFor(bpm: Double, upperBpm: Int, lowerBpm: Int): String = when {
 
 /** ダッシュボードの表示期間 */
 enum class Period(val days: Int, val label: String) {
-    DAY(1, "Day"),
+    DAY(3, "Day"),
     WEEK(7, "Week"),
     MONTH(30, "Month"),
     YEAR(365, "Year"),

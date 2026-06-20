@@ -213,8 +213,8 @@ private fun ChartHeader(
     ) {
         Text(
             title,
-            style = MaterialTheme.typography.labelMedium,
             color = MobileColors.TextDim,
+            fontSize = 11.sp,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.weight(1f, fill = false),
@@ -224,7 +224,7 @@ private fun ChartHeader(
                 detectTapGestures { onToggleInfo() }
             },
         ) {
-            Text("ⓘ", color = MobileColors.TextDim, style = MaterialTheme.typography.labelMedium)
+            Text("ⓘ", color = MobileColors.TextDim, fontSize = 11.sp)
             if (showInfo) {
                 Popup(
                     alignment = Alignment.TopStart,
@@ -251,7 +251,7 @@ private fun ChartHeader(
  */
 @Composable
 private fun LegendRow(items: List<LegendItem>) {
-    val legendFont = 10.sp
+    val legendFont = 9.sp
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -326,6 +326,32 @@ private fun DrawScope.drawReferenceLine(value: Double, scale: Scale, color: Colo
         strokeWidth = 1.2f,
         pathEffect = PathEffect.dashPathEffect(floatArrayOf(8f, 6f)),
     )
+}
+
+/**
+ * 参照線の「良い側」を薄緑、「悪い側」を薄赤で塗る。
+ * - [direction] = AboveIsGood: 上が良い (HRV / High-phase duration / Zone time)
+ * - [direction] = BelowIsGood: 下が良い (将来 Resting HR / 体重 / Intake などに使えるが
+ *   現状は明示的な band がある指標が多いので使わない)
+ */
+private enum class GoodDirection { ABOVE, BELOW }
+
+private fun DrawScope.drawGoodZone(refValue: Double, scale: Scale, direction: GoodDirection) {
+    if (refValue !in scale.min..scale.max) return
+    val y = scale.y(size.height, refValue)
+    val good = PrimaryColor.copy(alpha = 0.12f)
+    val bad = SecondaryColor.copy(alpha = 0.10f)
+    when (direction) {
+        GoodDirection.ABOVE -> {
+            // 上 = 良い (緑) / 下 = 悪い (赤)
+            drawRect(color = good, topLeft = Offset(0f, 0f), size = GeomSize(size.width, y))
+            drawRect(color = bad, topLeft = Offset(0f, y), size = GeomSize(size.width, size.height - y))
+        }
+        GoodDirection.BELOW -> {
+            drawRect(color = bad, topLeft = Offset(0f, 0f), size = GeomSize(size.width, y))
+            drawRect(color = good, topLeft = Offset(0f, y), size = GeomSize(size.width, size.height - y))
+        }
+    }
 }
 
 /**
@@ -746,12 +772,12 @@ fun HrvChart(rows: List<DashboardComputed>, modifier: Modifier = Modifier) {
         else -> MobileColors.High
     }
     MiniChartCard(
-        title = "HRV",
-        info = "心拍変動 (Heart Rate Variability, ms)。自律神経の状態 = 回復度の指標。高いほど良い。" +
-            "破線は期間平均 = 自分の baseline。これより下が続けば疲労蓄積のサイン",
+        title = "Heart Rate Variability",
+        info = "心拍変動 (ms)。自律神経の状態 = 回復度の指標。高いほど良い。" +
+            "破線は期間平均 = 自分の baseline。それより上 (緑帯) なら回復済、下 (赤帯) なら疲労蓄積",
         legend = listOf(
             LegendItem(
-                "HRV",
+                "Heart Rate Variability",
                 today?.hrvMs?.let { "%.0f ms".format(it) } ?: "—",
                 PrimaryColor,
                 stateColor,
@@ -763,7 +789,10 @@ fun HrvChart(rows: List<DashboardComputed>, modifier: Modifier = Modifier) {
         pointCount = rows.size,
         pointAt = { i -> rows.getOrNull(i)?.let { formatPoint(it.date, it.hrvMs, "ms", 0) } ?: "" },
         drawContent = {
-            avg?.let { drawReferenceLine(it, scale, MobileColors.TextDim) }
+            avg?.let {
+                drawGoodZone(it, scale, GoodDirection.ABOVE)
+                drawReferenceLine(it, scale, MobileColors.TextDim)
+            }
             drawLineChart(values, scale, PrimaryColor)
         },
     )
@@ -776,12 +805,12 @@ fun RestingHrChart(rows: List<DashboardComputed>, modifier: Modifier = Modifier)
     val scale = if (nonNull.isNotEmpty()) expandWithBands(nonNull, RestingHr.bands, 0.15) else Scale(50.0, 80.0)
     val today = rows.lastOrNull()
     MiniChartCard(
-        title = "Resting HR",
+        title = "Resting Heart Rate",
         info = "安静時心拍 (bpm)。心臓の効率を反映、低いほど健康。" +
             "緑 = 運動者並み <60 / 良好 60-70 / 黄 = 普通 70-80 / 赤 = やや高〜高 80+",
         legend = listOf(
             LegendItem(
-                "Resting HR",
+                "Resting Heart Rate",
                 today?.restingHrBpm?.let { "$it bpm" } ?: "—",
                 PrimaryColor,
                 bandStateColor(today?.restingHrBpm?.toDouble(), RestingHr.bands),
@@ -871,7 +900,8 @@ fun SessionHighDurationChart(sessions: List<SessionRecord>, modifier: Modifier =
             } ?: ""
         },
         drawContent = {
-            drawReferenceLine(HighPhaseTargetSec, scale, PrimaryColor.copy(alpha = 0.6f))
+            drawGoodZone(HighPhaseTargetSec, scale, GoodDirection.ABOVE)
+            drawReferenceLine(HighPhaseTargetSec, scale, MobileColors.TextDim)
             drawLineChart(values, scale, PrimaryColor)
         },
     )
@@ -912,7 +942,8 @@ fun SessionZoneRatioChart(sessions: List<SessionRecord>, modifier: Modifier = Mo
             } ?: ""
         },
         drawContent = {
-            drawReferenceLine(ZoneTimeTargetPct, scale, PrimaryColor.copy(alpha = 0.6f))
+            drawGoodZone(ZoneTimeTargetPct, scale, GoodDirection.ABOVE)
+            drawReferenceLine(ZoneTimeTargetPct, scale, MobileColors.TextDim)
             drawLineChart(values, scale, PrimaryColor)
         },
     )
@@ -932,12 +963,12 @@ fun SessionMaxBpmChart(
     val scale = if (nonNull.isNotEmpty()) expandWithBands(nonNull, zones, 0.08) else Scale(100.0, 200.0)
     val latest = nonNull.lastOrNull()
     MiniChartCard(
-        title = "Max HR",
+        title = "Session Max Heart Rate",
         info = "セッション中の最大心拍 (bpm)。設定の upper ($upperBpm) / lower ($lowerBpm) を境に" +
             "低/中/高強度の帯で表示。HIIT は高強度 (赤帯) に届くのが望ましい",
         legend = listOf(
             LegendItem(
-                "Max HR",
+                "Max Heart Rate",
                 latest?.let { "%.0f bpm".format(it) } ?: "—",
                 PrimaryColor,
                 hrZoneColor(latest?.let { hrCategoryFor(it, upperBpm, lowerBpm) }),
@@ -974,11 +1005,11 @@ fun SessionAvgBpmChart(
     val scale = if (nonNull.isNotEmpty()) expandWithBands(nonNull, zones, 0.08) else Scale(80.0, 180.0)
     val latest = nonNull.lastOrNull()
     MiniChartCard(
-        title = "Avg HR",
+        title = "Session Avg Heart Rate",
         info = "セッション中の平均心拍 (bpm)。中強度 (緑帯) に乗っているのが理想",
         legend = listOf(
             LegendItem(
-                "Avg HR",
+                "Avg Heart Rate",
                 latest?.let { "%.0f bpm".format(it) } ?: "—",
                 PrimaryColor,
                 hrZoneColor(latest?.let { hrCategoryFor(it, upperBpm, lowerBpm) }),
@@ -1018,12 +1049,12 @@ fun HeartRate24hChart(
     val tMax = sorted.lastOrNull()?.timestampMs?.coerceAtLeast(tMin + 1) ?: 1L
     val latest = sorted.lastOrNull()
     MiniChartCard(
-        title = "Heart rate",
+        title = "Heart Rate (Today)",
         info = "今日と昨日の心拍 (bpm, 5 分粒度)。設定の upper ($upperBpm) / lower ($lowerBpm) を境に" +
             "低/中/高強度の帯。朝の HIIT で高強度に届いていれば良いシグナル",
         legend = listOf(
             LegendItem(
-                "Heart rate",
+                "Heart Rate",
                 latest?.let { "${it.bpm} bpm" } ?: "—",
                 PrimaryColor,
                 hrZoneColor(latest?.let { hrCategoryFor(it.bpm.toDouble(), upperBpm, lowerBpm) }),
