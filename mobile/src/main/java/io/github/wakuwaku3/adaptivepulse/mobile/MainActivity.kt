@@ -37,6 +37,7 @@ import io.github.wakuwaku3.adaptivepulse.mobile.health.HealthDataExporter
 import io.github.wakuwaku3.adaptivepulse.mobile.health.HealthDataSource
 import io.github.wakuwaku3.adaptivepulse.mobile.settings.PhoneSettingsRepository
 import io.github.wakuwaku3.adaptivepulse.mobile.store.DashboardRepository
+import io.github.wakuwaku3.adaptivepulse.mobile.store.DemoSeed
 import io.github.wakuwaku3.adaptivepulse.mobile.sync.FirestoreSync
 import io.github.wakuwaku3.adaptivepulse.mobile.sync.PendingSessionStore
 import io.github.wakuwaku3.adaptivepulse.mobile.sync.PhoneSync
@@ -46,24 +47,11 @@ import io.github.wakuwaku3.adaptivepulse.mobile.ui.HistoryScreen
 import io.github.wakuwaku3.adaptivepulse.mobile.ui.MobileColors
 import io.github.wakuwaku3.adaptivepulse.mobile.ui.SettingsScreen
 import io.github.wakuwaku3.adaptivepulse.mobile.ui.appVersionName
-import io.github.wakuwaku3.adaptivepulse.mobile.ui.dashboard.CaloriesDetailScreen
-import io.github.wakuwaku3.adaptivepulse.mobile.ui.dashboard.HeartRateDetailScreen
-import io.github.wakuwaku3.adaptivepulse.mobile.ui.dashboard.NutritionDetailScreen
-import io.github.wakuwaku3.adaptivepulse.mobile.ui.dashboard.SleepDetailScreen
-import io.github.wakuwaku3.adaptivepulse.mobile.ui.dashboard.VitalsDetailScreen
 import io.github.wakuwaku3.adaptivepulse.mobile.ui.dashboard.computed
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 
-private enum class Screen {
-    History,
-    Settings,
-    DetailHeartRate,
-    DetailSleep,
-    DetailCalories,
-    DetailNutrition,
-    DetailVitals,
-}
+private enum class Screen { History, Settings }
 
 class MainActivity : ComponentActivity() {
 
@@ -126,6 +114,13 @@ class MainActivity : ComponentActivity() {
                         }
                     },
                 ) { Text("Sign in with Google") }
+                // デザイン確認用: HC・Firebase なしの環境 (エミュレータ等) で UI を見たい時に使う
+                Button(onClick = {
+                    scope.launch {
+                        DemoSeed.seed(applicationContext)
+                        onSignedIn()
+                    }
+                }) { Text("Show demo dashboard") }
                 error?.let { Text(it, color = MobileColors.High) }
             }
         }
@@ -175,8 +170,6 @@ class MainActivity : ComponentActivity() {
         val today = LocalDate.now()
         val todayEntity by dashboard.observeSnapshot(today).collectAsState(initial = null)
         val recentEntities by dashboard.observeRecent(7, today).collectAsState(initial = emptyList())
-        val breakdown by dashboard.observeMetricBreakdown(today)
-            .collectAsState(initial = emptyList())
         val hrSamples by dashboard.observeHeartRateForDate(today)
             .collectAsState(initial = emptyList())
         val todayComputed = todayEntity?.computed()
@@ -244,31 +237,6 @@ class MainActivity : ComponentActivity() {
                         ) {
                             if (screen == Screen.History) {
                                 DropdownMenuItem(
-                                    text = { Text("Heart rate") },
-                                    enabled = hcConnected,
-                                    onClick = { menuOpen = false; screen = Screen.DetailHeartRate },
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("Sleep") },
-                                    enabled = hcConnected,
-                                    onClick = { menuOpen = false; screen = Screen.DetailSleep },
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("Calories") },
-                                    enabled = hcConnected,
-                                    onClick = { menuOpen = false; screen = Screen.DetailCalories },
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("Nutrition") },
-                                    enabled = hcConnected,
-                                    onClick = { menuOpen = false; screen = Screen.DetailNutrition },
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("Vitals") },
-                                    enabled = hcConnected,
-                                    onClick = { menuOpen = false; screen = Screen.DetailVitals },
-                                )
-                                DropdownMenuItem(
                                     text = { Text("Settings") },
                                     onClick = { menuOpen = false; screen = Screen.Settings },
                                 )
@@ -286,6 +254,13 @@ class MainActivity : ComponentActivity() {
                                             "Exported ${export.dailyMetrics.size} days + ${export.sessions.size} sessions"
                                         startActivity(intent)
                                     }
+                                },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Re-seed demo data") },
+                                onClick = {
+                                    menuOpen = false
+                                    scope.launch { DemoSeed.seed(applicationContext) }
                                 },
                             )
                             DropdownMenuItem(
@@ -307,6 +282,7 @@ class MainActivity : ComponentActivity() {
                         statusLine = status,
                         today = todayComputed,
                         recentDays = recentComputed,
+                        hrSamples = hrSamples,
                     )
                     Screen.Settings -> SettingsScreen(
                         config = settingsDoc?.toSessionConfig() ?: SessionConfig(),
@@ -329,17 +305,6 @@ class MainActivity : ComponentActivity() {
                             }
                         },
                     )
-                    Screen.DetailHeartRate -> HeartRateDetailScreen(
-                        samples = hrSamples,
-                        today = todayComputed,
-                    )
-                    Screen.DetailSleep -> SleepDetailScreen(recent = recentEntities)
-                    Screen.DetailCalories -> CaloriesDetailScreen(
-                        today = todayComputed,
-                        breakdown = breakdown,
-                    )
-                    Screen.DetailNutrition -> NutritionDetailScreen(recent = recentEntities)
-                    Screen.DetailVitals -> VitalsDetailScreen(recent = recentEntities)
                 }
             }
         }
@@ -349,9 +314,4 @@ class MainActivity : ComponentActivity() {
 private fun titleFor(screen: Screen): String = when (screen) {
     Screen.History -> "AdaptivePulse"
     Screen.Settings -> "Settings"
-    Screen.DetailHeartRate -> "Heart rate"
-    Screen.DetailSleep -> "Sleep"
-    Screen.DetailCalories -> "Calories"
-    Screen.DetailNutrition -> "Nutrition"
-    Screen.DetailVitals -> "Vitals"
 }

@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
@@ -17,9 +18,23 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import io.github.wakuwaku3.adaptivepulse.core.sync.SessionRecord
+import io.github.wakuwaku3.adaptivepulse.mobile.store.HeartRateSampleEntity
+import io.github.wakuwaku3.adaptivepulse.mobile.ui.dashboard.BmiChart
 import io.github.wakuwaku3.adaptivepulse.mobile.ui.dashboard.DashboardComputed
+import io.github.wakuwaku3.adaptivepulse.mobile.ui.dashboard.DeficitChart
+import io.github.wakuwaku3.adaptivepulse.mobile.ui.dashboard.HeartRate24hChart
+import io.github.wakuwaku3.adaptivepulse.mobile.ui.dashboard.HrvChart
+import io.github.wakuwaku3.adaptivepulse.mobile.ui.dashboard.ProteinChart
+import io.github.wakuwaku3.adaptivepulse.mobile.ui.dashboard.RestingHrChart
+import io.github.wakuwaku3.adaptivepulse.mobile.ui.dashboard.SessionHighDurationChart
+import io.github.wakuwaku3.adaptivepulse.mobile.ui.dashboard.SessionMaxBpmChart
+import io.github.wakuwaku3.adaptivepulse.mobile.ui.dashboard.SessionZoneRatioChart
+import io.github.wakuwaku3.adaptivepulse.mobile.ui.dashboard.SleepChart
+import io.github.wakuwaku3.adaptivepulse.mobile.ui.dashboard.Spo2Chart
+import io.github.wakuwaku3.adaptivepulse.mobile.ui.dashboard.StepsChart
+import io.github.wakuwaku3.adaptivepulse.mobile.ui.dashboard.TdeeIntakeChart
 import io.github.wakuwaku3.adaptivepulse.mobile.ui.dashboard.TodayCard
-import io.github.wakuwaku3.adaptivepulse.mobile.ui.dashboard.TrendChart
+import io.github.wakuwaku3.adaptivepulse.mobile.ui.dashboard.WeightChart
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -30,9 +45,8 @@ private val dateFormat = DateTimeFormatter.ofPattern("yyyy/M/d HH:mm")
 data class HistoryItem(val record: SessionRecord, val pending: Boolean)
 
 /**
- * 主画面。Today カード + 7-day trend + Sessions 一覧を縦に並べる。
- * UI ルール (`.claude/rules/ui.md`) で主画面 1 枚 + overflow menu サブ画面なので、ダッシュボードは
- * ここに統合し、詳細はサブ画面から開く。
+ * 主画面 = 唯一の画面。スクロール 1 本に Today カード + 2 列ミニチャートグリッド + Sessions を並べる。
+ * 詳細用のサブ画面は持たず、全部このスクロール上で把握できる粒度に倒す。
  */
 @Composable
 fun HistoryScreen(
@@ -40,6 +54,7 @@ fun HistoryScreen(
     statusLine: String?,
     today: DashboardComputed?,
     recentDays: List<DashboardComputed>,
+    hrSamples: List<HeartRateSampleEntity>,
 ) {
     if (items == null) {
         Column(
@@ -54,7 +69,7 @@ fun HistoryScreen(
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         verticalArrangement = Arrangement.spacedBy(8.dp),
-        contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(12.dp),
     ) {
         statusLine?.let {
             item {
@@ -62,7 +77,9 @@ fun HistoryScreen(
             }
         }
         item { TodayCard(today = today) }
-        item { TrendChart(rows = recentDays) }
+
+        chartGrid(recentDays, hrSamples, items.map { it.record })
+
         item {
             Text(
                 "SESSIONS",
@@ -80,6 +97,54 @@ fun HistoryScreen(
             }
         }
         items(items, key = { it.record.id }) { item -> SessionCard(item) }
+    }
+}
+
+/**
+ * 2 列で並べるミニチャート。1 行 = 横並び 2 枚。種別はゴールから近い順に上から:
+ *  1. 体重・BMI (減量フェーズ進捗)
+ *  2. deficit・TDEE vs intake (今のカロリー収支)
+ *  3. 歩数・タンパク質 (行動指標)
+ *  4. 睡眠・HRV (回復)
+ *  5. RHR・SpO2 (コンディション)
+ *  6. HR 24h (詳細)
+ *  7. セッション高強度区間秒数・最大心拍 (トレーニング品質)
+ *  8. セッションゾーン滞在率 (品質)
+ */
+private fun LazyListScope.chartGrid(
+    rows: List<DashboardComputed>,
+    hrSamples: List<HeartRateSampleEntity>,
+    sessions: List<io.github.wakuwaku3.adaptivepulse.core.sync.SessionRecord>,
+) {
+    item { ChartRow({ WeightChart(rows, it) }, { BmiChart(rows, it) }) }
+    item { ChartRow({ DeficitChart(rows, it) }, { TdeeIntakeChart(rows, it) }) }
+    item { ChartRow({ StepsChart(rows, it) }, { ProteinChart(rows, it) }) }
+    item { ChartRow({ SleepChart(rows, it) }, { HrvChart(rows, it) }) }
+    item { ChartRow({ RestingHrChart(rows, it) }, { Spo2Chart(rows, it) }) }
+    item {
+        Text(
+            "TRAINING",
+            style = MaterialTheme.typography.labelMedium,
+            color = MobileColors.TextDim,
+            modifier = Modifier.padding(top = 8.dp),
+        )
+    }
+    item { ChartRow({ SessionHighDurationChart(sessions, it) }, { SessionMaxBpmChart(sessions, it) }) }
+    item { ChartRow({ SessionZoneRatioChart(sessions, it) }, { HeartRate24hChart(hrSamples, it) }) }
+}
+
+/**
+ * 2 列レイアウトの薄いヘルパー。各セルに `Modifier.fillMaxWidth()` を渡し、
+ * 親 Row 側で weight(1f) を割って幅を半々にする。
+ */
+@Composable
+private fun ChartRow(left: @Composable (Modifier) -> Unit, right: @Composable (Modifier) -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Column(modifier = Modifier.weight(1f)) { left(Modifier.fillMaxWidth()) }
+        Column(modifier = Modifier.weight(1f)) { right(Modifier.fillMaxWidth()) }
     }
 }
 
@@ -111,7 +176,6 @@ private fun SessionCard(item: HistoryItem) {
                 style = MaterialTheme.typography.bodyMedium,
             )
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                // 高強度所要時間の平均: 同負荷で伸びる = 体力向上のシグナル
                 if (r.highDurationsSec.isNotEmpty()) {
                     Text(
                         "high avg ${formatDuration(r.highDurationsSec.average().toLong())}",
