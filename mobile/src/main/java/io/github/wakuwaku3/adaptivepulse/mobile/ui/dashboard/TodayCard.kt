@@ -35,7 +35,7 @@ fun TodayCard(today: DashboardComputed?) {
                 Text("No data yet", color = MobileColors.TextDim)
                 return@Column
             }
-            // 体組成
+            // 体組成 (Steps はチャート側にまかせる)
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                 MetricCell(
                     "Weight",
@@ -46,11 +46,6 @@ fun TodayCard(today: DashboardComputed?) {
                     "BMI",
                     today.bmi?.let { "%.1f".format(it) } ?: "—",
                     accent = bandStateColor(today.bmi, Bmi.bands),
-                )
-                MetricCell(
-                    "Steps",
-                    today.steps?.toString() ?: "—",
-                    accent = bandStateColor(today.steps?.toDouble(), Steps.bands),
                 )
             }
             // カロリー収支

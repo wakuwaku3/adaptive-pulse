@@ -79,8 +79,8 @@ fun HistoryScreen(
                 Text(it, color = MobileColors.TextDim, style = MaterialTheme.typography.bodySmall)
             }
         }
-        item { PeriodSelector(current = period, onChange = onPeriodChange) }
         item { TodayCard(today = today) }
+        item { PeriodSelector(current = period, onChange = onPeriodChange) }
 
         // セッションも period に追従させる: 期間内に開始したものだけ通す
         val sessions = run {
@@ -89,6 +89,16 @@ fun HistoryScreen(
         }
         chartGrid(recentDays, hrSamples, sessions, upperBpm, lowerBpm)
     }
+}
+
+@Composable
+private fun SectionHeader(label: String) {
+    Text(
+        label,
+        style = MaterialTheme.typography.labelMedium,
+        color = MobileColors.TextDim,
+        modifier = Modifier.padding(top = 8.dp),
+    )
 }
 
 /**
@@ -108,20 +118,21 @@ private fun LazyListScope.chartGrid(
     upperBpm: Int,
     lowerBpm: Int,
 ) {
+    item { SectionHeader("BODY") }
     item { ChartRow({ WeightChart(rows, it) }, { BmiChart(rows, it) }) }
+
+    item { SectionHeader("CALORIES") }
     item { ChartRow({ DeficitChart(rows, it) }, { TdeeIntakeChart(rows, it) }) }
+
+    item { SectionHeader("NUTRITION") }
     item { ChartRow({ ProteinChart(rows, it) }, { FatChart(rows, it) }) }
     item { ChartRow({ CarbsChart(rows, it) }, { StepsChart(rows, it) }) }
+
+    item { SectionHeader("RECOVERY") }
     item { ChartRow({ SleepChart(rows, it) }, { HrvChart(rows, it) }) }
     item { ChartRow({ RestingHrChart(rows, it) }, { Spo2Chart(rows, it) }) }
-    item {
-        Text(
-            "TRAINING",
-            style = MaterialTheme.typography.labelMedium,
-            color = MobileColors.TextDim,
-            modifier = Modifier.padding(top = 8.dp),
-        )
-    }
+
+    item { SectionHeader("TRAINING") }
     item { ChartRow({ SessionHighDurationChart(sessions, it) }, { SessionZoneRatioChart(sessions, it) }) }
     item {
         ChartRow(

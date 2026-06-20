@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
@@ -99,16 +100,25 @@ fun interface PointXResolver {
     fun x(index: Int, canvasWidth: Float): Float
 }
 
+/**
+ * 凡例 1 件 = ドット色 + ラベル + 現在値。色は線/棒の色と一致させ、値色は band 状態色を載せる。
+ * Card の右上の value バッジを廃止して、グラフごとの「最新の数値」をここに 1 か所だけ表示する。
+ */
+data class LegendItem(
+    val label: String,
+    val value: String,
+    val dotColor: Color,
+    val valueColor: Color = MobileColors.TextDim,
+)
+
 @Composable
 fun MiniChartCard(
     title: String,
     info: String,
+    legend: List<LegendItem>,
     yLabels: List<String>,
     xLabels: List<String>,
     modifier: Modifier = Modifier,
-    valueLabel: String? = null,
-    valueColor: Color = MobileColors.TextDim,
-    legend: (@Composable () -> Unit)? = null,
     pointCount: Int = 0,
     pointAt: ((Int) -> String)? = null,
     pointXResolver: PointXResolver = PointXResolver { i, w ->
@@ -131,10 +141,8 @@ fun MiniChartCard(
                 showInfo = showInfo,
                 onToggleInfo = { showInfo = !showInfo },
                 onDismissInfo = { showInfo = false },
-                valueLabel = valueLabel,
-                valueColor = valueColor,
             )
-            legend?.invoke()
+            LegendRow(legend)
             Row(modifier = Modifier.fillMaxWidth()) {
                 YAxisLabels(yLabels)
                 Box(
@@ -189,7 +197,7 @@ fun MiniChartCard(
     }
 }
 
-/** ⓘ が必ず見えるレイアウト: 左に title + ⓘ をピン留め、右に値バッジ */
+/** タイトル行: タイトル + ⓘ アイコンだけ。値は LegendRow に分離 */
 @Composable
 private fun ChartHeader(
     title: String,
@@ -197,54 +205,64 @@ private fun ChartHeader(
     showInfo: Boolean,
     onToggleInfo: () -> Unit,
     onDismissInfo: () -> Unit,
-    valueLabel: String?,
-    valueColor: Color,
 ) {
-    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Text(
+            title,
+            style = MaterialTheme.typography.labelMedium,
+            color = MobileColors.TextDim,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
             modifier = Modifier.weight(1f, fill = false),
+        )
+        Box(
+            modifier = Modifier.pointerInput(Unit) {
+                detectTapGestures { onToggleInfo() }
+            },
         ) {
-            Text(
-                title,
-                style = MaterialTheme.typography.labelMedium,
-                color = MobileColors.TextDim,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Box(
-                modifier = Modifier.pointerInput(Unit) {
-                    detectTapGestures { onToggleInfo() }
-                },
-            ) {
-                Text("ⓘ", color = MobileColors.TextDim, style = MaterialTheme.typography.labelMedium)
-                if (showInfo) {
-                    Popup(
-                        alignment = Alignment.TopStart,
-                        offset = IntOffset(0, 40),
-                        onDismissRequest = onDismissInfo,
-                        properties = PopupProperties(focusable = true),
-                    ) {
-                        Card {
-                            Text(
-                                info,
-                                modifier = Modifier.padding(10.dp).widthIn(max = 220.dp),
-                                style = MaterialTheme.typography.bodySmall,
-                            )
-                        }
+            Text("ⓘ", color = MobileColors.TextDim, style = MaterialTheme.typography.labelMedium)
+            if (showInfo) {
+                Popup(
+                    alignment = Alignment.TopStart,
+                    offset = IntOffset(0, 40),
+                    onDismissRequest = onDismissInfo,
+                    properties = PopupProperties(focusable = true),
+                ) {
+                    Card {
+                        Text(
+                            info,
+                            modifier = Modifier.padding(10.dp).widthIn(max = 220.dp),
+                            style = MaterialTheme.typography.bodySmall,
+                        )
                     }
                 }
             }
         }
-        Spacer(modifier = Modifier.weight(1f))
-        if (valueLabel != null) {
-            Text(
-                valueLabel,
-                color = valueColor,
-                style = MaterialTheme.typography.titleSmall,
-                maxLines = 1,
-            )
+    }
+}
+
+/**
+ * すべてのグラフに 1 行で必ず置く凡例行: `● Label: value [● Label2: value2]`。
+ * フォントサイズは 10sp 固定で 2 列レイアウトでも 1 行に収まる粒度に倒す。
+ */
+@Composable
+private fun LegendRow(items: List<LegendItem>) {
+    val legendFont = 10.sp
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        items.forEach { item ->
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text("●", color = item.dotColor, fontSize = legendFont, maxLines = 1)
+                Text("${item.label}:", color = MobileColors.TextDim, fontSize = legendFont, maxLines = 1)
+                Text(item.value, color = item.valueColor, fontSize = legendFont, maxLines = 1)
+            }
         }
     }
 }
@@ -268,14 +286,6 @@ private fun XAxisLabels(labels: List<String>) {
         labels.forEach { l ->
             Text(l, style = MaterialTheme.typography.labelSmall, color = MobileColors.TextDim)
         }
-    }
-}
-
-@Composable
-private fun LegendChip(label: String, color: Color) {
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-        Text("●", color = color, style = MaterialTheme.typography.labelSmall)
-        Text(label, style = MaterialTheme.typography.labelSmall, color = MobileColors.TextDim)
     }
 }
 
@@ -431,11 +441,17 @@ fun WeightChart(rows: List<DashboardComputed>, modifier: Modifier = Modifier) {
         title = "Weight",
         info = "身長 ${heightCm?.let { "%.0f cm".format(it) } ?: "—"} の BMI 基準で帯を描画。" +
             "緑 = 普通 (BMI 18.5-25) / 黄 = 過体重 (25-30) / 赤 = 肥満 (30+)",
+        legend = listOf(
+            LegendItem(
+                "Weight",
+                today?.weightKg?.let { "%.1f kg".format(it) } ?: "—",
+                PrimaryColor,
+                bandStateColor(today?.bmi, Bmi.bands),
+            ),
+        ),
         yLabels = yLabelsFor(scale) { "%.1f".format(it) },
         xLabels = rows.firstAndLastDateLabels(),
         modifier = modifier,
-        valueLabel = today?.weightKg?.let { "%.1f kg".format(it) },
-        valueColor = bandStateColor(today?.bmi, Bmi.bands),
         pointCount = rows.size,
         pointAt = { i -> rows.getOrNull(i)?.let { formatPoint(it.date, it.weightKg, "kg", 2) } ?: "" },
         drawContent = {
@@ -454,11 +470,17 @@ fun BmiChart(rows: List<DashboardComputed>, modifier: Modifier = Modifier) {
     MiniChartCard(
         title = "BMI",
         info = "体重 ÷ (身長 m)²。普通 18.5-25 / 過体重 25-30 / 肥満 1 度 30-35 / 肥満 2 度 35+",
+        legend = listOf(
+            LegendItem(
+                "BMI",
+                today?.bmi?.let { "%.1f".format(it) } ?: "—",
+                PrimaryColor,
+                bandStateColor(today?.bmi, Bmi.bands),
+            ),
+        ),
         yLabels = yLabelsFor(scale) { "%.1f".format(it) },
         xLabels = rows.firstAndLastDateLabels(),
         modifier = modifier,
-        valueLabel = today?.bmi?.let { "%.1f".format(it) },
-        valueColor = bandStateColor(today?.bmi, Bmi.bands),
         pointCount = rows.size,
         pointAt = { i -> rows.getOrNull(i)?.let { formatPoint(it.date, it.bmi, "") } ?: "" },
         drawContent = {
@@ -479,6 +501,14 @@ fun DeficitChart(rows: List<DashboardComputed>, modifier: Modifier = Modifier) {
         title = "Deficit",
         info = "Intake − TDEE。マイナス (下) = 赤字 (痩せ方向、緑) / プラス (上) = サープラス (赤)。" +
             "減量中は -500 kcal/日が目安 (破線が目標)",
+        legend = listOf(
+            LegendItem(
+                "Deficit",
+                today?.deficitKcal?.let { "%+,.0f kcal".format(it) } ?: "—",
+                PrimaryColor,
+                bandStateColor(today?.deficitKcal, Deficit.bands),
+            ),
+        ),
         yLabels = yLabelsFor(scale) { v ->
             when {
                 v == 0.0 -> "0"
@@ -488,8 +518,6 @@ fun DeficitChart(rows: List<DashboardComputed>, modifier: Modifier = Modifier) {
         },
         xLabels = rows.firstAndLastDateLabels(),
         modifier = modifier,
-        valueLabel = today?.deficitKcal?.let { "%+,.0f kcal".format(it) },
-        valueColor = bandStateColor(today?.deficitKcal, Deficit.bands),
         pointCount = rows.size,
         pointAt = { i -> rows.getOrNull(i)?.let { formatPoint(it.date, it.deficitKcal, "kcal", 0) } ?: "" },
         drawContent = {
@@ -511,20 +539,21 @@ fun TdeeIntakeChart(rows: List<DashboardComputed>, modifier: Modifier = Modifier
     MiniChartCard(
         title = "TDEE vs Intake",
         info = "TDEE = 消費カロリー (緑)、Intake = 摂取カロリー (赤)。Intake < TDEE で deficit",
+        legend = listOf(
+            LegendItem(
+                "TDEE",
+                today?.tdeeKcal?.let { "%,.0f kcal".format(it) } ?: "—",
+                PrimaryColor,
+            ),
+            LegendItem(
+                "Intake",
+                today?.intakeKcal?.let { "%,.0f kcal".format(it) } ?: "—",
+                SecondaryColor,
+            ),
+        ),
         yLabels = yLabelsFor(scale) { v -> if (v >= 1000) "%.1fk".format(v / 1000) else "%.0f".format(v) },
         xLabels = rows.firstAndLastDateLabels(),
         modifier = modifier,
-        valueLabel = today?.let {
-            val i = it.intakeKcal?.toInt() ?: 0
-            val t = it.tdeeKcal?.toInt() ?: 0
-            "$i / $t kcal"
-        },
-        legend = {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                LegendChip("TDEE", PrimaryColor)
-                LegendChip("Intake", SecondaryColor)
-            }
-        },
         pointCount = rows.size,
         pointAt = { i ->
             rows.getOrNull(i)?.let {
@@ -554,11 +583,17 @@ fun ProteinChart(rows: List<DashboardComputed>, modifier: Modifier = Modifier) {
         title = "Protein",
         info = "1 日のタンパク質 (g)。減量中の筋量維持には 1.6 g/kg 以上が目安。" +
             "緑 = 適正帯 (体重から逆算)",
+        legend = listOf(
+            LegendItem(
+                "Protein",
+                today?.proteinG?.let { "%.0f g".format(it) } ?: "—",
+                PrimaryColor,
+                bandStateColor(today?.proteinPerKg, Protein.bands),
+            ),
+        ),
         yLabels = yLabelsFor(scale) { "%.0f".format(it) },
         xLabels = rows.firstAndLastDateLabels(),
         modifier = modifier,
-        valueLabel = today?.proteinG?.let { "%.0f g".format(it) },
-        valueColor = bandStateColor(today?.proteinPerKg, Protein.bands),
         pointCount = rows.size,
         pointAt = { i -> rows.getOrNull(i)?.let { formatPoint(it.date, it.proteinG, "g", 0) } ?: "" },
         drawContent = {
@@ -584,11 +619,17 @@ fun FatChart(rows: List<DashboardComputed>, modifier: Modifier = Modifier) {
         title = "Fat",
         info = "1 日の脂質 (g)。ホルモン維持の最低 0.8 g/kg、適正は 0.8-1.5 g/kg。" +
             "緑 = 適正帯 (体重から逆算)",
+        legend = listOf(
+            LegendItem(
+                "Fat",
+                today?.fatG?.let { "%.0f g".format(it) } ?: "—",
+                PrimaryColor,
+                bandStateColor(today?.fatPerKg, Fat.bands),
+            ),
+        ),
         yLabels = yLabelsFor(scale) { "%.0f".format(it) },
         xLabels = rows.firstAndLastDateLabels(),
         modifier = modifier,
-        valueLabel = today?.fatG?.let { "%.0f g".format(it) },
-        valueColor = bandStateColor(today?.fatPerKg, Fat.bands),
         pointCount = rows.size,
         pointAt = { i -> rows.getOrNull(i)?.let { formatPoint(it.date, it.fatG, "g", 0) } ?: "" },
         drawContent = {
@@ -613,11 +654,17 @@ fun CarbsChart(rows: List<DashboardComputed>, modifier: Modifier = Modifier) {
     MiniChartCard(
         title = "Carbs",
         info = "1 日の炭水化物 (g)。減量中は 2-4 g/kg がふつう。極端な低糖質は意図的ならよし",
+        legend = listOf(
+            LegendItem(
+                "Carbs",
+                today?.carbsG?.let { "%.0f g".format(it) } ?: "—",
+                PrimaryColor,
+                bandStateColor(today?.carbsPerKg, Carbs.bands),
+            ),
+        ),
         yLabels = yLabelsFor(scale) { "%.0f".format(it) },
         xLabels = rows.firstAndLastDateLabels(),
         modifier = modifier,
-        valueLabel = today?.carbsG?.let { "%.0f g".format(it) },
-        valueColor = bandStateColor(today?.carbsPerKg, Carbs.bands),
         pointCount = rows.size,
         pointAt = { i -> rows.getOrNull(i)?.let { formatPoint(it.date, it.carbsG, "g", 0) } ?: "" },
         drawContent = {
@@ -636,11 +683,17 @@ fun StepsChart(rows: List<DashboardComputed>, modifier: Modifier = Modifier) {
     MiniChartCard(
         title = "Steps",
         info = "1 日の歩数。座位中心 <5k / 低活動 5-7.5k / ふつう 7.5-10k / 活動的 10k+",
+        legend = listOf(
+            LegendItem(
+                "Steps",
+                today?.steps?.let { "%,d 歩".format(it) } ?: "—",
+                PrimaryColor,
+                bandStateColor(today?.steps?.toDouble(), Steps.bands),
+            ),
+        ),
         yLabels = yLabelsFor(scale) { v -> if (v >= 1000) "%.0fk".format(v / 1000) else "%.0f".format(v) },
         xLabels = rows.firstAndLastDateLabels(),
         modifier = modifier,
-        valueLabel = today?.steps?.let { "%,d".format(it) },
-        valueColor = bandStateColor(today?.steps?.toDouble(), Steps.bands),
         pointCount = rows.size,
         pointAt = { i -> rows.getOrNull(i)?.let { "${it.date}: ${it.steps ?: "—"} 歩" } ?: "" },
         drawContent = {
@@ -659,11 +712,17 @@ fun SleepChart(rows: List<DashboardComputed>, modifier: Modifier = Modifier) {
     MiniChartCard(
         title = "Sleep",
         info = "1 日の睡眠時間 (h)。NIH 成人推奨 7-9h。不足 <6h / やや短い 6-7h / 適正 7-9h / 過剰 9h+",
+        legend = listOf(
+            LegendItem(
+                "Sleep",
+                today?.sleepHours?.let { "%.1f h".format(it) } ?: "—",
+                PrimaryColor,
+                bandStateColor(today?.sleepHours, Sleep.bands),
+            ),
+        ),
         yLabels = yLabelsFor(scale) { "%.0f".format(it) },
         xLabels = rows.firstAndLastDateLabels(),
         modifier = modifier,
-        valueLabel = today?.sleepHours?.let { "%.1f h".format(it) },
-        valueColor = bandStateColor(today?.sleepHours, Sleep.bands),
         pointCount = rows.size,
         pointAt = { i -> rows.getOrNull(i)?.let { formatPoint(it.date, it.sleepHours, "h") } ?: "" },
         drawContent = {
@@ -690,11 +749,17 @@ fun HrvChart(rows: List<DashboardComputed>, modifier: Modifier = Modifier) {
         title = "HRV",
         info = "心拍変動 (Heart Rate Variability, ms)。自律神経の状態 = 回復度の指標。高いほど良い。" +
             "破線は期間平均 = 自分の baseline。これより下が続けば疲労蓄積のサイン",
+        legend = listOf(
+            LegendItem(
+                "HRV",
+                today?.hrvMs?.let { "%.0f ms".format(it) } ?: "—",
+                PrimaryColor,
+                stateColor,
+            ),
+        ),
         yLabels = yLabelsFor(scale) { "%.0f".format(it) },
         xLabels = rows.firstAndLastDateLabels(),
         modifier = modifier,
-        valueLabel = today?.hrvMs?.let { "%.0f ms".format(it) },
-        valueColor = stateColor,
         pointCount = rows.size,
         pointAt = { i -> rows.getOrNull(i)?.let { formatPoint(it.date, it.hrvMs, "ms", 0) } ?: "" },
         drawContent = {
@@ -714,11 +779,17 @@ fun RestingHrChart(rows: List<DashboardComputed>, modifier: Modifier = Modifier)
         title = "Resting HR",
         info = "安静時心拍 (bpm)。心臓の効率を反映、低いほど健康。" +
             "緑 = 運動者並み <60 / 良好 60-70 / 黄 = 普通 70-80 / 赤 = やや高〜高 80+",
+        legend = listOf(
+            LegendItem(
+                "Resting HR",
+                today?.restingHrBpm?.let { "$it bpm" } ?: "—",
+                PrimaryColor,
+                bandStateColor(today?.restingHrBpm?.toDouble(), RestingHr.bands),
+            ),
+        ),
         yLabels = yLabelsFor(scale) { "%.0f".format(it) },
         xLabels = rows.firstAndLastDateLabels(),
         modifier = modifier,
-        valueLabel = today?.restingHrBpm?.let { "$it bpm" },
-        valueColor = bandStateColor(today?.restingHrBpm?.toDouble(), RestingHr.bands),
         pointCount = rows.size,
         pointAt = { i -> rows.getOrNull(i)?.let { "${it.date}: ${it.restingHrBpm?.let { v -> "$v bpm" } ?: "—"}" } ?: "" },
         drawContent = {
@@ -737,11 +808,17 @@ fun Spo2Chart(rows: List<DashboardComputed>, modifier: Modifier = Modifier) {
     MiniChartCard(
         title = "SpO2",
         info = "血中酸素飽和度 (%)。緑 = 正常 95%+ / 黄 = 注意 90-95% / 赤 = 低酸素 90% 未満",
+        legend = listOf(
+            LegendItem(
+                "SpO2",
+                today?.spo2AvgPct?.let { "%.1f %%".format(it) } ?: "—",
+                PrimaryColor,
+                bandStateColor(today?.spo2AvgPct, Spo2.bands),
+            ),
+        ),
         yLabels = yLabelsFor(scale) { "%.1f".format(it) },
         xLabels = rows.firstAndLastDateLabels(),
         modifier = modifier,
-        valueLabel = today?.spo2AvgPct?.let { "%.1f %%".format(it) },
-        valueColor = bandStateColor(today?.spo2AvgPct, Spo2.bands),
         pointCount = rows.size,
         pointAt = { i -> rows.getOrNull(i)?.let { formatPoint(it.date, it.spo2AvgPct, "%") } ?: "" },
         drawContent = {
@@ -774,11 +851,17 @@ fun SessionHighDurationChart(sessions: List<SessionRecord>, modifier: Modifier =
         info = "1 サイクル中の高強度区間秒数 (下限→上限) の平均 (s)。" +
             "同じ負荷でも有酸素能力が上がると延びる = 体力向上のシグナル。" +
             "破線は目安 30 秒 (Norwegian 4×4 帯への近接度)",
+        legend = listOf(
+            LegendItem(
+                "High-phase",
+                latest?.let { "%.0f s".format(it) } ?: "—",
+                PrimaryColor,
+                stateColor,
+            ),
+        ),
         yLabels = yLabelsFor(scale) { "%.0f".format(it) },
         xLabels = ordered.sessionFirstLastDates(),
         modifier = modifier,
-        valueLabel = latest?.let { "%.0f s".format(it) },
-        valueColor = stateColor,
         pointCount = ordered.size,
         pointAt = { i ->
             ordered.getOrNull(i)?.let { s ->
@@ -810,11 +893,17 @@ fun SessionZoneRatioChart(sessions: List<SessionRecord>, modifier: Modifier = Mo
         title = "Zone time",
         info = "セッション中、心拍が上限-下限の目標帯に入っていた時間の割合 (%)。" +
             "60% 以上なら HIIT の質が高い (破線が 60% 目標)",
+        legend = listOf(
+            LegendItem(
+                "Zone time",
+                latest?.let { "%.0f %%".format(it) } ?: "—",
+                PrimaryColor,
+                stateColor,
+            ),
+        ),
         yLabels = listOf("100", "50", "0"),
         xLabels = ordered.sessionFirstLastDates(),
         modifier = modifier,
-        valueLabel = latest?.let { "%.0f %%".format(it) },
-        valueColor = stateColor,
         pointCount = ordered.size,
         pointAt = { i ->
             ordered.getOrNull(i)?.let { s ->
@@ -846,11 +935,17 @@ fun SessionMaxBpmChart(
         title = "Max HR",
         info = "セッション中の最大心拍 (bpm)。設定の upper ($upperBpm) / lower ($lowerBpm) を境に" +
             "低/中/高強度の帯で表示。HIIT は高強度 (赤帯) に届くのが望ましい",
+        legend = listOf(
+            LegendItem(
+                "Max HR",
+                latest?.let { "%.0f bpm".format(it) } ?: "—",
+                PrimaryColor,
+                hrZoneColor(latest?.let { hrCategoryFor(it, upperBpm, lowerBpm) }),
+            ),
+        ),
         yLabels = yLabelsFor(scale) { "%.0f".format(it) },
         xLabels = ordered.sessionFirstLastDates(),
         modifier = modifier,
-        valueLabel = latest?.let { "%.0f bpm".format(it) },
-        valueColor = hrZoneColor(latest?.let { hrCategoryFor(it, upperBpm, lowerBpm) }),
         pointCount = ordered.size,
         pointAt = { i ->
             ordered.getOrNull(i)?.let { s ->
@@ -881,11 +976,17 @@ fun SessionAvgBpmChart(
     MiniChartCard(
         title = "Avg HR",
         info = "セッション中の平均心拍 (bpm)。中強度 (緑帯) に乗っているのが理想",
+        legend = listOf(
+            LegendItem(
+                "Avg HR",
+                latest?.let { "%.0f bpm".format(it) } ?: "—",
+                PrimaryColor,
+                hrZoneColor(latest?.let { hrCategoryFor(it, upperBpm, lowerBpm) }),
+            ),
+        ),
         yLabels = yLabelsFor(scale) { "%.0f".format(it) },
         xLabels = ordered.sessionFirstLastDates(),
         modifier = modifier,
-        valueLabel = latest?.let { "%.0f bpm".format(it) },
-        valueColor = hrZoneColor(latest?.let { hrCategoryFor(it, upperBpm, lowerBpm) }),
         pointCount = ordered.size,
         pointAt = { i ->
             ordered.getOrNull(i)?.let { s ->
@@ -920,11 +1021,17 @@ fun HeartRate24hChart(
         title = "Heart rate",
         info = "今日と昨日の心拍 (bpm, 5 分粒度)。設定の upper ($upperBpm) / lower ($lowerBpm) を境に" +
             "低/中/高強度の帯。朝の HIIT で高強度に届いていれば良いシグナル",
+        legend = listOf(
+            LegendItem(
+                "Heart rate",
+                latest?.let { "${it.bpm} bpm" } ?: "—",
+                PrimaryColor,
+                hrZoneColor(latest?.let { hrCategoryFor(it.bpm.toDouble(), upperBpm, lowerBpm) }),
+            ),
+        ),
         yLabels = yLabelsFor(scale) { "%.0f".format(it) },
         xLabels = if (sorted.isEmpty()) listOf("—") else listOf("0h", "12h", "24h"),
         modifier = modifier,
-        valueLabel = latest?.let { "${it.bpm} bpm" },
-        valueColor = hrZoneColor(latest?.let { hrCategoryFor(it.bpm.toDouble(), upperBpm, lowerBpm) }),
         pointCount = sorted.size,
         pointAt = { i ->
             sorted.getOrNull(i)?.let {
