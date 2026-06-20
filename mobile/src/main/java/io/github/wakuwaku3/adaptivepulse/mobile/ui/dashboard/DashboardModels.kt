@@ -33,6 +33,8 @@ data class DashboardComputed(
     val steps: Long?,
     val bmrEstKcal: Double?,
     val proteinPerKg: Double?,
+    val fatPerKg: Double?,
+    val carbsPerKg: Double?,
     val spo2AvgPct: Double?,
 )
 
@@ -41,6 +43,8 @@ fun DailySnapshotEntity.computed(ageYears: Int = 39): DashboardComputed {
     val deficit = if (totalCaloriesKcal != null && intakeKcal != null) totalCaloriesKcal - intakeKcal else null
     val sleepHours = sleepDurationMin?.let { it / 60.0 }
     val protKg = if (proteinG != null && weightKg != null) proteinG / weightKg else null
+    val fatKg = if (fatG != null && weightKg != null) fatG / weightKg else null
+    val carbKg = if (carbsG != null && weightKg != null) carbsG / weightKg else null
     val bmi = if (weightKg != null && heightCm != null && heightCm > 0) {
         val m = heightCm / 100.0
         weightKg / (m * m)
@@ -64,6 +68,8 @@ fun DailySnapshotEntity.computed(ageYears: Int = 39): DashboardComputed {
         steps = steps,
         bmrEstKcal = bmr,
         proteinPerKg = protKg,
+        fatPerKg = fatKg,
+        carbsPerKg = carbKg,
         spo2AvgPct = spo2AvgPct,
     )
 }
@@ -142,6 +148,30 @@ object Protein {
     fun categoryOf(v: Double): String = bands.firstOrNull { v in it.from..it.to }?.label ?: "—"
 }
 
+/** 脂質 g/kg。ホルモン維持の最低 0.8 g/kg。過剰は炎症・カロリー押し上げの懸念 */
+object Fat {
+    val bands = listOf(
+        Band("不足", 0.0, 0.6, BadBand),
+        Band("低め", 0.6, 0.8, NeutralBand),
+        Band("適正", 0.8, 1.5, GoodBand),
+        Band("高め", 1.5, 5.0, NeutralBand),
+    )
+
+    fun categoryOf(v: Double): String = bands.firstOrNull { v in it.from..it.to }?.label ?: "—"
+}
+
+/** 炭水化物 g/kg。減量で 2-4 g/kg が一般的、極端な低糖質は意図的ならよし */
+object Carbs {
+    val bands = listOf(
+        Band("極低糖質", 0.0, 1.0, NeutralBand),
+        Band("低糖質", 1.0, 2.0, NeutralBand),
+        Band("ふつう", 2.0, 4.0, GoodBand),
+        Band("高糖質", 4.0, 10.0, NeutralBand),
+    )
+
+    fun categoryOf(v: Double): String = bands.firstOrNull { v in it.from..it.to }?.label ?: "—"
+}
+
 /** 睡眠時間 (時間)。NIH 成人推奨 7-9h */
 object Sleep {
     val bands = listOf(
@@ -212,4 +242,21 @@ fun hrCategoryFor(bpm: Double, upperBpm: Int, lowerBpm: Int): String = when {
     bpm >= upperBpm -> "高強度"
     bpm >= lowerBpm -> "中強度"
     else -> "低強度"
+}
+
+/**
+ * 値が落ちている band の "好ましさ" を 3 色に正規化して返す:
+ * 緑 (Recover) = 良好 / 黄 (Done) = 中立 / 赤 (High) = 注意。
+ * Today カードの数値色分けで使う。
+ */
+fun bandStateColor(value: Double?, bands: List<Band>): Color {
+    if (value == null) return MobileColors.TextDim
+    val band = bands.firstOrNull { value in it.from..it.to } ?: return MobileColors.TextDim
+    return when {
+        band.color == GoodBand -> MobileColors.Recover
+        band.color == BadBand -> MobileColors.High
+        band.color == MildGoodBand -> MobileColors.Recover
+        band.color == MildBadBand -> MobileColors.High
+        else -> MobileColors.Done
+    }
 }

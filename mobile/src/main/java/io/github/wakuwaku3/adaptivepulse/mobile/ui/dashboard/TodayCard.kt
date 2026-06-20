@@ -10,17 +10,14 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import io.github.wakuwaku3.adaptivepulse.mobile.ui.MobileColors
 
 /**
  * その日の常時把握したい指標だけを表示する集約カード。
- *  - 体組成 (体重 / 体脂肪 / 歩数)
- *  - カロリー収支 (TDEE / intake / **deficit**)
- *  - タンパク質 (g/kg を併記。減量中の LBM 維持の主要レバー)
- *
- * 睡眠 / HRV / RHR / BMR / SpO2 等は下のチャートグリッドで把握する。
+ * 各値は band 判定に応じて緑 (良好) / 黄 (中立) / 赤 (注意) に着色する。
  */
 @Composable
 fun TodayCard(today: DashboardComputed?) {
@@ -38,30 +35,45 @@ fun TodayCard(today: DashboardComputed?) {
                 Text("No data yet", color = MobileColors.TextDim)
                 return@Column
             }
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(16.dp),
-            ) {
-                MetricCell("Weight", today.weightKg?.let { "%.1f kg".format(it) } ?: "—")
+            // 体組成
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                MetricCell(
+                    "Weight",
+                    today.weightKg?.let { "%.1f kg".format(it) } ?: "—",
+                    accent = bandStateColor(today.bmi, Bmi.bands),
+                )
                 MetricCell(
                     "BMI",
                     today.bmi?.let { "%.1f".format(it) } ?: "—",
-                    sub = today.bmi?.let { Bmi.categoryOf(it) },
+                    accent = bandStateColor(today.bmi, Bmi.bands),
                 )
-                MetricCell("Steps", today.steps?.toString() ?: "—")
+                MetricCell(
+                    "Steps",
+                    today.steps?.toString() ?: "—",
+                    accent = bandStateColor(today.steps?.toDouble(), Steps.bands),
+                )
             }
+            // カロリー収支
             DeficitRow(today)
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(16.dp),
-            ) {
-                val proteinAccent =
-                    if ((today.proteinPerKg ?: 0.0) >= 1.6) MobileColors.Recover else MobileColors.Done
+            // 栄養素 (P/F/C)
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                 MetricCell(
                     "Protein",
                     today.proteinG?.let { "%.0f g".format(it) } ?: "—",
                     sub = today.proteinPerKg?.let { "%.2f g/kg".format(it) },
-                    accent = proteinAccent,
+                    accent = bandStateColor(today.proteinPerKg, Protein.bands),
+                )
+                MetricCell(
+                    "Fat",
+                    today.fatG?.let { "%.0f g".format(it) } ?: "—",
+                    sub = today.fatPerKg?.let { "%.2f g/kg".format(it) },
+                    accent = bandStateColor(today.fatPerKg, Fat.bands),
+                )
+                MetricCell(
+                    "Carbs",
+                    today.carbsG?.let { "%.0f g".format(it) } ?: "—",
+                    sub = today.carbsPerKg?.let { "%.2f g/kg".format(it) },
+                    accent = bandStateColor(today.carbsPerKg, Carbs.bands),
                 )
             }
         }
@@ -71,16 +83,8 @@ fun TodayCard(today: DashboardComputed?) {
 @Composable
 private fun DeficitRow(today: DashboardComputed) {
     val deficit = today.deficitKcal
-    val accent = when {
-        deficit == null -> MobileColors.TextDim
-        deficit >= 200.0 -> MobileColors.Recover
-        deficit >= 0.0 -> MobileColors.Done
-        else -> MobileColors.High
-    }
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(16.dp),
-    ) {
+    val accent = bandStateColor(deficit, Deficit.bands)
+    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
         MetricCell("TDEE", today.tdeeKcal?.let { "%.0f kcal".format(it) } ?: "—")
         MetricCell("Intake", today.intakeKcal?.let { "%.0f kcal".format(it) } ?: "—")
         Column {
@@ -96,12 +100,7 @@ private fun DeficitRow(today: DashboardComputed) {
 }
 
 @Composable
-private fun MetricCell(
-    label: String,
-    value: String,
-    sub: String? = null,
-    accent: androidx.compose.ui.graphics.Color? = null,
-) {
+private fun MetricCell(label: String, value: String, sub: String? = null, accent: Color? = null) {
     Column {
         Text(label, style = MaterialTheme.typography.labelSmall, color = MobileColors.TextDim)
         Text(

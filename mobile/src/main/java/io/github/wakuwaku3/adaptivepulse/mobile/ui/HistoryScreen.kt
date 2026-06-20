@@ -18,8 +18,10 @@ import androidx.compose.ui.unit.dp
 import io.github.wakuwaku3.adaptivepulse.core.sync.SessionRecord
 import io.github.wakuwaku3.adaptivepulse.mobile.store.HeartRateSampleEntity
 import io.github.wakuwaku3.adaptivepulse.mobile.ui.dashboard.BmiChart
+import io.github.wakuwaku3.adaptivepulse.mobile.ui.dashboard.CarbsChart
 import io.github.wakuwaku3.adaptivepulse.mobile.ui.dashboard.DashboardComputed
 import io.github.wakuwaku3.adaptivepulse.mobile.ui.dashboard.DeficitChart
+import io.github.wakuwaku3.adaptivepulse.mobile.ui.dashboard.FatChart
 import io.github.wakuwaku3.adaptivepulse.mobile.ui.dashboard.HeartRate24hChart
 import io.github.wakuwaku3.adaptivepulse.mobile.ui.dashboard.HrvChart
 import io.github.wakuwaku3.adaptivepulse.mobile.ui.dashboard.ProteinChart
@@ -80,13 +82,14 @@ fun HistoryScreen(
 }
 
 /**
- * 2 列で並べるミニチャート。1 行 = 横並び 2 枚。種別はゴールから近い順に上から:
- *  1. 体重・BMI (減量フェーズ進捗)
- *  2. deficit・TDEE vs intake (今のカロリー収支)
- *  3. 歩数・タンパク質 (行動指標)
- *  4. 睡眠・HRV (回復)
- *  5. RHR・SpO2 (コンディション)
- *  6. TRAINING: 高強度区間・ゾーン滞在率・avg/max HR・HR 24h
+ * 2 列で並べるミニチャート。1 行 = 横並び 2 枚。並び順:
+ *  1. 体重・BMI (減量フェーズの全体進捗)
+ *  2. deficit・TDEE vs intake (カロリー収支)
+ *  3. Protein・Fat (主要栄養素 P / F)
+ *  4. Carbs・Steps (栄養素 C と行動量)
+ *  5. Sleep・HRV (回復)
+ *  6. RHR・SpO2 (コンディション)
+ *  7. TRAINING: 高強度区間・ゾーン滞在率・avg/max HR・HR 24h
  */
 private fun LazyListScope.chartGrid(
     rows: List<DashboardComputed>,
@@ -97,7 +100,8 @@ private fun LazyListScope.chartGrid(
 ) {
     item { ChartRow({ WeightChart(rows, it) }, { BmiChart(rows, it) }) }
     item { ChartRow({ DeficitChart(rows, it) }, { TdeeIntakeChart(rows, it) }) }
-    item { ChartRow({ StepsChart(rows, it) }, { ProteinChart(rows, it) }) }
+    item { ChartRow({ ProteinChart(rows, it) }, { FatChart(rows, it) }) }
+    item { ChartRow({ CarbsChart(rows, it) }, { StepsChart(rows, it) }) }
     item { ChartRow({ SleepChart(rows, it) }, { HrvChart(rows, it) }) }
     item { ChartRow({ RestingHrChart(rows, it) }, { Spo2Chart(rows, it) }) }
     item {
