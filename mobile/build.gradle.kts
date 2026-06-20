@@ -53,6 +53,8 @@ android {
 
     buildFeatures {
         compose = true
+        // BuildConfig.DEBUG で demo UI を release ビルドから除外する (sideload 時は隠す)
+        buildConfig = true
     }
 
     compileOptions {

@@ -31,6 +31,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import io.github.wakuwaku3.adaptivepulse.core.SessionConfig
+import io.github.wakuwaku3.adaptivepulse.mobile.BuildConfig
 import io.github.wakuwaku3.adaptivepulse.mobile.auth.AuthManager
 import io.github.wakuwaku3.adaptivepulse.mobile.health.DashboardSyncManager
 import io.github.wakuwaku3.adaptivepulse.mobile.health.HealthDataExporter
@@ -114,13 +115,16 @@ class MainActivity : ComponentActivity() {
                         }
                     },
                 ) { Text("Sign in with Google") }
-                // デザイン確認用: HC・Firebase なしの環境 (エミュレータ等) で UI を見たい時に使う
-                Button(onClick = {
-                    scope.launch {
-                        DemoSeed.seed(applicationContext)
-                        onSignedIn()
-                    }
-                }) { Text("Show demo dashboard") }
+                // デザイン確認用: HC・Firebase なしの環境 (エミュレータ等) で UI を見たい時に使う。
+                // sideload (release) では表示しない
+                if (BuildConfig.DEBUG) {
+                    Button(onClick = {
+                        scope.launch {
+                            DemoSeed.seed(applicationContext)
+                            onSignedIn()
+                        }
+                    }) { Text("Show demo dashboard") }
+                }
                 error?.let { Text(it, color = MobileColors.High) }
             }
         }
@@ -257,13 +261,15 @@ class MainActivity : ComponentActivity() {
                                     }
                                 },
                             )
-                            DropdownMenuItem(
-                                text = { Text("Re-seed demo data") },
-                                onClick = {
-                                    menuOpen = false
-                                    scope.launch { DemoSeed.seed(applicationContext) }
-                                },
-                            )
+                            if (BuildConfig.DEBUG) {
+                                DropdownMenuItem(
+                                    text = { Text("Re-seed demo data") },
+                                    onClick = {
+                                        menuOpen = false
+                                        scope.launch { DemoSeed.seed(applicationContext) }
+                                    },
+                                )
+                            }
                             DropdownMenuItem(
                                 text = { Text("Sign out") },
                                 onClick = {
