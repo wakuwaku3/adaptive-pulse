@@ -30,17 +30,24 @@ class HealthServicesExerciseSource(
 
     override fun samples(): Flow<ExerciseSample> = callbackFlow {
         var totalCalories: Double? = null
+        var stepsPerMinute: Double? = null
 
         val callback = object : ExerciseUpdateCallback {
             override fun onExerciseUpdateReceived(update: ExerciseUpdate) {
                 update.latestMetrics.getData(DataType.CALORIES_TOTAL)?.let {
                     totalCalories = it.total
                 }
+                // STEPS_PER_MINUTE は SampleDataPoint で複数件来うる。
+                // 最新値だけ保持して次の HR サンプル時にスナップショットへ載せる
+                update.latestMetrics.getData(DataType.STEPS_PER_MINUTE).lastOrNull()?.let {
+                    stepsPerMinute = it.value.toDouble()
+                }
                 update.latestMetrics.getData(DataType.HEART_RATE_BPM).forEach { sample ->
                     trySend(
                         ExerciseSample(
                             bpm = sample.value.roundToInt(),
                             totalCalories = totalCalories,
+                            stepsPerMinute = stepsPerMinute,
                         ),
                     )
                 }
@@ -71,6 +78,11 @@ class HealthServicesExerciseSource(
             add(DataType.HEART_RATE_BPM)
             if (canReadCalories && DataType.CALORIES_TOTAL in supported) {
                 add(DataType.CALORIES_TOTAL)
+            }
+            // クロストレーナーの cadence (= pace-metric Phase A の計測対象)。
+            // ELLIPTICAL で対応しない端末は出ないが、要求しても弾かれないので opt-in
+            if (DataType.STEPS_PER_MINUTE in supported) {
+                add(DataType.STEPS_PER_MINUTE)
             }
         }
 

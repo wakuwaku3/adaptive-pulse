@@ -23,6 +23,8 @@ sealed interface SessionUiState {
         val upperBpm: Int,
         /** セッション中に動かしうる現在の下限閾値 */
         val lowerBpm: Int,
+        /** 3〜5 秒窓の median のステップ毎秒 (Hz)。pace-metric Phase A の計測のみ用途。watch UI は表示しないが phone live screen に流す */
+        val currentRps: Double? = null,
     ) : SessionUiState
 
     data class Finished(

@@ -15,7 +15,10 @@ import androidx.lifecycle.lifecycleScope
 import androidx.wear.ongoing.OngoingActivity
 import io.github.wakuwaku3.adaptivepulse.MainActivity
 import io.github.wakuwaku3.adaptivepulse.R
+import io.github.wakuwaku3.adaptivepulse.core.Phase
+import io.github.wakuwaku3.adaptivepulse.core.sync.LivePhase
 import io.github.wakuwaku3.adaptivepulse.core.sync.SessionConfigSnapshot
+import io.github.wakuwaku3.adaptivepulse.core.sync.SessionLiveSnapshot
 import io.github.wakuwaku3.adaptivepulse.core.sync.SessionRecord
 import io.github.wakuwaku3.adaptivepulse.history.WatchHistoryStore
 import io.github.wakuwaku3.adaptivepulse.hr.AutoExerciseSource
@@ -33,6 +36,44 @@ import kotlinx.coroutines.withContext
 private const val TAG = "AdaptivePulse"
 private const val CHANNEL_ID = "session"
 private const val NOTIFICATION_ID = 1
+
+/** SessionUiState → 同期 DTO の変換。Idle は live 表示対象外なので null */
+private fun SessionUiState.toLiveSnapshot(nowMs: Long): SessionLiveSnapshot? = when (this) {
+    SessionUiState.Idle -> null
+    is SessionUiState.Running -> SessionLiveSnapshot(
+        updatedAtMs = nowMs,
+        phase = when {
+            isWarmingUp -> LivePhase.WARM_UP
+            phase == Phase.HIGH_INTENSITY -> LivePhase.HIGH
+            phase == Phase.RECOVERY -> LivePhase.RECOVERY
+            else -> LivePhase.DONE
+        },
+        bpm = bpm,
+        currentCycle = currentCycle,
+        finalCycle = finalCycle,
+        elapsedSec = elapsed.inWholeMilliseconds / 1000.0,
+        cycleElapsedSec = cycleElapsed.inWholeMilliseconds / 1000.0,
+        phaseElapsedSec = phaseElapsed.inWholeMilliseconds / 1000.0,
+        upperBpm = upperBpm,
+        lowerBpm = lowerBpm,
+        calories = calories,
+        currentRps = currentRps,
+    )
+    is SessionUiState.Finished -> SessionLiveSnapshot(
+        updatedAtMs = nowMs,
+        phase = LivePhase.DONE,
+        bpm = null,
+        currentCycle = cycles,
+        finalCycle = cycles,
+        elapsedSec = elapsed.inWholeMilliseconds / 1000.0,
+        cycleElapsedSec = 0.0,
+        phaseElapsedSec = 0.0,
+        upperBpm = 0,
+        lowerBpm = 0,
+        calories = calories,
+        currentRps = null,
+    )
+}
 
 /**
  * セッションの実行主体。Foreground Service として動くことで画面オフ中も
@@ -89,13 +130,20 @@ class SessionService : LifecycleService() {
             val config = settings.load()
             Log.i(TAG, "セッション開始: $config")
             val startedAtMs = System.currentTimeMillis()
+            // phone 側を前面化する ping (再送・永続不要なので MessageClient で 1 発)。
+            // 失敗してもセッション自体には影響させない (WearSync 内で握りつぶす)
+            WearSync.sendStartForeground(applicationContext)
+            val livePusher = LiveSnapshotPusher(applicationContext)
             val runner = SessionRunner(
                 config = config,
                 sourceFactory = { phaseProvider ->
                     AutoExerciseSource(applicationContext, phaseProvider)
                 },
                 onSessionEvent = vibrator::vibrate,
-                onState = { _state.value = it },
+                onState = { state ->
+                    _state.value = state
+                    livePusher.maybePush(state)
+                },
             )
             // クラウン回転を runner に橋渡しする (振動 tap で操作を体感確認できるようにする)
             activeAdjust = { delta ->
@@ -121,8 +169,27 @@ class SessionService : LifecycleService() {
             } finally {
                 activeAdjust = null
                 sessionJob = null
+                // ライブ DataItem は phone のライブ画面を閉じるトリガー。
+                // NonCancellable で確実に消す (上の catch から throw されてきてもここは通る)
+                withContext(NonCancellable) { WearSync.deleteLiveSnapshot(applicationContext) }
                 stopSelf()
             }
+        }
+    }
+
+    /** 1Hz 程度に間引いて live snapshot を Data Layer に書く */
+    private inner class LiveSnapshotPusher(private val context: Context) {
+        private var lastPushAtMs: Long = 0L
+
+        fun maybePush(state: SessionUiState) {
+            val now = System.currentTimeMillis()
+            // Running / Finished はライブ表示の対象。Idle は無視
+            val snapshot = state.toLiveSnapshot(now) ?: return
+            // 1 秒未満の連射は捨てる (tick と sample で 2 重発火するため)。
+            // 終了 (DONE) は phone へ確実に届けるため間引かない
+            if (snapshot.phase != LivePhase.DONE && now - lastPushAtMs < 1000L) return
+            lastPushAtMs = now
+            lifecycleScope.launch { WearSync.putLiveSnapshot(context, snapshot) }
         }
     }
 
