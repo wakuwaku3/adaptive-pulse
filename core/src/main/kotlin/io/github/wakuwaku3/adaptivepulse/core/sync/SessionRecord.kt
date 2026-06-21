@@ -27,6 +27,12 @@ data class SessionRecord(
     val maxBpm: Int? = null,
     val config: SessionConfigSnapshot,
     val device: String = "watch",
+    /**
+     * セッション終了時点の target cadence (pace-metric Phase B)。
+     * 次セッション開始時に直近 N 件の median を初期値として使う (= 1 セッションのブレを吸収)。
+     */
+    val finalTargetCadenceHigh: Double? = null,
+    val finalTargetCadenceRecovery: Double? = null,
 )
 
 /** セッション時点の設定スナップショット (履歴の文脈として残す) */
@@ -42,8 +48,8 @@ data class SessionConfigSnapshot(
     val ageYears: Int = 39,
     val restingBpm: Int = 60,
     val recoveryFatigueRatio: Double = 1.5,
-    val targetHighSpm: Int = 144,
-    val targetRecoverySpm: Int = 72,
+    val seedTargetCadenceHigh: Double = 130.0,
+    val seedTargetCadenceRecovery: Double = 65.0,
 ) {
     companion object {
         fun from(config: SessionConfig) = SessionConfigSnapshot(
@@ -57,8 +63,8 @@ data class SessionConfigSnapshot(
             ageYears = config.ageYears,
             restingBpm = config.restingBpm,
             recoveryFatigueRatio = config.recoveryFatigueRatio,
-            targetHighSpm = config.targetHighSpm,
-            targetRecoverySpm = config.targetRecoverySpm,
+            seedTargetCadenceHigh = config.seedTargetCadenceHigh,
+            seedTargetCadenceRecovery = config.seedTargetCadenceRecovery,
         )
     }
 }
@@ -81,8 +87,8 @@ data class SettingsDocument(
     val ageYears: Int = 39,
     val restingBpm: Int = 60,
     val recoveryFatigueRatio: Double = 1.5,
-    val targetHighSpm: Int = 144,
-    val targetRecoverySpm: Int = 72,
+    val seedTargetCadenceHigh: Double = 130.0,
+    val seedTargetCadenceRecovery: Double = 65.0,
 ) {
     fun toSessionConfig() = SessionConfig(
         ageYears = ageYears,
@@ -95,8 +101,8 @@ data class SettingsDocument(
         minBaseline = minBaselineSec.seconds,
         highPhaseTimeout = highTimeoutSec.seconds,
         recoveryTimeout = recoveryTimeoutSec.seconds,
-        targetHighSpm = targetHighSpm,
-        targetRecoverySpm = targetRecoverySpm,
+        seedTargetCadenceHigh = seedTargetCadenceHigh,
+        seedTargetCadenceRecovery = seedTargetCadenceRecovery,
     )
 
     companion object {
@@ -113,8 +119,8 @@ data class SettingsDocument(
             ageYears = config.ageYears,
             restingBpm = config.restingBpm,
             recoveryFatigueRatio = config.recoveryFatigueRatio,
-            targetHighSpm = config.targetHighSpm,
-            targetRecoverySpm = config.targetRecoverySpm,
+            seedTargetCadenceHigh = config.seedTargetCadenceHigh,
+            seedTargetCadenceRecovery = config.seedTargetCadenceRecovery,
         )
     }
 }

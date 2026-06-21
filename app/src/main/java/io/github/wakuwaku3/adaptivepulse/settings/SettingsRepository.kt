@@ -44,6 +44,8 @@ class SettingsRepository(private val context: Context) {
         val RestingBpm = intPreferencesKey("resting_bpm")
         val UpdatedAtMs = longPreferencesKey("updated_at_ms")
         val UpdatedBy = stringPreferencesKey("updated_by")
+        val SeedTargetCadenceHigh = doublePreferencesKey("seed_target_cadence_high")
+        val SeedTargetCadenceRecovery = doublePreferencesKey("seed_target_cadence_recovery")
     }
 
     val config: Flow<SessionConfig> = context.settingsDataStore.data.map { it.toConfig() }
@@ -93,6 +95,8 @@ class SettingsRepository(private val context: Context) {
         this[Keys.RestingBpm] = config.restingBpm
         this[Keys.UpdatedAtMs] = updatedAtMs
         this[Keys.UpdatedBy] = updatedBy
+        this[Keys.SeedTargetCadenceHigh] = config.seedTargetCadenceHigh
+        this[Keys.SeedTargetCadenceRecovery] = config.seedTargetCadenceRecovery
     }
 
     private fun Preferences.toDocument(): SettingsDocument = SettingsDocument.from(
@@ -117,9 +121,12 @@ class SettingsRepository(private val context: Context) {
                 highPhaseTimeout = this[Keys.HighTimeoutSecs]?.seconds ?: defaults.highPhaseTimeout,
                 recoveryTimeout = this[Keys.RecoveryTimeoutSecs]?.seconds
                     ?: defaults.recoveryTimeout,
+                seedTargetCadenceHigh = this[Keys.SeedTargetCadenceHigh]
+                    ?: defaults.seedTargetCadenceHigh,
+                seedTargetCadenceRecovery = this[Keys.SeedTargetCadenceRecovery]
+                    ?: defaults.seedTargetCadenceRecovery,
             )
         }.getOrElse {
-            // 不正な保存値 (閾値逆転など) で起動不能にならないようデフォルトに戻す
             Log.w(TAG, "保存設定が不正なためデフォルトを使用", it)
             defaults
         }

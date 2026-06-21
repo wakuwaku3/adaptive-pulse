@@ -26,7 +26,7 @@ object LiveSessionCommander {
     fun adjustThreshold(context: Context, delta: Int) =
         send(context, SyncPaths.SESSION_CMD_THRESHOLD, encodeInt(delta))
 
-    fun adjustTargetSpm(context: Context, delta: Int) =
+    fun adjustTargetCadence(context: Context, delta: Int) =
         send(context, SyncPaths.SESSION_CMD_TARGET_SPM, encodeInt(delta))
 
     private fun send(context: Context, path: String, payload: ByteArray) {

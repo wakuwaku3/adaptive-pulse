@@ -18,7 +18,6 @@ import kotlinx.coroutines.launch
 
 /** 完走 / 部分終了したセッションの結果 (履歴 SessionRecord の材料) */
 data class SessionResult(
-    /** 高強度→回復まで完走したサイクル数。中断時は未完了サイクルを含めない */
     val cycles: Int,
     val elapsed: Duration,
     val calories: Double?,
@@ -29,23 +28,33 @@ data class SessionResult(
     val avgBpm: Int?,
     val maxBpm: Int?,
     val config: SessionConfig,
+    /** セッション最終時点の高強度 target cadence。次セッションに持ち越す */
+    val finalTargetCadenceHigh: Double,
+    /** セッション最終時点の回復 target cadence */
+    val finalTargetCadenceRecovery: Double,
 )
 
 /**
- * IntervalEngine とデータソースをつなぐ実行ループ。ホスト (Foreground Service) から
- * 切り離して保持し、ロジックの正しさは core のテスト、この層はエミュレータで確認する。
+ * IntervalEngine とデータソースをつなぐ実行ループ。
  *
- * 中断 (手動停止 / 異常終了) でも履歴に残せるよう、現時点の状態を SessionResult に
- * 落とせる [snapshot] を公開する。
+ * pace-metric Phase B の制御ループは engine 側に持ち、Runner は cadence 観測値の
+ * 平滑化 (RollingMedian) と target 値の UI 反映だけを担当する。
+ * 初期 target cadence は呼び出し側 (前回最終値 or seed) から注入する。
  */
 class SessionRunner(
     private val config: SessionConfig,
     private val sourceFactory: (phaseProvider: () -> Phase) -> ExerciseSource,
     private val onSessionEvent: (SessionEvent) -> Unit,
     private val onState: (SessionUiState) -> Unit,
+    initialTargetCadenceHigh: Double = config.seedTargetCadenceHigh,
+    initialTargetCadenceRecovery: Double = config.seedTargetCadenceRecovery,
     timeSource: TimeSource = TimeSource.Monotonic,
 ) {
-    private val engine = IntervalEngine(config)
+    private val engine = IntervalEngine(
+        config = config,
+        initialTargetCadenceHigh = initialTargetCadenceHigh,
+        initialTargetCadenceRecovery = initialTargetCadenceRecovery,
+    )
     private val metrics = SessionMetrics(config)
     private val mark = timeSource.markNow()
     private var lastBpm: Int? = null
@@ -53,22 +62,18 @@ class SessionRunner(
     // 瞬時値はノイジーなので 5 秒窓の median を掛ける (pace-metric note の方針)
     private val cadenceSpmWindow = RollingMedian(window = 5.seconds)
 
-    /**
-     * 現フェーズが監視している閾値を delta だけ動かす (UI のクラウン回転から呼ぶ)。
-     * 調整後の状態を即時 [onState] に反映するため、UI のキャプション表示も追従する。
-     * 永続化はしないので、次セッションは設定本体の値に戻る。
-     */
+    /** 現フェーズの閾値を delta だけ動かす (UI のクラウン回転から呼ぶ) */
     fun adjustActiveThreshold(delta: Int) {
         engine.adjustActiveThreshold(delta)
         update(event = null)
     }
 
     /**
-     * 現フェーズの目標 SPM を delta だけ動かす (phone の ± ボタンから呼ぶ)。
-     * 永続化はせずセッション内のみ有効 (pace-metric note の方針)。
+     * 現フェーズの目標 cadence を delta だけ動かす (phone の ± ボタンから呼ぶ)。
+     * 次 cycle 完了時に engine の制御ループが上書きしうる。
      */
-    fun adjustActiveTargetSpm(delta: Int) {
-        engine.adjustActiveTargetSpm(delta)
+    fun adjustActiveTargetCadence(delta: Double) {
+        engine.adjustActiveTargetCadence(delta)
         update(event = null)
     }
 
@@ -76,7 +81,6 @@ class SessionRunner(
     suspend fun run(): SessionResult = coroutineScope {
         update(event = null)
 
-        // 心拍サンプルが途絶えてもタイムアウト遷移が動くよう、tick を並走させる
         val ticker = launch {
             while (isActive) {
                 delay(1.seconds)
@@ -84,11 +88,14 @@ class SessionRunner(
             }
         }
 
-        // first(predicate) は条件成立でアップストリームを閉じる = 終了時にソースも止まる
         sourceFactory { engine.phase }.samples().first { sample ->
             lastBpm = sample.bpm
             sample.totalCalories?.let { calories = it }
-            sample.stepsPerMinute?.let { cadenceSpmWindow.add(mark.elapsedNow(), it) }
+            sample.stepsPerMinute?.let {
+                cadenceSpmWindow.add(mark.elapsedNow(), it)
+                // engine の制御ループ anchor 用に実測 cadence を流す (pace-metric Q2 修正)
+                engine.onCadenceSample(it)
+            }
             metrics.onHeartRate(sample.bpm)
             update(engine.onHeartRate(sample.bpm, mark.elapsedNow()))
             engine.phase == Phase.FINISHED
@@ -109,6 +116,8 @@ class SessionRunner(
         avgBpm = metrics.avgBpm,
         maxBpm = metrics.maxBpm,
         config = config,
+        finalTargetCadenceHigh = engine.targetCadenceHigh,
+        finalTargetCadenceRecovery = engine.targetCadenceRecovery,
     )
 
     private fun update(event: SessionEvent?) {
@@ -135,9 +144,9 @@ class SessionRunner(
                     calories = calories,
                     upperBpm = engine.upperBpm,
                     lowerBpm = engine.lowerBpm,
-                    // SPM (step/min) を RPS (Hz) に変換して載せる。DTO の契約は Hz
-                    currentRps = cadenceSpmWindow.median(elapsed)?.let { it / 60.0 },
-                    targetSpm = engine.activeTargetSpm(),
+                    currentCadenceSpm = cadenceSpmWindow.median(elapsed),
+                    targetCadenceHigh = engine.targetCadenceHigh,
+                    targetCadenceRecovery = engine.targetCadenceRecovery,
                 )
             },
         )

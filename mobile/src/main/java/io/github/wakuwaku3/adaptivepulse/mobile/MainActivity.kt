@@ -43,6 +43,7 @@ import io.github.wakuwaku3.adaptivepulse.mobile.auth.AuthManager
 import io.github.wakuwaku3.adaptivepulse.mobile.health.DashboardSyncManager
 import io.github.wakuwaku3.adaptivepulse.mobile.health.HealthDataExporter
 import io.github.wakuwaku3.adaptivepulse.mobile.health.HealthDataSource
+import io.github.wakuwaku3.adaptivepulse.mobile.session.DemoSessionController
 import io.github.wakuwaku3.adaptivepulse.mobile.session.LiveSessionCommander
 import io.github.wakuwaku3.adaptivepulse.mobile.session.LiveSessionLauncher
 import io.github.wakuwaku3.adaptivepulse.mobile.session.LiveSessionStore
@@ -122,11 +123,23 @@ class MainActivity : ComponentActivity() {
             ) { /* 結果は無視: 通知が出るかどうかだけが変わり、機能は壊れない */ }
             LaunchedEffect(Unit) { launcher.launch(Manifest.permission.POST_NOTIFICATIONS) }
         }
+        // デモモード中は watch にコマンドを投げず、ローカル DemoSessionController を直接いじる
+        // (本物の watch が居ない見た目確認用なので、操作と画面の応答だけ繋がっていれば足りる)
+        val isDemo by DemoSessionController.active.collectAsState()
         ActiveSessionScreen(
             snapshot = snapshot,
-            onAdjustThreshold = { delta -> LiveSessionCommander.adjustThreshold(applicationContext, delta) },
-            onAdjustTargetSpm = { delta -> LiveSessionCommander.adjustTargetSpm(applicationContext, delta) },
-            onStop = { LiveSessionCommander.stop(applicationContext) },
+            onAdjustThreshold = { delta ->
+                if (isDemo) DemoSessionController.adjustThreshold(delta)
+                else LiveSessionCommander.adjustThreshold(applicationContext, delta)
+            },
+            onAdjustTargetSpm = { delta ->
+                if (isDemo) DemoSessionController.adjustTargetCadence(delta.toDouble())
+                else LiveSessionCommander.adjustTargetCadence(applicationContext, delta)
+            },
+            onStop = {
+                if (isDemo) DemoSessionController.stop()
+                else LiveSessionCommander.stop(applicationContext)
+            },
         )
     }
 
@@ -175,6 +188,11 @@ class MainActivity : ComponentActivity() {
                             onSignedIn()
                         }
                     }) { Text("Show demo dashboard") }
+                    // セッション中の phone 画面をエミュレータだけで確認するモード。
+                    // 本物の watch が要らないように DemoSessionController が snapshot を回す
+                    Button(onClick = { DemoSessionController.start() }) {
+                        Text("Show demo session")
+                    }
                 }
                 error?.let { Text(it, color = MobileColors.High) }
             }

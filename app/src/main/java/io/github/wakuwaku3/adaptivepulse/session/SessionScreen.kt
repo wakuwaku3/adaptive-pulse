@@ -162,9 +162,14 @@ private fun RunningScreen(
             color = APColors.TextDim,
             style = MaterialTheme.typography.caption2,
         )
-        state.calories?.let {
+        // kcal と cadence (SPM) は同じ caption2 行にまとめる (watch 画面は縦の余白がシビアなので追加行を避ける)
+        val extras = buildList {
+            state.calories?.let { add("${it.toInt()} kcal") }
+            state.currentCadenceSpm?.let { add("${it.toInt()} spm") }
+        }
+        if (extras.isNotEmpty()) {
             Text(
-                text = "${it.toInt()} kcal",
+                text = extras.joinToString(" · "),
                 color = APColors.TextDim,
                 style = MaterialTheme.typography.caption2,
             )
