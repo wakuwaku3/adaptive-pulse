@@ -9,45 +9,85 @@ import androidx.health.services.client.data.ExerciseConfig
 import androidx.health.services.client.data.ExerciseLapSummary
 import androidx.health.services.client.data.ExerciseType
 import androidx.health.services.client.data.ExerciseUpdate
+import io.github.wakuwaku3.adaptivepulse.core.cadence.CadenceTier
+import io.github.wakuwaku3.adaptivepulse.core.cadence.StepsDeltaCadenceEstimator
+import io.github.wakuwaku3.adaptivepulse.core.cadence.TieredCadenceLock
+import java.util.concurrent.atomic.AtomicReference
 import kotlin.math.roundToInt
+import kotlin.time.Duration
+import kotlin.time.TimeSource
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.guava.await
 
 /**
  * Health Services ExerciseClient によるデータソース。セッションを OS にワークアウト
  * として認識させ、画面オフ中のセンサー継続取得や将来の Health Connect 連携の
  * 土台になる (docs/stock/tech.md)。BODY_SENSORS 許可済みであることが前提。
- * カロリー累計は能力があるときだけ要求し、サンプルに載せる。
+ *
+ * cadence (SPM) は 3 段で取り、セッション開始直後の discovery 窓 (15s) で最良 tier を確定する:
+ *   tier 1: `DataType.STEPS_PER_MINUTE` (watch の歩行検出が出す瞬時 rate)
+ *   tier 2: `DataType.STEPS_TOTAL` の差分から再構成した SPM
+ *   tier 3: 注入された加速度由来の SPM Flow (歩行検出が効かない動きの保険)
+ * 確定後はセッション中ずっとその tier だけを使う ([TieredCadenceLock])。
  */
 class HealthServicesExerciseSource(
     private val context: Context,
     private val exerciseType: ExerciseType = ExerciseType.ELLIPTICAL,
+    private val accelerometerSpm: Flow<Double?> = emptyFlow(),
+    private val timeSource: TimeSource = TimeSource.Monotonic,
 ) : ExerciseSource {
 
     private val client = HealthServices.getClient(context).exerciseClient
 
     override fun samples(): Flow<ExerciseSample> = callbackFlow {
+        val mark = timeSource.markNow()
+        val stepsDelta = StepsDeltaCadenceEstimator()
+        val lock = TieredCadenceLock()
+
+        // 各 tier の最新観測値 (lock 後の emit に使う). callback と launchIn(this) の両方から
+        // 書き込まれるので AtomicReference で memory visibility を確保
+        val tier1Value = AtomicReference<Double?>(null)
+        val tier3Value = AtomicReference<Double?>(null)
+
         var totalCalories: Double? = null
-        var stepsPerMinute: Double? = null
+
+        accelerometerSpm
+            .onEach { value ->
+                if (value != null) {
+                    tier3Value.set(value)
+                    lock.observe(CadenceTier.ACCELEROMETER, mark.elapsedNow())
+                }
+            }
+            .launchIn(this)
 
         val callback = object : ExerciseUpdateCallback {
             override fun onExerciseUpdateReceived(update: ExerciseUpdate) {
+                val now = mark.elapsedNow()
                 update.latestMetrics.getData(DataType.CALORIES_TOTAL)?.let {
                     totalCalories = it.total
                 }
-                // STEPS_PER_MINUTE は SampleDataPoint で複数件来うる。
-                // 最新値だけ保持して次の HR サンプル時にスナップショットへ載せる
                 update.latestMetrics.getData(DataType.STEPS_PER_MINUTE).lastOrNull()?.let {
-                    stepsPerMinute = it.value.toDouble()
+                    tier1Value.set(it.value.toDouble())
+                    lock.observe(CadenceTier.STEPS_PER_MINUTE, now)
+                }
+                update.latestMetrics.getData(DataType.STEPS_TOTAL)?.let {
+                    if (stepsDelta.update(now, it.total) != null) {
+                        lock.observe(CadenceTier.STEPS_TOTAL_DELTA, now)
+                    }
                 }
                 update.latestMetrics.getData(DataType.HEART_RATE_BPM).forEach { sample ->
+                    val emitNow = mark.elapsedNow()
+                    val spm = pickSpm(emitNow, lock, stepsDelta, tier1Value, tier3Value)
                     trySend(
                         ExerciseSample(
                             bpm = sample.value.roundToInt(),
                             totalCalories = totalCalories,
-                            stepsPerMinute = stepsPerMinute,
+                            stepsPerMinute = spm,
                         ),
                     )
                 }
@@ -79,10 +119,11 @@ class HealthServicesExerciseSource(
             if (canReadCalories && DataType.CALORIES_TOTAL in supported) {
                 add(DataType.CALORIES_TOTAL)
             }
-            // クロストレーナーの cadence (= pace-metric Phase A の計測対象)。
-            // ELLIPTICAL で対応しない端末は出ないが、要求しても弾かれないので opt-in
             if (DataType.STEPS_PER_MINUTE in supported) {
                 add(DataType.STEPS_PER_MINUTE)
+            }
+            if (DataType.STEPS_TOTAL in supported) {
+                add(DataType.STEPS_TOTAL)
             }
         }
 
@@ -94,9 +135,21 @@ class HealthServicesExerciseSource(
         ).await()
 
         awaitClose {
-            // collect の終了 = セッション終了。ワークアウトも閉じる
             client.clearUpdateCallbackAsync(callback)
             client.endExerciseAsync()
         }
+    }
+
+    private fun pickSpm(
+        now: Duration,
+        lock: TieredCadenceLock,
+        stepsDelta: StepsDeltaCadenceEstimator,
+        tier1: AtomicReference<Double?>,
+        tier3: AtomicReference<Double?>,
+    ): Double? = when (lock.currentTier(now)) {
+        CadenceTier.STEPS_PER_MINUTE -> tier1.get()
+        CadenceTier.STEPS_TOTAL_DELTA -> stepsDelta.spm(now)
+        CadenceTier.ACCELEROMETER -> tier3.get()
+        null -> null
     }
 }

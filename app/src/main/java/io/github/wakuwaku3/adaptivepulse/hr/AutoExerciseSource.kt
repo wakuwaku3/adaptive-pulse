@@ -45,7 +45,12 @@ class AutoExerciseSource(
             return SyntheticExerciseSource(phaseProvider)
         }
         Log.i(TAG, "ExerciseClient ($exerciseType) で計測")
-        return HealthServicesExerciseSource(context, exerciseType)
+        // tier 1/2 で SPM が出ないクロストレーナーでも、加速度 peak で穴埋めする
+        return HealthServicesExerciseSource(
+            context = context,
+            exerciseType = exerciseType,
+            accelerometerSpm = AccelerometerCadenceSource(context).spm(),
+        )
     }
 
     /** クロスストレーナー (ELLIPTICAL) を優先し、無ければ汎用 WORKOUT で心拍対応を探す */
