@@ -25,6 +25,8 @@ sealed interface SessionUiState {
         val lowerBpm: Int,
         /** 3〜5 秒窓の median のステップ毎秒 (Hz)。pace-metric Phase A の計測のみ用途。watch UI は表示しないが phone live screen に流す */
         val currentRps: Double? = null,
+        /** 現フェーズの目標 step/min。phone のペース調整・拍動円 tempo の入力 (pace-metric Phase B) */
+        val targetSpm: Int = 0,
     ) : SessionUiState
 
     data class Finished(

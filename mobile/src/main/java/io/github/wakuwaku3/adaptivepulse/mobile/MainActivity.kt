@@ -43,6 +43,7 @@ import io.github.wakuwaku3.adaptivepulse.mobile.auth.AuthManager
 import io.github.wakuwaku3.adaptivepulse.mobile.health.DashboardSyncManager
 import io.github.wakuwaku3.adaptivepulse.mobile.health.HealthDataExporter
 import io.github.wakuwaku3.adaptivepulse.mobile.health.HealthDataSource
+import io.github.wakuwaku3.adaptivepulse.mobile.session.LiveSessionCommander
 import io.github.wakuwaku3.adaptivepulse.mobile.session.LiveSessionLauncher
 import io.github.wakuwaku3.adaptivepulse.mobile.session.LiveSessionStore
 import io.github.wakuwaku3.adaptivepulse.mobile.settings.PhoneSettingsRepository
@@ -121,7 +122,12 @@ class MainActivity : ComponentActivity() {
             ) { /* 結果は無視: 通知が出るかどうかだけが変わり、機能は壊れない */ }
             LaunchedEffect(Unit) { launcher.launch(Manifest.permission.POST_NOTIFICATIONS) }
         }
-        ActiveSessionScreen(snapshot)
+        ActiveSessionScreen(
+            snapshot = snapshot,
+            onAdjustThreshold = { delta -> LiveSessionCommander.adjustThreshold(applicationContext, delta) },
+            onAdjustTargetSpm = { delta -> LiveSessionCommander.adjustTargetSpm(applicationContext, delta) },
+            onStop = { LiveSessionCommander.stop(applicationContext) },
+        )
     }
 
     @Composable
