@@ -828,6 +828,35 @@ fun RestingHrChart(rows: List<DashboardComputed>, modifier: Modifier = Modifier)
     )
 }
 
+@Composable
+fun Spo2Chart(rows: List<DashboardComputed>, modifier: Modifier = Modifier) {
+    val values = rows.map { it.spo2AvgPct }
+    val nonNull = values.filterNotNull()
+    val scale = if (nonNull.isNotEmpty()) expandWithBands(nonNull, Spo2.bands, 0.10) else Scale(92.0, 100.0)
+    val today = rows.lastOrNull()
+    MiniChartCard(
+        title = "SpO2",
+        info = "血中酸素飽和度 (%)。緑 = 正常 95%+ / 黄 = 注意 90-95% / 赤 = 低酸素 90% 未満",
+        legend = listOf(
+            LegendItem(
+                "SpO2",
+                today?.spo2AvgPct?.let { "%.1f %%".format(it) } ?: "—",
+                PrimaryColor,
+                bandStateColor(today?.spo2AvgPct, Spo2.bands),
+            ),
+        ),
+        yLabels = yLabelsFor(scale) { "%.1f".format(it) },
+        xLabels = rows.firstAndLastDateLabels(),
+        modifier = modifier,
+        pointCount = rows.size,
+        pointAt = { i -> rows.getOrNull(i)?.let { formatPoint(it.date, it.spo2AvgPct, "%") } ?: "" },
+        drawContent = {
+            drawBands(Spo2.bands, scale)
+            drawLineChart(values, scale, PrimaryColor)
+        },
+    )
+}
+
 // MARK: --- セッション (HIIT)
 
 private const val HighPhaseTargetSec = 30.0
