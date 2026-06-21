@@ -13,7 +13,7 @@ import kotlinx.serialization.Serializable
  */
 @Serializable
 data class SessionLiveSnapshot(
-    val schema: Int = 1,
+    val schema: Int = 2,
     val updatedAtMs: Long,
     val phase: LivePhase,
     val bpm: Int?,
@@ -25,8 +25,10 @@ data class SessionLiveSnapshot(
     val upperBpm: Int,
     val lowerBpm: Int,
     val calories: Double? = null,
-    /** 3〜5 秒窓の median による現在のステップ毎分 (pace-metric Phase A の計測のみ用途) */
+    /** 3〜5 秒窓の median による現在のステップ毎秒 (Hz)。pace-metric note の単位流儀 */
     val currentRps: Double? = null,
+    /** 現フェーズの目標 step/min。phone でペース調整・拍動円 tempo に使う (pace-metric Phase B) */
+    val targetSpm: Int = 0,
 )
 
 /** 表示フェーズ。WARM_UP は engine の HIGH_INTENSITY かつ measureStartedAt==null を別ラベル化 */

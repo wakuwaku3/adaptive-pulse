@@ -22,6 +22,10 @@ data class SessionConfig(
     val minBaseline: Duration = 45.seconds,
     val highPhaseTimeout: Duration = 3.minutes,
     val recoveryTimeout: Duration = 3.minutes,
+    /** 高強度フェーズの目標 cadence (step/min)。ユーザの実測 2.4Hz ≈ 144 SPM (pace-metric note) */
+    val targetHighSpm: Int = 144,
+    /** 回復フェーズの目標 cadence (step/min)。ユーザの実測 1.2Hz ≈ 72 SPM */
+    val targetRecoverySpm: Int = 72,
 ) {
     init {
         // 15bpm のヒステリシス幅はチャタリング防止の要なので、逆転した設定を弾く
@@ -32,5 +36,11 @@ data class SessionConfig(
         require(recoveryFatigueRatio > 1.0) { "回復疲労係数は r > 1" }
         require(ageYears in 10..120) { "年齢は 10〜120 の範囲" }
         require(restingBpm in 30..120) { "安静時心拍は 30〜120 の範囲" }
+        // 高強度の目標は回復の目標より速い (機材実測でも約 2 倍差。pace-metric note)
+        require(targetHighSpm > targetRecoverySpm) {
+            "高強度目標 ($targetHighSpm) は回復目標 ($targetRecoverySpm) より速いこと"
+        }
+        require(targetHighSpm in 60..220) { "高強度目標 SPM は 60〜220 の範囲" }
+        require(targetRecoverySpm in 30..180) { "回復目標 SPM は 30〜180 の範囲" }
     }
 }

@@ -24,6 +24,14 @@ class IntervalEngine(private val config: SessionConfig) {
     var lowerBpm: Int = config.lowerBpm
         private set
 
+    /** 高強度フェーズの目標 step/min (pace-metric Phase B)。セッション中に [adjustActiveTargetSpm] で動かせる */
+    var targetHighSpm: Int = config.targetHighSpm
+        private set
+
+    /** 回復フェーズの目標 step/min。セッション中に [adjustActiveTargetSpm] で動かせる */
+    var targetRecoverySpm: Int = config.targetRecoverySpm
+        private set
+
     /**
      * 完了した高強度フェーズの数 = 上限到達によって回復に切り替わった回数。
      * 0 で開始し「上限到達 → 回復へ」のタイミングでインクリメントする。
@@ -176,11 +184,43 @@ class IntervalEngine(private val config: SessionConfig) {
         Phase.FINISHED -> upperBpm
     }
 
+    /** 現フェーズの目標 step/min (UI のフィードバック表示用) */
+    fun activeTargetSpm(): Int = when (phase) {
+        Phase.HIGH_INTENSITY -> targetHighSpm
+        Phase.RECOVERY -> targetRecoverySpm
+        Phase.FINISHED -> targetHighSpm
+    }
+
+    /**
+     * 現フェーズの目標 SPM を delta だけ動かす (高強度なら targetHighSpm、回復なら targetRecoverySpm)。
+     * 高強度 > 回復 + 最小ギャップを保つよう clamp する。永続化はせずセッション内のみ有効。
+     * pace-metric note の「±1 SPM 程度を手元で調整可能」を実装する経路。
+     */
+    fun adjustActiveTargetSpm(delta: Int): Int {
+        when (phase) {
+            Phase.HIGH_INTENSITY -> {
+                targetHighSpm = (targetHighSpm + delta)
+                    .coerceIn(targetRecoverySpm + MIN_TARGET_GAP, MAX_SPM)
+                return targetHighSpm
+            }
+            Phase.RECOVERY -> {
+                targetRecoverySpm = (targetRecoverySpm + delta)
+                    .coerceIn(MIN_SPM, targetHighSpm - MIN_TARGET_GAP)
+                return targetRecoverySpm
+            }
+            Phase.FINISHED -> return targetHighSpm
+        }
+    }
+
     companion object {
         /** チャタリング防止の最小ヒステリシス幅 (要件のデフォルト 15bpm より小さくしすぎない) */
         const val MIN_THRESHOLD_GAP = 5
         const val MIN_BPM = 100
         const val MAX_BPM = 200
+        /** 高強度と回復の SPM 差は最低限残す (機材実測でも約 2 倍差なので 10 SPM は安全マージン) */
+        const val MIN_TARGET_GAP = 10
+        const val MIN_SPM = 30
+        const val MAX_SPM = 220
     }
 
     private fun completeCycle(elapsed: Duration): SessionEvent {

@@ -58,6 +58,7 @@ private fun SessionUiState.toLiveSnapshot(nowMs: Long): SessionLiveSnapshot? = w
         lowerBpm = lowerBpm,
         calories = calories,
         currentRps = currentRps,
+        targetSpm = targetSpm,
     )
     is SessionUiState.Finished -> SessionLiveSnapshot(
         updatedAtMs = nowMs,
@@ -72,6 +73,7 @@ private fun SessionUiState.toLiveSnapshot(nowMs: Long): SessionLiveSnapshot? = w
         lowerBpm = 0,
         calories = calories,
         currentRps = null,
+        targetSpm = 0,
     )
 }
 
@@ -88,10 +90,13 @@ class SessionService : LifecycleService() {
         private val _state = MutableStateFlow<SessionUiState>(SessionUiState.Idle)
         val state: StateFlow<SessionUiState> = _state
 
-        // クラウン回転はミリ秒単位で連射されうるため、Intent 経由ではなく直接呼べる関数で経路化する。
+        // クラウン回転・phone ボタンはミリ秒単位で連射されうるため、Intent 経由ではなく直接呼べる関数で経路化する。
         // Service 生存期間 = セッション生存期間と一致するので、開始時にセット・終了時にクリアする
         @Volatile
-        private var activeAdjust: ((Int) -> Unit)? = null
+        private var activeAdjustThreshold: ((Int) -> Unit)? = null
+
+        @Volatile
+        private var activeAdjustTargetSpm: ((Int) -> Unit)? = null
 
         fun start(context: Context) {
             context.startForegroundService(Intent(context, SessionService::class.java))
@@ -105,7 +110,12 @@ class SessionService : LifecycleService() {
 
         /** 現フェーズが見ている閾値を delta だけ動かす (高強度=上限、回復=下限)。セッション外は no-op */
         fun adjustActiveThreshold(delta: Int) {
-            activeAdjust?.invoke(delta)
+            activeAdjustThreshold?.invoke(delta)
+        }
+
+        /** 現フェーズの目標 SPM を delta だけ動かす (phone のペース ± から呼ぶ)。セッション外は no-op */
+        fun adjustActiveTargetSpm(delta: Int) {
+            activeAdjustTargetSpm?.invoke(delta)
         }
     }
 
@@ -145,9 +155,13 @@ class SessionService : LifecycleService() {
                     livePusher.maybePush(state)
                 },
             )
-            // クラウン回転を runner に橋渡しする (振動 tap で操作を体感確認できるようにする)
-            activeAdjust = { delta ->
+            // クラウン回転・phone ボタンを runner に橋渡しする (振動 tap で操作を体感確認できるようにする)
+            activeAdjustThreshold = { delta ->
                 runner.adjustActiveThreshold(delta)
+                vibrator.vibrateTap()
+            }
+            activeAdjustTargetSpm = { delta ->
+                runner.adjustActiveTargetSpm(delta)
                 vibrator.vibrateTap()
             }
             try {
@@ -167,7 +181,8 @@ class SessionService : LifecycleService() {
                 withContext(NonCancellable) { recordSession(startedAtMs, runner.snapshot()) }
                 _state.value = SessionUiState.Idle
             } finally {
-                activeAdjust = null
+                activeAdjustThreshold = null
+                activeAdjustTargetSpm = null
                 sessionJob = null
                 // ライブ DataItem は phone のライブ画面を閉じるトリガー。
                 // NonCancellable で確実に消す (上の catch から throw されてきてもここは通る)

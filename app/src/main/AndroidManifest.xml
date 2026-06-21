@@ -43,7 +43,7 @@
             android:exported="false"
             android:foregroundServiceType="health" />
 
-        <!-- phone 起点の設定変更を受信する (Wearable Data Layer) -->
+        <!-- phone 起点の設定変更・セッション遠隔操作を受信する (Wearable Data Layer) -->
         <service
             android:name=".sync.WatchSyncService"
             android:exported="true">
@@ -53,6 +53,13 @@
                     android:scheme="wear"
                     android:host="*"
                     android:pathPrefix="/settings" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="com.google.android.gms.wearable.MESSAGE_RECEIVED" />
+                <data
+                    android:scheme="wear"
+                    android:host="*"
+                    android:pathPrefix="/session/cmd/" />
             </intent-filter>
         </service>
 

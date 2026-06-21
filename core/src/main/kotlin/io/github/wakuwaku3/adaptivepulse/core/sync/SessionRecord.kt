@@ -42,6 +42,8 @@ data class SessionConfigSnapshot(
     val ageYears: Int = 39,
     val restingBpm: Int = 60,
     val recoveryFatigueRatio: Double = 1.5,
+    val targetHighSpm: Int = 144,
+    val targetRecoverySpm: Int = 72,
 ) {
     companion object {
         fun from(config: SessionConfig) = SessionConfigSnapshot(
@@ -55,6 +57,8 @@ data class SessionConfigSnapshot(
             ageYears = config.ageYears,
             restingBpm = config.restingBpm,
             recoveryFatigueRatio = config.recoveryFatigueRatio,
+            targetHighSpm = config.targetHighSpm,
+            targetRecoverySpm = config.targetRecoverySpm,
         )
     }
 }
@@ -77,6 +81,8 @@ data class SettingsDocument(
     val ageYears: Int = 39,
     val restingBpm: Int = 60,
     val recoveryFatigueRatio: Double = 1.5,
+    val targetHighSpm: Int = 144,
+    val targetRecoverySpm: Int = 72,
 ) {
     fun toSessionConfig() = SessionConfig(
         ageYears = ageYears,
@@ -89,6 +95,8 @@ data class SettingsDocument(
         minBaseline = minBaselineSec.seconds,
         highPhaseTimeout = highTimeoutSec.seconds,
         recoveryTimeout = recoveryTimeoutSec.seconds,
+        targetHighSpm = targetHighSpm,
+        targetRecoverySpm = targetRecoverySpm,
     )
 
     companion object {
@@ -105,6 +113,8 @@ data class SettingsDocument(
             ageYears = config.ageYears,
             restingBpm = config.restingBpm,
             recoveryFatigueRatio = config.recoveryFatigueRatio,
+            targetHighSpm = config.targetHighSpm,
+            targetRecoverySpm = config.targetRecoverySpm,
         )
     }
 }

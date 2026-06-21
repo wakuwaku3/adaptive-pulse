@@ -63,6 +63,15 @@ class SessionRunner(
         update(event = null)
     }
 
+    /**
+     * 現フェーズの目標 SPM を delta だけ動かす (phone の ± ボタンから呼ぶ)。
+     * 永続化はせずセッション内のみ有効 (pace-metric note の方針)。
+     */
+    fun adjustActiveTargetSpm(delta: Int) {
+        engine.adjustActiveTargetSpm(delta)
+        update(event = null)
+    }
+
     /** セッション完走で結果を返す。キャンセル時は [snapshot] で部分結果を取れる */
     suspend fun run(): SessionResult = coroutineScope {
         update(event = null)
@@ -128,6 +137,7 @@ class SessionRunner(
                     lowerBpm = engine.lowerBpm,
                     // SPM (step/min) を RPS (Hz) に変換して載せる。DTO の契約は Hz
                     currentRps = cadenceSpmWindow.median(elapsed)?.let { it / 60.0 },
+                    targetSpm = engine.activeTargetSpm(),
                 )
             },
         )
