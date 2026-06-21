@@ -19,7 +19,7 @@ import androidx.room.TypeConverters
         VitalSampleEntity::class,
         ExerciseSessionEntity::class,
     ],
-    version = 1,
+    version = 2,
     exportSchema = false,
 )
 @TypeConverters(VitalKindConverter::class)

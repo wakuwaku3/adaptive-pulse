@@ -31,11 +31,16 @@ class InitialSyncWorker(
         }
         val repo = DashboardRepository(applicationContext)
         val today = LocalDate.now()
+        // 5 年遡及だが、自社 HIIT は限られた件数なので 1 回まとめて読む (N+1 回避)
+        val sessionsByDate = repo.loadAppSessionsByDate()
         var ok = 0
         var failed = 0
         (0 until DashboardSyncManager.INITIAL_WINDOW_DAYS).forEach { offset ->
             val day = today.minusDays(offset.toLong())
-            runCatching { repo.syncDay(day, includeTimeSeries = false) }
+            val daySessions = sessionsByDate[day.toString()].orEmpty()
+            runCatching {
+                repo.syncDay(day, includeTimeSeries = false, appSessionsForDate = daySessions)
+            }
                 .onSuccess { ok++ }
                 .onFailure {
                     failed++

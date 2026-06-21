@@ -40,6 +40,14 @@ data class DailyHealthRecord(
     val activeCaloriesKcal: Double? = null,
     val totalCaloriesKcal: Double? = null,
     val basalCaloriesKcal: Double? = null,
+    /**
+     * `core.calories.TdeeCalc` が再計算した TDEE。HC `totalCaloriesKcal` は watch/Fitbit
+     * の overcount を含むので、deficit 表示はこちらを正にする。
+     * 詳細は docs/notes/20260621__tdee-recompute/index.md。
+     */
+    val tdeeKcal: Double? = null,
+    /** TDEE のうち「BMR + 歩数 NEAT を除いた運動 extra」。自社 HIIT + HC ExerciseSession 合算。 */
+    val exerciseExtraKcal: Double? = null,
     // 体組成
     val weightKg: Double? = null,
     val bodyFatPct: Double? = null,

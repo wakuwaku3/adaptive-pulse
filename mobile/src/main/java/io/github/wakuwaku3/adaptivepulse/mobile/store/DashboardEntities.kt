@@ -36,6 +36,9 @@ data class DailySnapshotEntity(
     val activeCaloriesKcal: Double? = null,
     val totalCaloriesKcal: Double? = null,
     val basalCaloriesKcal: Double? = null,
+    /** 自前計算した TDEE。watch overcount を含まない。詳細 [DailyHealthRecord.tdeeKcal]。 */
+    val tdeeKcal: Double? = null,
+    val exerciseExtraKcal: Double? = null,
     // 体組成
     val weightKg: Double? = null,
     val bodyFatPct: Double? = null,

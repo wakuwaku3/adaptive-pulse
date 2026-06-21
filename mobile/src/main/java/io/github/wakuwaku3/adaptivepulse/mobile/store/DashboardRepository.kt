@@ -3,11 +3,16 @@ package io.github.wakuwaku3.adaptivepulse.mobile.store
 import android.content.Context
 import android.util.Log
 import io.github.wakuwaku3.adaptivepulse.core.sync.DailyHealthRecord
+import io.github.wakuwaku3.adaptivepulse.core.sync.SessionRecord
+import io.github.wakuwaku3.adaptivepulse.mobile.calories.CalorieEnricher
 import io.github.wakuwaku3.adaptivepulse.mobile.health.HealthDataSource
 import io.github.wakuwaku3.adaptivepulse.mobile.health.MetricBreakdownRow
 import io.github.wakuwaku3.adaptivepulse.mobile.health.VitalKindData
+import io.github.wakuwaku3.adaptivepulse.mobile.sync.FirestoreSync
+import io.github.wakuwaku3.adaptivepulse.mobile.sync.PendingSessionStore
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -56,15 +61,27 @@ class DashboardRepository(private val context: Context) {
     /**
      * 1 日分を HC から読み直して Room に書き込む。集約と per-source breakdown も更新する。
      * 時系列 (HR / Vital) は [includeTimeSeries] = true のときだけ書き込み (容量制御)。
+     * TDEE は HC の生 total を信頼せず、`CalorieEnricher` が BMR + 歩数 + 運動 extra で
+     * 再計算する。[appSessionsForDate] にはその日の自社 HIIT セッションを渡す
+     * (二重計上回避と HIIT extra の MET 加算のため)。
      */
-    suspend fun syncDay(date: LocalDate, includeTimeSeries: Boolean, zone: ZoneId = ZoneId.systemDefault()) {
+    suspend fun syncDay(
+        date: LocalDate,
+        includeTimeSeries: Boolean,
+        zone: ZoneId = ZoneId.systemDefault(),
+        appSessionsForDate: List<SessionRecord> = emptyList(),
+        ageYears: Int = 39,
+    ) {
         if (!hc.available) {
             Log.i(TAG, "HC 利用不可なので sync skip")
             return
         }
         val snapshot = hc.readSnapshot(date, zone) ?: return
+        val (from, to) = zonedRangeOfDay(date, zone)
+        val hcSessions = hc.readExerciseSessions(from, to)
+        val enriched = CalorieEnricher.enrich(snapshot.record, hcSessions, appSessionsForDate, ageYears)
         val dateStr = date.format(DateTimeFormatter.ISO_LOCAL_DATE)
-        dao.upsertSnapshot(snapshot.record.toEntity(syncedAtMs = System.currentTimeMillis()))
+        dao.upsertSnapshot(enriched.toEntity(syncedAtMs = System.currentTimeMillis()))
 
         // breakdown は metric ごとに REPLACE して、書き込まないソースが消えたら自然に消える
         val byMetric = snapshot.breakdown.groupBy { it.metricKey }
@@ -82,7 +99,6 @@ class DashboardRepository(private val context: Context) {
         }
 
         if (includeTimeSeries) {
-            val (from, to) = zonedRangeOfDay(date, zone)
             val hrSamples = hc.readHeartRateSamples(from, to)
                 .map { HeartRateSampleEntity(it.timestampMs, it.sourcePackage, it.bpm) }
             if (hrSamples.isNotEmpty()) dao.upsertHeartRateSamples(hrSamples)
@@ -101,7 +117,7 @@ class DashboardRepository(private val context: Context) {
             }
             if (vitals.isNotEmpty()) dao.upsertVitalSamples(vitals)
 
-            val sessions = hc.readExerciseSessions(from, to).map { s ->
+            val sessions = hcSessions.map { s ->
                 ExerciseSessionEntity(
                     id = s.id,
                     startTimeMs = s.startTimeMs,
@@ -113,6 +129,21 @@ class DashboardRepository(private val context: Context) {
             }
             if (sessions.isNotEmpty()) dao.upsertExerciseSessions(sessions)
         }
+    }
+
+    /**
+     * 自社 HIIT セッションを Firestore + ローカル pending から日付別に集める。
+     * `syncDay` 呼び出しの前に 1 回だけ呼んで、各日に該当分を渡すと N+1 を避けられる。
+     */
+    suspend fun loadAppSessionsByDate(
+        zone: ZoneId = ZoneId.systemDefault(),
+        firestoreLimit: Int = 500,
+    ): Map<String, List<SessionRecord>> {
+        val remote = FirestoreSync.listSessions(limit = firestoreLimit).orEmpty()
+        val local = PendingSessionStore(context).list()
+        return (remote + local)
+            .distinctBy { it.id }
+            .groupBy { Instant.ofEpochMilli(it.startedAtMs).atZone(zone).toLocalDate().toString() }
     }
 
     /** 時系列の古いサンプルを掃除する (今日 + 昨日のみ保持) */
@@ -165,6 +196,8 @@ internal fun DailyHealthRecord.toEntity(syncedAtMs: Long): DailySnapshotEntity =
     activeCaloriesKcal = activeCaloriesKcal,
     totalCaloriesKcal = totalCaloriesKcal,
     basalCaloriesKcal = basalCaloriesKcal,
+    tdeeKcal = tdeeKcal,
+    exerciseExtraKcal = exerciseExtraKcal,
     weightKg = weightKg,
     bodyFatPct = bodyFatPct,
     leanBodyMassKg = leanBodyMassKg,
@@ -201,6 +234,8 @@ internal fun DailySnapshotEntity.toRecord(): DailyHealthRecord = DailyHealthReco
     activeCaloriesKcal = activeCaloriesKcal,
     totalCaloriesKcal = totalCaloriesKcal,
     basalCaloriesKcal = basalCaloriesKcal,
+    tdeeKcal = tdeeKcal,
+    exerciseExtraKcal = exerciseExtraKcal,
     weightKg = weightKg,
     bodyFatPct = bodyFatPct,
     leanBodyMassKg = leanBodyMassKg,

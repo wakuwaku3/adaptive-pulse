@@ -6,9 +6,11 @@ import android.util.Log
 import androidx.core.content.FileProvider
 import io.github.wakuwaku3.adaptivepulse.core.sync.HealthDataExport
 import io.github.wakuwaku3.adaptivepulse.core.sync.SessionRecord
+import io.github.wakuwaku3.adaptivepulse.mobile.calories.CalorieEnricher
 import io.github.wakuwaku3.adaptivepulse.mobile.sync.FirestoreSync
 import io.github.wakuwaku3.adaptivepulse.mobile.sync.PendingSessionStore
 import java.io.File
+import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import kotlinx.serialization.json.Json
@@ -37,11 +39,28 @@ class HealthDataExporter(private val context: Context) {
         val from = today.minusDays(days.toLong())
         val to = today.minusDays(1) // 昨日 (HC は今日分が日中まだ揃わないため)
 
-        val dailyMetrics = HealthDataSource(context).readDailySummaries(days, zone)
-            .sortedBy { it.date }
+        val source = HealthDataSource(context)
+        val raw = source.readDailySummaries(days, zone).sortedBy { it.date }
 
-        val sessions = listSessions(from, to)
-            .sortedBy { it.startedAtMs }
+        val sessions = listSessions(from, to).sortedBy { it.startedAtMs }
+        val appSessionsByDate = sessions.groupBy {
+            Instant.ofEpochMilli(it.startedAtMs).atZone(zone).toLocalDate().toString()
+        }
+        // 全期間の HC ExerciseSession を 1 回で取って日付別に bucket する (N+1 回避)
+        val rangeFrom = from.atStartOfDay(zone)
+        val rangeTo = today.atStartOfDay(zone)
+        val hcSessionsByDate = source.readExerciseSessions(rangeFrom, rangeTo)
+            .groupBy {
+                Instant.ofEpochMilli(it.startTimeMs).atZone(zone).toLocalDate().toString()
+            }
+
+        val dailyMetrics = raw.map { rec ->
+            CalorieEnricher.enrich(
+                record = rec,
+                hcSessions = hcSessionsByDate[rec.date].orEmpty(),
+                appSessions = appSessionsByDate[rec.date].orEmpty(),
+            )
+        }
 
         return HealthDataExport(
             exportedAtMs = System.currentTimeMillis(),

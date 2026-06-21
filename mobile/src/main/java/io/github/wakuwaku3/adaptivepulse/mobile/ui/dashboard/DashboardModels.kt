@@ -9,8 +9,10 @@ import io.github.wakuwaku3.adaptivepulse.mobile.ui.MobileColors
  * UI 側は表示するだけにする。
  *
  * 数値モデル:
- *  - TDEE は HC `totalCaloriesKcal` (BMR 込み)
- *  - deficit = TDEE - intake
+ *  - TDEE は `DailySnapshotEntity.tdeeKcal` (`core.calories.TdeeCalc` が再計算した値)
+ *    HC `totalCaloriesKcal` は watch/Fitbit overcount を含むので採用しない
+ *    詳細は docs/notes/20260621__tdee-recompute/
+ *  - deficit = intake - TDEE (負 = 痩せ方向)
  *  - BMR_est は Mifflin-St Jeor
  *  - BMI = weight / (height_m)^2
  */
@@ -20,6 +22,8 @@ data class DashboardComputed(
     val heightCm: Double?,
     val bmi: Double?,
     val tdeeKcal: Double?,
+    /** TDEE のうち BMR + 歩数を除いた運動 extra (自社 HIIT + HC 他アプリ session 合算)。 */
+    val exerciseExtraKcal: Double?,
     val intakeKcal: Double?,
     val deficitKcal: Double?,
     val proteinG: Double?,
@@ -40,8 +44,9 @@ data class DashboardComputed(
 
 fun DailySnapshotEntity.computed(ageYears: Int = 39): DashboardComputed {
     val bmr = bmrMifflinStJeor(weightKg, heightCm, ageYears)
-    // deficit = intake - TDEE。負 = 痩せ方向 (緑) / 正 = サープラス (赤) で 1 本化
-    val deficit = if (totalCaloriesKcal != null && intakeKcal != null) intakeKcal - totalCaloriesKcal else null
+    // TDEE は CalorieEnricher が再計算した値を採用 (HC raw total は watch overcount)。
+    // tdeeKcal が null の日 (旧 sync で未計算) は表示も deficit も「—」。
+    val deficit = if (tdeeKcal != null && intakeKcal != null) intakeKcal - tdeeKcal else null
     val sleepHours = sleepDurationMin?.let { it / 60.0 }
     val protKg = if (proteinG != null && weightKg != null) proteinG / weightKg else null
     val fatKg = if (fatG != null && weightKg != null) fatG / weightKg else null
@@ -55,7 +60,8 @@ fun DailySnapshotEntity.computed(ageYears: Int = 39): DashboardComputed {
         weightKg = weightKg,
         heightCm = heightCm,
         bmi = bmi,
-        tdeeKcal = totalCaloriesKcal,
+        tdeeKcal = tdeeKcal,
+        exerciseExtraKcal = exerciseExtraKcal,
         intakeKcal = intakeKcal,
         deficitKcal = deficit,
         proteinG = proteinG,

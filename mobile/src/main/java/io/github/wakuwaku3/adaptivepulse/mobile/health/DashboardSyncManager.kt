@@ -109,12 +109,16 @@ object DashboardSyncManager {
 /** 通常同期 (periodic + foreground 共通) のロジックを 1 か所に集約 */
 internal suspend fun runNormalSync(context: Context, today: LocalDate = LocalDate.now()) {
     val repo = DashboardRepository(context)
+    // TDEE 再計算で自社 HIIT セッションを使うので、ループ前に 1 回だけ集める
+    val sessionsByDate = repo.loadAppSessionsByDate()
     // 過去 7 日 (今日含む) を Room へ。HR/Vital 時系列は当日 + 昨日のみに絞る (容量制御)
     (0 until DashboardSyncManager.NORMAL_WINDOW_DAYS).forEach { offset ->
         val day = today.minusDays(offset.toLong())
         val withTimeSeries = offset <= 1 // 今日 + 昨日
-        runCatching { repo.syncDay(day, includeTimeSeries = withTimeSeries) }
-            .onFailure { Log.w(TAG, "syncDay 失敗: $day", it) }
+        val daySessions = sessionsByDate[day.toString()].orEmpty()
+        runCatching {
+            repo.syncDay(day, includeTimeSeries = withTimeSeries, appSessionsForDate = daySessions)
+        }.onFailure { Log.w(TAG, "syncDay 失敗: $day", it) }
     }
     repo.pruneOldTimeSeries(today)
 }

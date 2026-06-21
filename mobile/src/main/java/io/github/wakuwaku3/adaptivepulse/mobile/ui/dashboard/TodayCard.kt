@@ -76,8 +76,15 @@ fun TodayCard(today: DashboardComputed?) {
 private fun DeficitRow(today: DashboardComputed) {
     val deficit = today.deficitKcal
     val accent = bandStateColor(deficit, Deficit.bands)
+    val extraSub = today.exerciseExtraKcal
+        ?.takeIf { it > 0 }
+        ?.let { "+exercise %.0f".format(it) }
     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-        MetricCell("TDEE", today.tdeeKcal?.let { "%.0f kcal".format(it) } ?: "—")
+        MetricCell(
+            "TDEE",
+            today.tdeeKcal?.let { "%.0f kcal".format(it) } ?: "—",
+            sub = extraSub,
+        )
         MetricCell("Intake", today.intakeKcal?.let { "%.0f kcal".format(it) } ?: "—")
         Column {
             Text("Deficit", style = MaterialTheme.typography.labelSmall, color = MobileColors.TextDim)

@@ -64,6 +64,8 @@ object DemoSeed {
                 activeCaloriesKcal = (tdee - 1820.0).coerceAtLeast(0.0),
                 totalCaloriesKcal = tdee,
                 basalCaloriesKcal = 1820.0,
+                tdeeKcal = tdee,
+                exerciseExtraKcal = (tdee - 1820.0 - steps * 0.045).coerceAtLeast(0.0),
                 weightKg = weight,
                 bodyFatPct = 30.6 + sin(offset.toDouble()) * 0.4,
                 leanBodyMassKg = weight * 0.69,
