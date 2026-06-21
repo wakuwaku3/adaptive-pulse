@@ -106,7 +106,7 @@ private fun SectionHeader(label: String) {
  *  2. CALORIES: deficit・TDEE vs intake / Protein・Fat / Carbs
  *     (P/F/C はカロリー構成要素なので CALORIES に集約)
  *  3. RECOVERY: Sleep・HRV / RHR
- *  4. TRAINING: 行動量 (Steps) → セッション (高強度区間・ゾーン滞在率・avg/max HR) → HR 24h
+ *  4. TRAINING: Steps・HR 24h (日次系) / 高強度区間・ゾーン滞在率 / avg HR・max HR (セッション系)
  */
 private fun LazyListScope.chartGrid(
     rows: List<DashboardComputed>,
@@ -128,17 +128,13 @@ private fun LazyListScope.chartGrid(
     item { ChartRow({ RestingHrChart(rows, it) }) }
 
     item { SectionHeader("TRAINING") }
-    item { ChartRow({ StepsChart(rows, it) }) }
+    item { ChartRow({ StepsChart(rows, it) }, { HeartRate24hChart(hrSamples, upperBpm, lowerBpm, it) }) }
     item { ChartRow({ SessionHighDurationChart(sessions, it) }, { SessionZoneRatioChart(sessions, it) }) }
     item {
         ChartRow(
             { SessionAvgBpmChart(sessions, upperBpm, lowerBpm, it) },
             { SessionMaxBpmChart(sessions, upperBpm, lowerBpm, it) },
         )
-    }
-    item {
-        // HR 24h は時系列なので 2 列の片側だと細すぎる。フルワイドで 1 枚として置く
-        HeartRate24hChart(hrSamples, upperBpm, lowerBpm, Modifier.fillMaxWidth())
     }
 }
 
