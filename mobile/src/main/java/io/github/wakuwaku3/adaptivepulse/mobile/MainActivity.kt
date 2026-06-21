@@ -246,8 +246,18 @@ class MainActivity : ComponentActivity() {
         val recentEntities by dashboard.observeRecent(period.days, today).collectAsState(initial = emptyList())
         val hrSamples by dashboard.observeHeartRateForDate(today)
             .collectAsState(initial = emptyList())
-        val todayComputed = todayEntity?.computed()
-        val recentComputed = recentEntities.sortedBy { it.date }.map { it.computed() }
+        val currentConfig = settingsDoc?.toSessionConfig() ?: SessionConfig()
+        val fallbackHeightCm = currentConfig.heightCm?.toDouble()
+        val todayComputed = todayEntity?.computed(
+            ageYears = currentConfig.ageYears,
+            fallbackHeightCm = fallbackHeightCm,
+        )
+        val recentComputed = recentEntities.sortedBy { it.date }.map {
+            it.computed(
+                ageYears = currentConfig.ageYears,
+                fallbackHeightCm = fallbackHeightCm,
+            )
+        }
 
         suspend fun refresh() {
             val pendingLeft = PhoneSync.syncPendingSessions(applicationContext)
@@ -374,6 +384,11 @@ class MainActivity : ComponentActivity() {
                                 PhoneSync.updateSettingsEverywhere(applicationContext) { config ->
                                     item.write(config, newValue)
                                 }
+                            }
+                        },
+                        onHeightChange = { cm ->
+                            scope.launch {
+                                PhoneSync.updateSettingsEverywhere(applicationContext) { it.copy(heightCm = cm) }
                             }
                         },
                         healthConnectConnected = hcConnected,

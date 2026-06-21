@@ -50,6 +50,7 @@ data class SessionConfigSnapshot(
     val recoveryFatigueRatio: Double = 1.5,
     val seedTargetCadenceHigh: Double = 130.0,
     val seedTargetCadenceRecovery: Double = 65.0,
+    val heightCm: Int? = null,
 ) {
     companion object {
         fun from(config: SessionConfig) = SessionConfigSnapshot(
@@ -65,6 +66,7 @@ data class SessionConfigSnapshot(
             recoveryFatigueRatio = config.recoveryFatigueRatio,
             seedTargetCadenceHigh = config.seedTargetCadenceHigh,
             seedTargetCadenceRecovery = config.seedTargetCadenceRecovery,
+            heightCm = config.heightCm,
         )
     }
 }
@@ -89,6 +91,7 @@ data class SettingsDocument(
     val recoveryFatigueRatio: Double = 1.5,
     val seedTargetCadenceHigh: Double = 130.0,
     val seedTargetCadenceRecovery: Double = 65.0,
+    val heightCm: Int? = null,
 ) {
     fun toSessionConfig() = SessionConfig(
         ageYears = ageYears,
@@ -103,6 +106,7 @@ data class SettingsDocument(
         recoveryTimeout = recoveryTimeoutSec.seconds,
         seedTargetCadenceHigh = seedTargetCadenceHigh,
         seedTargetCadenceRecovery = seedTargetCadenceRecovery,
+        heightCm = heightCm,
     )
 
     companion object {
@@ -121,6 +125,7 @@ data class SettingsDocument(
             recoveryFatigueRatio = config.recoveryFatigueRatio,
             seedTargetCadenceHigh = config.seedTargetCadenceHigh,
             seedTargetCadenceRecovery = config.seedTargetCadenceRecovery,
+            heightCm = config.heightCm,
         )
     }
 }

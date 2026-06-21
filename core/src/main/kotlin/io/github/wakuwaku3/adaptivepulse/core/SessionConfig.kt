@@ -14,6 +14,13 @@ import kotlin.time.Duration.Companion.seconds
 data class SessionConfig(
     val ageYears: Int = 39,
     val restingBpm: Int = 60,
+    /**
+     * 身長 (cm)。BMI 表示と BMR フォールバックの入力。
+     * Health Connect の `HeightRecord` が無い環境 (Google Fit 切断後など) で値を埋めるための
+     * ユーザ入力欄。null = 未設定 → BMI 表示は "—" のまま。
+     * デフォルト値はハードコードしない (身長は個人値なので source に embed しない)。
+     */
+    val heightCm: Int? = null,
     val upperBpm: Int = HeartRateZones.defaultUpperBpm(ageYears, restingBpm),
     val lowerBpm: Int = HeartRateZones.defaultLowerBpm(ageYears, restingBpm),
     val targetCycles: Int = 5,
@@ -72,6 +79,7 @@ data class SessionConfig(
         require(recoveryFatigueRatio > 1.0) { "回復疲労係数は r > 1" }
         require(ageYears in 10..120) { "年齢は 10〜120 の範囲" }
         require(restingBpm in 30..120) { "安静時心拍は 30〜120 の範囲" }
+        require(heightCm == null || heightCm in 100..230) { "身長は 100〜230 cm の範囲" }
         require(seedTargetCadenceHigh > seedTargetCadenceRecovery) {
             "高強度 seed ($seedTargetCadenceHigh) は回復 seed ($seedTargetCadenceRecovery) より速いこと"
         }

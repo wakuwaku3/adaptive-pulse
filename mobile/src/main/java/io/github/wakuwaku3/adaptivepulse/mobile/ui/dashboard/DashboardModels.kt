@@ -42,8 +42,14 @@ data class DashboardComputed(
     val spo2AvgPct: Double?,
 )
 
-fun DailySnapshotEntity.computed(ageYears: Int = 39): DashboardComputed {
-    val bmr = bmrMifflinStJeor(weightKg, heightCm, ageYears)
+fun DailySnapshotEntity.computed(
+    ageYears: Int = 39,
+    fallbackHeightCm: Double? = null,
+): DashboardComputed {
+    // HC `HeightRecord` が無い環境 (Google Fit 切断後など) のため、entity に乗っていない日は
+    // SessionConfig.heightCm で補完する。両方 null なら BMI / BMR_est は引き続き "—"。
+    val effectiveHeightCm = heightCm ?: fallbackHeightCm
+    val bmr = bmrMifflinStJeor(weightKg, effectiveHeightCm, ageYears)
     // TDEE は CalorieEnricher が再計算した値を採用 (HC raw total は watch overcount)。
     // tdeeKcal が null の日 (旧 sync で未計算) は表示も deficit も「—」。
     val deficit = if (tdeeKcal != null && intakeKcal != null) intakeKcal - tdeeKcal else null
@@ -51,14 +57,14 @@ fun DailySnapshotEntity.computed(ageYears: Int = 39): DashboardComputed {
     val protKg = if (proteinG != null && weightKg != null) proteinG / weightKg else null
     val fatKg = if (fatG != null && weightKg != null) fatG / weightKg else null
     val carbKg = if (carbsG != null && weightKg != null) carbsG / weightKg else null
-    val bmi = if (weightKg != null && heightCm != null && heightCm > 0) {
-        val m = heightCm / 100.0
+    val bmi = if (weightKg != null && effectiveHeightCm != null && effectiveHeightCm > 0) {
+        val m = effectiveHeightCm / 100.0
         weightKg / (m * m)
     } else null
     return DashboardComputed(
         date = date,
         weightKg = weightKg,
-        heightCm = heightCm,
+        heightCm = effectiveHeightCm,
         bmi = bmi,
         tdeeKcal = tdeeKcal,
         exerciseExtraKcal = exerciseExtraKcal,
