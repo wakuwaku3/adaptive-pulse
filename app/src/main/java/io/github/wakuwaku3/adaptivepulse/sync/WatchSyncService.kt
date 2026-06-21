@@ -48,8 +48,9 @@ class WatchSyncService : WearableListenerService() {
                 SessionService.adjustActiveThreshold(delta)
             }
             SyncPaths.SESSION_CMD_TARGET_SPM -> {
+                // pace-metric Phase B: target cadence は Double だが phone からは整数 ±1 で来る
                 val delta = event.data.toIntDelta() ?: return
-                SessionService.adjustActiveTargetSpm(delta)
+                SessionService.adjustActiveTargetCadence(delta.toDouble())
             }
         }
     }

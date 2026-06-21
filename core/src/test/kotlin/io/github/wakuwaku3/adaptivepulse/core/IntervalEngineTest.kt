@@ -448,4 +448,262 @@ class IntervalEngineTest {
         )
         assertEquals(listOf(60.seconds, 50.seconds), engine.recoveryDurations)
     }
+
+    // ----- pace-metric Phase B: 制御ループ (cadence 適応) -----
+
+    /** d_min=45s, d_max=90s, k=0.2 SPM/sec を使った engine */
+    private val controlConfig = SessionConfig(
+        upperBpm = 155,
+        lowerBpm = 140,
+        targetCycles = 4,
+        fatigueRatio = 0.2,
+        minBaseline = 10.seconds,
+        highPhaseTimeout = 5.minutes,
+        recoveryTimeout = 5.minutes,
+        cadenceTargetHighDurationMin = 45.seconds,
+        cadenceTargetHighDurationMax = 90.seconds,
+        cadenceTargetRecoveryDurationMin = 30.seconds,
+        cadenceTargetRecoveryDurationMax = 75.seconds,
+        cadenceControlGain = 0.2,
+    )
+
+    @Test
+    fun `制御ループ - 高強度が sweet spot 内なら target は変わらない`() {
+        val engine = IntervalEngine(controlConfig, initialTargetCadenceHigh = 130.0)
+        // 60 秒で上限到達: 45 <= 60 <= 90 → 変化なし
+        run(engine, listOf(0 to 141, 60 to 156))
+        assertEquals(130.0, engine.targetCadenceHigh)
+    }
+
+    @Test
+    fun `制御ループ - 高強度が短すぎる (速すぎ) と target が減る`() {
+        val engine = IntervalEngine(controlConfig, initialTargetCadenceHigh = 130.0)
+        // 20 秒で上限到達: 45 - 20 = 25 秒不足 → -0.2 × 25 = -5.0
+        run(engine, listOf(0 to 141, 20 to 156))
+        assertEquals(125.0, engine.targetCadenceHigh)
+    }
+
+    @Test
+    fun `制御ループ - 高強度が長すぎる (遅すぎ) と target が増える`() {
+        val engine = IntervalEngine(controlConfig, initialTargetCadenceHigh = 130.0)
+        // 100 秒で上限到達: 100 - 90 = 10 秒超過 → +0.2 × 10 = +2.0
+        run(engine, listOf(0 to 141, 100 to 156))
+        assertEquals(132.0, engine.targetCadenceHigh)
+    }
+
+    @Test
+    fun `制御ループ - 回復 sweet spot 内では target が変わらない`() {
+        val engine = IntervalEngine(controlConfig, initialTargetCadenceRecovery = 65.0)
+        // 高強度 60 秒、回復 50 秒 (30〜75 sweet spot 内)
+        run(engine, listOf(0 to 141, 60 to 156, 110 to 139))
+        assertEquals(65.0, engine.targetCadenceRecovery)
+    }
+
+    @Test
+    fun `制御ループ - 回復が短すぎる (HR が下限に届くまで早すぎ) と target が減る`() {
+        val engine = IntervalEngine(controlConfig, initialTargetCadenceRecovery = 65.0)
+        // 高強度 60 秒、回復 15 秒 → 30 - 15 = 15 秒不足 → -0.2 × 15 = -3.0
+        run(engine, listOf(0 to 141, 60 to 156, 75 to 139))
+        assertEquals(62.0, engine.targetCadenceRecovery)
+    }
+
+    @Test
+    fun `制御ループ - 回復が長すぎる (HRR 鈍化) と target が増える`() {
+        // recoveryFatigueRatio に当たらないよう ratio を高めにし、回復遅延を大きく取れる engine
+        val cfg = controlConfig.copy(recoveryFatigueRatio = 10.0)
+        val engine = IntervalEngine(cfg, initialTargetCadenceRecovery = 65.0)
+        // 高強度 60 秒、回復 100 秒 → 100 - 75 = 25 秒超過 → +0.2 × 25 = +5.0
+        run(engine, listOf(0 to 141, 60 to 156, 160 to 139))
+        assertEquals(70.0, engine.targetCadenceRecovery)
+    }
+
+    @Test
+    fun `手動 ± 後の同サイクル制御ループは手動値からスタートする`() {
+        val engine = IntervalEngine(controlConfig, initialTargetCadenceHigh = 130.0)
+        // 高強度入り
+        run(engine, listOf(0 to 141))
+        engine.adjustActiveTargetCadence(+3.0)
+        assertEquals(133.0, engine.targetCadenceHigh)
+        // 20 秒で上限到達: 45 - 20 = 25 秒不足 → -0.2 × 25 = -5.0 → 133 - 5 = 128
+        run(engine, listOf(20 to 156))
+        assertEquals(128.0, engine.targetCadenceHigh)
+    }
+
+    @Test
+    fun `制御ループ - target は recovery + ギャップを下回らないよう clamp される`() {
+        val engine = IntervalEngine(
+            controlConfig,
+            initialTargetCadenceHigh = 80.0, // recovery 65 + ギャップ 10 まで余裕 5 SPM
+            initialTargetCadenceRecovery = 65.0,
+        )
+        // 25 秒不足想定: 20 秒で上限到達 → -0.2 × 25 = -5.0、80→75 で clamp 下限 = recovery+10 = 75
+        // 同等になるので変化なし
+        run(engine, listOf(0 to 141, 20 to 156))
+        assertEquals(75.0, engine.targetCadenceHigh)
+    }
+
+    // ----- 実測 cadence anchor (pace-metric Q2 修正) -----
+
+    @Test
+    fun `実測 cadence anchor - sweet spot 内なら new target は実測 cadence の median`() {
+        val engine = IntervalEngine(controlConfig, initialTargetCadenceHigh = 130.0)
+        // ユーザは target 130 を無視して 145 SPM で踏んでいる (実測 cadence anchor)
+        repeat(10) { engine.onCadenceSample(145.0) }
+        // 60 秒で上限到達: 45 <= 60 <= 90 sweet spot → 補正 0、anchor 145 をそのまま採用
+        run(engine, listOf(0 to 141, 60 to 156))
+        assertEquals(145.0, engine.targetCadenceHigh)
+    }
+
+    @Test
+    fun `実測 cadence anchor - 短すぎ (速すぎ) 時は anchor から差し引かれる`() {
+        val engine = IntervalEngine(controlConfig, initialTargetCadenceHigh = 130.0)
+        // ユーザは 160 SPM で速く踏み、20 秒で上限到達 = 速すぎ
+        repeat(10) { engine.onCadenceSample(160.0) }
+        // observed=20s, dMin=45s, deficit=25s → -0.2 × 25 = -5.0
+        // anchor (= 実測 160) を基点に -5.0 → 155
+        run(engine, listOf(0 to 141, 20 to 156))
+        assertEquals(155.0, engine.targetCadenceHigh)
+    }
+
+    @Test
+    fun `実測 cadence anchor - 長すぎ (遅すぎ) 時は anchor に加算される`() {
+        val engine = IntervalEngine(controlConfig, initialTargetCadenceHigh = 130.0)
+        // ユーザは 120 SPM (target より遅め) で踏み、100 秒で上限到達 = 遅すぎ
+        repeat(10) { engine.onCadenceSample(120.0) }
+        // observed=100s, dMax=90s, excess=10s → +0.2 × 10 = +2.0
+        // anchor (= 実測 120) を基点に +2.0 → 122
+        run(engine, listOf(0 to 141, 100 to 156))
+        assertEquals(122.0, engine.targetCadenceHigh)
+    }
+
+    @Test
+    fun `実測 cadence anchor - cadence サンプル無しなら target を維持 (旧 fallback 挙動)`() {
+        val engine = IntervalEngine(controlConfig, initialTargetCadenceHigh = 130.0)
+        // onCadenceSample を呼ばずに cycle 完了 → anchor = 旧 target 130
+        // 60 秒で sweet spot 着地 → 130 をそのまま採用
+        run(engine, listOf(0 to 141, 60 to 156))
+        assertEquals(130.0, engine.targetCadenceHigh)
+    }
+
+    @Test
+    fun `実測 cadence anchor - phase 中の中央値が anchor に使われる`() {
+        val engine = IntervalEngine(controlConfig, initialTargetCadenceHigh = 130.0)
+        // ばらつきのある実測値。median = 150
+        listOf(140.0, 145.0, 150.0, 155.0, 200.0).forEach { engine.onCadenceSample(it) }
+        run(engine, listOf(0 to 141, 60 to 156))
+        // sweet spot → 補正 0、median 150 採用
+        assertEquals(150.0, engine.targetCadenceHigh)
+    }
+
+    // ----- intra-cycle stall 検知 (pace-metric 2026-06-21 FB) -----
+
+    /** stall 検知パラメタを明示した engine (grace 短め・nudge=1 で動かしやすく) */
+    private val stallConfig = controlConfig.copy(
+        cadenceStallGracePeriod = 10.seconds,
+        cadenceStallCheckInterval = 5.seconds,
+        cadenceStallBpmThreshold = 2,
+        cadenceStallCadenceTolerance = 5.0,
+        cadenceStallNudge = 1.0,
+    )
+
+    @Test
+    fun `stall - HIGH で BPM が動かないとき target が上がる`() {
+        val engine = IntervalEngine(stallConfig, initialTargetCadenceHigh = 130.0)
+        // bpm > lowerBpm で measureStartedAt が立つ → そこから grace 10 秒
+        engine.onCadenceSample(130.0)   // ちょうど target
+        engine.onHeartRate(141, 0.seconds)    // HIGH 突入、measureStartedAt = 0s
+        // grace 内: BPM 142 (movement +1) でも nudge しない
+        engine.onCadenceSample(130.0)
+        engine.onHeartRate(142, 9.seconds)
+        assertEquals(130.0, engine.targetCadenceHigh)
+
+        // grace 後最初のサンプル: checkpoint をセット (まだ nudge しない)
+        engine.onCadenceSample(130.0)
+        engine.onHeartRate(142, 11.seconds)
+        assertEquals(130.0, engine.targetCadenceHigh)
+
+        // 5 秒後 (check interval 経過後): movement = 142-142 = 0 < threshold 2 → 上限 stall → +1 SPM
+        engine.onCadenceSample(130.0)
+        engine.onHeartRate(142, 17.seconds)
+        assertEquals(131.0, engine.targetCadenceHigh)
+    }
+
+    @Test
+    fun `stall - RECOVERY で BPM が動かないとき target が下がる`() {
+        // recoveryFatigueRatio を高めにして 60 秒近い回復で疲労ブレーキを誘発しないようにする
+        val cfg = stallConfig.copy(recoveryFatigueRatio = 10.0)
+        val engine = IntervalEngine(cfg, initialTargetCadenceRecovery = 90.0)
+        // 高強度を完了 (上限到達) → RECOVERY 突入
+        engine.onHeartRate(156, 60.seconds)  // upperBpm 155 超え
+        // ここから RECOVERY、phaseStartedAt = 60s
+        // grace 内: BPM 動いてなくても nudge しない
+        engine.onCadenceSample(90.0)
+        engine.onHeartRate(150, 65.seconds)
+        assertEquals(90.0, engine.targetCadenceRecovery)
+
+        // grace 経過 (70 秒 = phase+10s) → 最初の checkpoint
+        engine.onCadenceSample(90.0)
+        engine.onHeartRate(150, 71.seconds)
+        assertEquals(90.0, engine.targetCadenceRecovery)
+
+        // 5 秒後: movement = 150-150 = 0, BPM 下がっていない (movement > -threshold) → stall → -1 SPM
+        engine.onCadenceSample(90.0)
+        engine.onHeartRate(150, 77.seconds)
+        assertEquals(89.0, engine.targetCadenceRecovery)
+    }
+
+    @Test
+    fun `stall - BPM が動いている (応答している) なら nudge しない`() {
+        val engine = IntervalEngine(stallConfig, initialTargetCadenceHigh = 130.0)
+        engine.onCadenceSample(130.0)
+        engine.onHeartRate(141, 0.seconds)
+        engine.onCadenceSample(130.0)
+        engine.onHeartRate(143, 11.seconds)  // checkpoint
+        // 5 秒後 BPM +5 上昇 → 応答あり → nudge しない
+        engine.onCadenceSample(130.0)
+        engine.onHeartRate(148, 17.seconds)
+        assertEquals(130.0, engine.targetCadenceHigh)
+    }
+
+    @Test
+    fun `stall - 実測 cadence が target から離れている (= サボり気味) なら nudge しない`() {
+        val engine = IntervalEngine(stallConfig, initialTargetCadenceHigh = 130.0)
+        // 実測が 110 SPM (target 130 から 20 SPM 下、tolerance 5 を超える)
+        engine.onCadenceSample(110.0)
+        engine.onHeartRate(141, 0.seconds)
+        engine.onCadenceSample(110.0)
+        engine.onHeartRate(142, 11.seconds)
+        engine.onCadenceSample(110.0)
+        engine.onHeartRate(142, 17.seconds)  // movement 0 だが cadence ≠ target → nudge しない
+        assertEquals(130.0, engine.targetCadenceHigh)
+    }
+
+    @Test
+    fun `stall - WARM-UP 中は nudge しない`() {
+        val engine = IntervalEngine(stallConfig, initialTargetCadenceHigh = 130.0)
+        // bpm < lowerBpm = warmup
+        engine.onCadenceSample(130.0)
+        engine.onHeartRate(120, 0.seconds)
+        engine.onCadenceSample(130.0)
+        engine.onHeartRate(120, 11.seconds)
+        engine.onCadenceSample(130.0)
+        engine.onHeartRate(120, 17.seconds)
+        assertEquals(130.0, engine.targetCadenceHigh)
+    }
+
+    @Test
+    fun `実測 cadence anchor - 高強度サンプルは回復制御ループに混入しない`() {
+        // recoveryFatigueRatio を高くして回復遅延で疲労ブレーキにならないようにする
+        val cfg = controlConfig.copy(recoveryFatigueRatio = 10.0)
+        val engine = IntervalEngine(cfg, initialTargetCadenceRecovery = 65.0)
+        // 高強度中は 145 で踏む → engine が highCadenceSamples に蓄積
+        repeat(10) { engine.onCadenceSample(145.0) }
+        run(engine, listOf(0 to 141, 60 to 156))
+        // 回復中は 80 で踏む → recoveryCadenceSamples に蓄積
+        repeat(5) { engine.onCadenceSample(80.0) }
+        // 60 秒で回復完了 (sweet spot 30-75 → 補正 0)
+        run(engine, listOf(120 to 139))
+        // 回復 anchor は recovery samples のみ (80) → 80
+        assertEquals(80.0, engine.targetCadenceRecovery)
+    }
 }

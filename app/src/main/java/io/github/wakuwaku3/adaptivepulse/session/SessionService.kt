@@ -37,6 +37,9 @@ private const val TAG = "AdaptivePulse"
 private const val CHANNEL_ID = "session"
 private const val NOTIFICATION_ID = 1
 
+/** 初期 target cadence を求める際の rolling window 件数 (pace-metric note Q1) */
+private const val TARGET_CADENCE_HISTORY_WINDOW = 5
+
 /** SessionUiState → 同期 DTO の変換。Idle は live 表示対象外なので null */
 private fun SessionUiState.toLiveSnapshot(nowMs: Long): SessionLiveSnapshot? = when (this) {
     SessionUiState.Idle -> null
@@ -57,8 +60,9 @@ private fun SessionUiState.toLiveSnapshot(nowMs: Long): SessionLiveSnapshot? = w
         upperBpm = upperBpm,
         lowerBpm = lowerBpm,
         calories = calories,
-        currentRps = currentRps,
-        targetSpm = targetSpm,
+        currentCadenceSpm = currentCadenceSpm,
+        targetCadenceHigh = targetCadenceHigh,
+        targetCadenceRecovery = targetCadenceRecovery,
     )
     is SessionUiState.Finished -> SessionLiveSnapshot(
         updatedAtMs = nowMs,
@@ -72,8 +76,9 @@ private fun SessionUiState.toLiveSnapshot(nowMs: Long): SessionLiveSnapshot? = w
         upperBpm = 0,
         lowerBpm = 0,
         calories = calories,
-        currentRps = null,
-        targetSpm = 0,
+        currentCadenceSpm = null,
+        targetCadenceHigh = 0.0,
+        targetCadenceRecovery = 0.0,
     )
 }
 
@@ -90,13 +95,12 @@ class SessionService : LifecycleService() {
         private val _state = MutableStateFlow<SessionUiState>(SessionUiState.Idle)
         val state: StateFlow<SessionUiState> = _state
 
-        // クラウン回転・phone ボタンはミリ秒単位で連射されうるため、Intent 経由ではなく直接呼べる関数で経路化する。
-        // Service 生存期間 = セッション生存期間と一致するので、開始時にセット・終了時にクリアする
+        // クラウン回転・phone ボタンはミリ秒単位で連射されうるため、Intent 経由ではなく直接呼べる関数で経路化する
         @Volatile
         private var activeAdjustThreshold: ((Int) -> Unit)? = null
 
         @Volatile
-        private var activeAdjustTargetSpm: ((Int) -> Unit)? = null
+        private var activeAdjustTargetCadence: ((Double) -> Unit)? = null
 
         fun start(context: Context) {
             context.startForegroundService(Intent(context, SessionService::class.java))
@@ -113,9 +117,12 @@ class SessionService : LifecycleService() {
             activeAdjustThreshold?.invoke(delta)
         }
 
-        /** 現フェーズの目標 SPM を delta だけ動かす (phone のペース ± から呼ぶ)。セッション外は no-op */
-        fun adjustActiveTargetSpm(delta: Int) {
-            activeAdjustTargetSpm?.invoke(delta)
+        /**
+         * 現フェーズの目標 cadence を delta SPM だけ動かす (phone のペース ± から呼ぶ)。
+         * 次 cycle 完了時の自動制御ループが上書きしうる (手動 ± は「次サイクルまでの暫定指示」)。
+         */
+        fun adjustActiveTargetCadence(delta: Double) {
+            activeAdjustTargetCadence?.invoke(delta)
         }
     }
 
@@ -136,12 +143,21 @@ class SessionService : LifecycleService() {
 
         val vibrator = SessionVibrator.from(applicationContext)
         val settings = SettingsRepository(applicationContext)
+        val history = WatchHistoryStore(applicationContext)
         sessionJob = lifecycleScope.launch {
             val config = settings.load()
             Log.i(TAG, "セッション開始: $config")
+            // pace-metric Phase B: 直近 N 件 (= TARGET_CADENCE_HISTORY_WINDOW) の median を初期値に。
+            // 1 セッションのコンディションブレを吸収する。値が無ければ seed (Day-1) に fallback
+            val recent = history.list().take(TARGET_CADENCE_HISTORY_WINDOW)
+            val initialTargetHigh = recent
+                .mapNotNull { it.finalTargetCadenceHigh }
+                .medianOrNull() ?: config.seedTargetCadenceHigh
+            val initialTargetRecovery = recent
+                .mapNotNull { it.finalTargetCadenceRecovery }
+                .medianOrNull() ?: config.seedTargetCadenceRecovery
+            Log.i(TAG, "target cadence 初期値: high=$initialTargetHigh, recovery=$initialTargetRecovery (直近 ${recent.size} 件の median)")
             val startedAtMs = System.currentTimeMillis()
-            // phone 側を前面化する ping (再送・永続不要なので MessageClient で 1 発)。
-            // 失敗してもセッション自体には影響させない (WearSync 内で握りつぶす)
             WearSync.sendStartForeground(applicationContext)
             val livePusher = LiveSnapshotPusher(applicationContext)
             val runner = SessionRunner(
@@ -154,42 +170,45 @@ class SessionService : LifecycleService() {
                     _state.value = state
                     livePusher.maybePush(state)
                 },
+                initialTargetCadenceHigh = initialTargetHigh,
+                initialTargetCadenceRecovery = initialTargetRecovery,
             )
-            // クラウン回転・phone ボタンを runner に橋渡しする (振動 tap で操作を体感確認できるようにする)
             activeAdjustThreshold = { delta ->
                 runner.adjustActiveThreshold(delta)
                 vibrator.vibrateTap()
             }
-            activeAdjustTargetSpm = { delta ->
-                runner.adjustActiveTargetSpm(delta)
+            activeAdjustTargetCadence = { delta ->
+                runner.adjustActiveTargetCadence(delta)
                 vibrator.vibrateTap()
             }
             try {
                 val result = runner.run()
-                // 完走 (タイムアウトでの強制終了も含む): 結果 (Finished) は表示し続けサービスだけ畳む
                 recordSession(startedAtMs, result)
             } catch (e: CancellationException) {
-                // 手動停止: 1 サイクル以上完走していれば部分履歴を残す
                 val snap = runner.snapshot()
                 if (snap.cycles >= 1) {
                     withContext(NonCancellable) { recordSession(startedAtMs, snap) }
                 }
                 throw e
             } catch (e: Exception) {
-                // センサー経路の失敗でアプリごと落とさない。途中までの履歴は残し、Idle で再開可能にする
                 Log.e(TAG, "セッションが異常終了", e)
                 withContext(NonCancellable) { recordSession(startedAtMs, runner.snapshot()) }
                 _state.value = SessionUiState.Idle
             } finally {
                 activeAdjustThreshold = null
-                activeAdjustTargetSpm = null
+                activeAdjustTargetCadence = null
                 sessionJob = null
-                // ライブ DataItem は phone のライブ画面を閉じるトリガー。
-                // NonCancellable で確実に消す (上の catch から throw されてきてもここは通る)
                 withContext(NonCancellable) { WearSync.deleteLiveSnapshot(applicationContext) }
                 stopSelf()
             }
         }
+    }
+
+    private fun List<Double>.medianOrNull(): Double? {
+        if (isEmpty()) return null
+        val sorted = sorted()
+        val n = size
+        return if (n % 2 == 1) sorted[n / 2] else (sorted[n / 2 - 1] + sorted[n / 2]) / 2.0
     }
 
     /** 1Hz 程度に間引いて live snapshot を Data Layer に書く */
@@ -224,6 +243,9 @@ class SessionService : LifecycleService() {
             avgBpm = result.avgBpm,
             maxBpm = result.maxBpm,
             config = SessionConfigSnapshot.from(result.config),
+            // 次セッション開始時の rolling median 初期値に使われる (pace-metric Q1)
+            finalTargetCadenceHigh = result.finalTargetCadenceHigh,
+            finalTargetCadenceRecovery = result.finalTargetCadenceRecovery,
         )
         runCatching { WatchHistoryStore(applicationContext).save(record) }
             .onFailure { Log.w(TAG, "履歴の保存に失敗", it) }
