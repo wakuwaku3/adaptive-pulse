@@ -20,15 +20,18 @@ data class SessionConfig(
     val fatigueRatio: Double = 0.5,
     val recoveryFatigueRatio: Double = 1.5,
     val minBaseline: Duration = 45.seconds,
-    val highPhaseTimeout: Duration = 3.minutes,
-    val recoveryTimeout: Duration = 3.minutes,
+    // 上限-下限ギャップ ~30bpm (Karvonen 0.86/0.60) を前提に 4 分。
+    // HRR は 1 分目 ~25-30bpm 降下後プラトーする (Imai 1994, Cole 1999) ため、
+    // 3 分だと後半サイクルで届かないリスクが大きい
+    val highPhaseTimeout: Duration = 4.minutes,
+    val recoveryTimeout: Duration = 4.minutes,
     /** 高強度フェーズの目標 cadence (step/min)。ユーザの実測 2.4Hz ≈ 144 SPM (pace-metric note) */
     val targetHighSpm: Int = 144,
     /** 回復フェーズの目標 cadence (step/min)。ユーザの実測 1.2Hz ≈ 72 SPM */
     val targetRecoverySpm: Int = 72,
 ) {
     init {
-        // 15bpm のヒステリシス幅はチャタリング防止の要なので、逆転した設定を弾く
+        // チャタリング防止のため上限<下限の逆転を構造的に弾く
         require(upperBpm > lowerBpm) { "上限閾値 ($upperBpm) は下限閾値 ($lowerBpm) より大きいこと" }
         require(targetCycles >= 1) { "目標サイクル数は 1 以上" }
         require(fatigueRatio > 0.0 && fatigueRatio < 1.0) { "早期終了係数は 0 < r < 1" }

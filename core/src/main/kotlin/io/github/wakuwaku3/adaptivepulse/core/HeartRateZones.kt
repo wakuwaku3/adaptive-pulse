@@ -13,11 +13,15 @@ import kotlin.math.roundToInt
  */
 object HeartRateZones {
 
-    /** 高強度フェーズ上限のデフォルト強度 (%HRR)。要件 docs/stock/requirements.md の 86% に揃える */
+    /** 高強度フェーズ上限のデフォルト強度 (%HRR)。≒91% HRmax で Buchheit & Laursen (2013) の T@VO₂max 帯 */
     const val DEFAULT_UPPER_INTENSITY = 0.86
 
-    /** 回復フェーズ復帰のデフォルト強度 (%HRR)。要件の 77% に揃える */
-    const val DEFAULT_LOWER_INTENSITY = 0.77
+    /**
+     * 回復フェーズ復帰のデフォルト強度 (%HRR)。Norwegian 4×4 等の長尺 HIIT が
+     * 回復目標とする 60-70% HRmax 帯 (≒0.45-0.62 HRR) の中央付近に揃える
+     * (Wisløff 2007, Helgerud 2007, Buchheit & Laursen 2013)。
+     */
+    const val DEFAULT_LOWER_INTENSITY = 0.60
 
     /** Tanaka 式による最大心拍推定 (208 − 0.7 × 年齢) */
     fun tanakaMaxHr(ageYears: Int): Int = (208 - 0.7 * ageYears).roundToInt()
