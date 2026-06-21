@@ -16,7 +16,7 @@ data class SessionConfig(
     val restingBpm: Int = 60,
     val upperBpm: Int = HeartRateZones.defaultUpperBpm(ageYears, restingBpm),
     val lowerBpm: Int = HeartRateZones.defaultLowerBpm(ageYears, restingBpm),
-    val targetCycles: Int = 7,
+    val targetCycles: Int = 5,
     val fatigueRatio: Double = 0.5,
     val recoveryFatigueRatio: Double = 1.5,
     val minBaseline: Duration = 45.seconds,
