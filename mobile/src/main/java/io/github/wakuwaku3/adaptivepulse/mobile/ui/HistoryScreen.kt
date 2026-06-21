@@ -33,7 +33,6 @@ import io.github.wakuwaku3.adaptivepulse.mobile.ui.dashboard.SessionHighDuration
 import io.github.wakuwaku3.adaptivepulse.mobile.ui.dashboard.SessionMaxBpmChart
 import io.github.wakuwaku3.adaptivepulse.mobile.ui.dashboard.SessionZoneRatioChart
 import io.github.wakuwaku3.adaptivepulse.mobile.ui.dashboard.SleepChart
-import io.github.wakuwaku3.adaptivepulse.mobile.ui.dashboard.Spo2Chart
 import io.github.wakuwaku3.adaptivepulse.mobile.ui.dashboard.StepsChart
 import io.github.wakuwaku3.adaptivepulse.mobile.ui.dashboard.TdeeIntakeChart
 import io.github.wakuwaku3.adaptivepulse.mobile.ui.dashboard.TodayCard
@@ -103,13 +102,11 @@ private fun SectionHeader(label: String) {
 
 /**
  * 2 列で並べるミニチャート。1 行 = 横並び 2 枚。並び順:
- *  1. 体重・BMI (減量フェーズの全体進捗)
- *  2. deficit・TDEE vs intake (カロリー収支)
- *  3. Protein・Fat (主要栄養素 P / F)
- *  4. Carbs・Steps (栄養素 C と行動量)
- *  5. Sleep・HRV (回復)
- *  6. RHR・SpO2 (コンディション)
- *  7. TRAINING: 高強度区間・ゾーン滞在率・avg/max HR・HR 24h
+ *  1. BODY: 体重・BMI (減量フェーズの全体進捗)
+ *  2. CALORIES: deficit・TDEE vs intake / Protein・Fat / Carbs
+ *     (P/F/C はカロリー構成要素なので CALORIES に集約)
+ *  3. RECOVERY: Sleep・HRV / RHR
+ *  4. TRAINING: 行動量 (Steps) → セッション (高強度区間・ゾーン滞在率・avg/max HR) → HR 24h
  */
 private fun LazyListScope.chartGrid(
     rows: List<DashboardComputed>,
@@ -123,16 +120,15 @@ private fun LazyListScope.chartGrid(
 
     item { SectionHeader("CALORIES") }
     item { ChartRow({ DeficitChart(rows, it) }, { TdeeIntakeChart(rows, it) }) }
-
-    item { SectionHeader("NUTRITION") }
     item { ChartRow({ ProteinChart(rows, it) }, { FatChart(rows, it) }) }
-    item { ChartRow({ CarbsChart(rows, it) }, { StepsChart(rows, it) }) }
+    item { ChartRow({ CarbsChart(rows, it) }) }
 
     item { SectionHeader("RECOVERY") }
     item { ChartRow({ SleepChart(rows, it) }, { HrvChart(rows, it) }) }
-    item { ChartRow({ RestingHrChart(rows, it) }, { Spo2Chart(rows, it) }) }
+    item { ChartRow({ RestingHrChart(rows, it) }) }
 
     item { SectionHeader("TRAINING") }
+    item { ChartRow({ StepsChart(rows, it) }) }
     item { ChartRow({ SessionHighDurationChart(sessions, it) }, { SessionZoneRatioChart(sessions, it) }) }
     item {
         ChartRow(
@@ -147,12 +143,15 @@ private fun LazyListScope.chartGrid(
 }
 
 @Composable
-private fun ChartRow(left: @Composable (Modifier) -> Unit, right: @Composable (Modifier) -> Unit) {
+private fun ChartRow(
+    left: @Composable (Modifier) -> Unit,
+    right: (@Composable (Modifier) -> Unit)? = null,
+) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Column(modifier = Modifier.weight(1f)) { left(Modifier.fillMaxWidth()) }
-        Column(modifier = Modifier.weight(1f)) { right(Modifier.fillMaxWidth()) }
+        Column(modifier = Modifier.weight(1f)) { right?.invoke(Modifier.fillMaxWidth()) }
     }
 }

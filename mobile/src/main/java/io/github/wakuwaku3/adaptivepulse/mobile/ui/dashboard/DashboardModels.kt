@@ -35,7 +35,6 @@ data class DashboardComputed(
     val proteinPerKg: Double?,
     val fatPerKg: Double?,
     val carbsPerKg: Double?,
-    val spo2AvgPct: Double?,
 )
 
 fun DailySnapshotEntity.computed(ageYears: Int = 39): DashboardComputed {
@@ -71,7 +70,6 @@ fun DailySnapshotEntity.computed(ageYears: Int = 39): DashboardComputed {
         proteinPerKg = protKg,
         fatPerKg = fatKg,
         carbsPerKg = carbKg,
-        spo2AvgPct = spo2AvgPct,
     )
 }
 
@@ -194,17 +192,6 @@ object RestingHr {
         Band("普通", 70.0, 80.0, NeutralBand),
         Band("やや高", 80.0, 90.0, BadBand),
         Band("高", 90.0, 200.0, BadBand),
-    )
-
-    fun categoryOf(v: Double): String = bands.firstOrNull { v in it.from..it.to }?.label ?: "—"
-}
-
-/** SpO2 (%) — 95% 以上が正常、それ未満は注意 */
-object Spo2 {
-    val bands = listOf(
-        Band("低酸素", 80.0, 90.0, BadBand),
-        Band("注意", 90.0, 95.0, NeutralBand),
-        Band("正常", 95.0, 100.0, GoodBand),
     )
 
     fun categoryOf(v: Double): String = bands.firstOrNull { v in it.from..it.to }?.label ?: "—"
