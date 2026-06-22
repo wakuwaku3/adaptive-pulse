@@ -43,6 +43,8 @@ class DashboardRepository(private val context: Context) {
         return dao.snapshotRange(from, to)
     }
 
+    suspend fun oldestSnapshotDate(): String? = dao.oldestSnapshotDate()
+
     fun observeMetricBreakdown(date: LocalDate): Flow<List<MetricBySourceEntity>> =
         dao.observeMetricBreakdown(date.format(DateTimeFormatter.ISO_LOCAL_DATE))
 

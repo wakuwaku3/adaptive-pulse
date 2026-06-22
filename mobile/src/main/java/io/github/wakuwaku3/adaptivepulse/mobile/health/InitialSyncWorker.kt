@@ -11,12 +11,12 @@ import java.time.LocalDate
 private const val TAG = "AdaptivePulse"
 
 /**
- * インストール後 1 回だけ走る backfill。過去 5 年 (1825 日) の日次集約を Room に取り込む。
+ * 過去 5 年 (1825 日) の日次集約を Room に backfill する worker。
  * HC 側に該当データが無ければ null まみれの行になるが、それは正しい挙動 (推定で埋めない)。
  * 時系列レコード (HR/Vital) は対象外 (容量爆発を避ける)。
  *
- * 完了マークを DataStore に書いた後は呼び直しても [DashboardSyncManager.enqueueInitialSyncIfNeeded]
- * が skip するので冪等。
+ * 起動判定 (= 再 backfill が必要か) は Room の最古日で行うので、本 worker 側に
+ * 完了マークを残す必要はない (`DashboardSyncManager.enqueueInitialSyncIfNeeded` 参照)。
  */
 class InitialSyncWorker(
     appContext: Context,
@@ -57,7 +57,6 @@ class InitialSyncWorker(
         }
         Log.i(TAG, "initial Firestore upload: ${records.size - fsFailed}/${records.size}")
 
-        DashboardSyncManager.markInitialSyncCompleted(applicationContext)
         return Result.success()
     }
 }

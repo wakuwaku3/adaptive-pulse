@@ -402,6 +402,10 @@ class MainActivity : ComponentActivity() {
                                 hcConnected = false
                             }
                         },
+                        onHealthConnectResync = {
+                            DashboardSyncManager.enqueueInitialSync(applicationContext)
+                            status = "Resyncing last 5 years from Health Connect…"
+                        },
                     )
                 }
             }

@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -40,6 +41,7 @@ fun SettingsScreen(
     healthConnectConnected: Boolean,
     healthConnectAvailable: Boolean,
     onHealthConnectToggle: (Boolean) -> Unit,
+    onHealthConnectResync: () -> Unit,
 ) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -89,6 +91,7 @@ fun SettingsScreen(
                 available = healthConnectAvailable,
                 connected = healthConnectConnected,
                 onToggle = onHealthConnectToggle,
+                onResync = onHealthConnectResync,
             )
         }
     }
@@ -143,7 +146,9 @@ private fun HealthConnectCard(
     available: Boolean,
     connected: Boolean,
     onToggle: (Boolean) -> Unit,
+    onResync: () -> Unit,
 ) {
+    var confirmResync by remember { mutableStateOf(false) }
     Card(modifier = Modifier.fillMaxWidth()) {
         Row(
             modifier = Modifier
@@ -164,11 +169,40 @@ private fun HealthConnectCard(
                     style = MaterialTheme.typography.bodySmall,
                 )
             }
-            Switch(
-                checked = connected,
-                enabled = available,
-                onCheckedChange = onToggle,
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                // 5 年 backfill を手動再実行する用。Room destructive migration 後など
+                // 自動再 backfill が失敗していたケースのエスケープハッチ
+                TextButton(
+                    onClick = { confirmResync = true },
+                    enabled = connected,
+                ) { Text("Resync") }
+                Switch(
+                    checked = connected,
+                    enabled = available,
+                    onCheckedChange = onToggle,
+                )
+            }
         }
+    }
+    if (confirmResync) {
+        AlertDialog(
+            onDismissRequest = { confirmResync = false },
+            title = { Text("Resync 5-year history?") },
+            text = {
+                Text(
+                    "Re-reads the last 5 years of daily metrics from Health Connect " +
+                        "into the local store. Runs in the background; takes a few minutes.",
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmResync = false
+                    onResync()
+                }) { Text("Resync") }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmResync = false }) { Text("Cancel") }
+            },
+        )
     }
 }

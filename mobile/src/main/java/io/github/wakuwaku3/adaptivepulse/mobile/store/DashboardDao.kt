@@ -31,6 +31,11 @@ interface DashboardDao {
     @Query("SELECT * FROM daily_snapshot WHERE date BETWEEN :from AND :to ORDER BY date DESC")
     suspend fun snapshotRange(from: String, to: String): List<DailySnapshotEntity>
 
+    // initial backfill が走ったか判定するため。Room destructive migration で wipe された後は
+    // ここが null か直近窓内に戻り、自動再 backfill のトリガになる
+    @Query("SELECT MIN(date) FROM daily_snapshot")
+    suspend fun oldestSnapshotDate(): String?
+
     // -- per-source breakdown --
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)

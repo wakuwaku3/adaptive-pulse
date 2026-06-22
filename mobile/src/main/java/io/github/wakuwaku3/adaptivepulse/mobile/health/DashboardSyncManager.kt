@@ -2,9 +2,6 @@ package io.github.wakuwaku3.adaptivepulse.mobile.health
 
 import android.content.Context
 import android.util.Log
-import androidx.datastore.preferences.core.edit
-import androidx.datastore.preferences.core.longPreferencesKey
-import androidx.datastore.preferences.preferencesDataStore
 import androidx.work.Constraints
 import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.ExistingWorkPolicy
@@ -14,21 +11,17 @@ import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.workDataOf
 import io.github.wakuwaku3.adaptivepulse.mobile.store.DashboardRepository
-import kotlinx.coroutines.flow.firstOrNull
-import kotlinx.coroutines.flow.map
 import java.time.LocalDate
 import java.util.concurrent.TimeUnit
 
 private const val TAG = "AdaptivePulse"
 
-private val Context.dashboardPrefs by preferencesDataStore("dashboard_sync")
-private val KEY_INITIAL_SYNC_COMPLETED_AT = longPreferencesKey("initial_sync_completed_at_ms")
-
 /**
  * ダッシュボード同期の入口。
  *  - [enqueuePeriodic]: 1 時間ごとに「今日 + 過去 7 日」を Room へ同期
  *  - [enqueueForeground]: アプリ前景化時に即時 1 回
- *  - [enqueueInitialSyncIfNeeded]: 初回のみ 5 年遡及。完了マークは DataStore 永続
+ *  - [enqueueInitialSyncIfNeeded]: 初回のみ 5 年遡及。完了判定は Room の最古日から導く
+ *    (DataStore に別管理しないことで destructive migration からの自動再 backfill が効く)
  *  - [cancelAll]: HC 連携を切ったときに全停止
  */
 object DashboardSyncManager {
@@ -67,29 +60,43 @@ object DashboardSyncManager {
         )
     }
 
-    /** インストール後初回のみ起動する 5 年 backfill。冪等で複数回呼んでも 1 度だけ走る */
+    /**
+     * Room の最古日が「直近の periodic 窓内」だった場合のみ 5 年 backfill を起動する。
+     * 既に backfill 済 (Room に古い日が残っている) なら何もしない。冪等。
+     *
+     * 完了判定を DataStore でなく Room 由来にしているのは、Room destructive migration
+     * (schema 版 up) で Room だけが wipe されたケースを自動回復させるため。
+     */
     suspend fun enqueueInitialSyncIfNeeded(context: Context) {
-        val completed = context.dashboardPrefs.data
-            .map { it[KEY_INITIAL_SYNC_COMPLETED_AT] }
-            .firstOrNull()
-        if (completed != null && completed > 0L) {
-            Log.i(TAG, "初回 sync 既完了 (${completed} ms) → skip")
+        val oldest = DashboardRepository(context).oldestSnapshotDate()
+        val threshold = LocalDate.now().minusDays(NORMAL_WINDOW_DAYS + 7L)
+            .toString()
+        if (oldest != null && oldest < threshold) {
+            Log.i(TAG, "Room に過去 backfill 済 (oldest=$oldest) → initial sync skip")
             return
         }
+        Log.i(TAG, "Room の過去データ不足 (oldest=$oldest) → initial sync enqueue")
+        enqueueInitialSyncWork(context, ExistingWorkPolicy.KEEP)
+    }
+
+    /**
+     * ユーザ操作 (Settings の resync ボタン) からの強制 enqueue。Room 状態を見ずに必ず走る。
+     * REPLACE で既存ワーカーを上書きし「押した瞬間に開始」感を出す。
+     */
+    fun enqueueInitialSync(context: Context) {
+        Log.i(TAG, "ユーザ要求による initial sync 強制 enqueue")
+        enqueueInitialSyncWork(context, ExistingWorkPolicy.REPLACE)
+    }
+
+    private fun enqueueInitialSyncWork(context: Context, policy: ExistingWorkPolicy) {
         val request = OneTimeWorkRequestBuilder<InitialSyncWorker>()
             .setConstraints(networkOptional())
             .build()
         WorkManager.getInstance(context).enqueueUniqueWork(
             WORK_INITIAL,
-            ExistingWorkPolicy.KEEP,
+            policy,
             request,
         )
-    }
-
-    suspend fun markInitialSyncCompleted(context: Context) {
-        context.dashboardPrefs.edit {
-            it[KEY_INITIAL_SYNC_COMPLETED_AT] = System.currentTimeMillis()
-        }
     }
 
     fun cancelAll(context: Context) {
