@@ -31,6 +31,7 @@ import androidx.health.connect.client.request.AggregateRequest
 import androidx.health.connect.client.request.ReadRecordsRequest
 import androidx.health.connect.client.time.TimeRangeFilter
 import io.github.wakuwaku3.adaptivepulse.core.sync.DailyHealthRecord
+import io.github.wakuwaku3.adaptivepulse.core.sync.SleepDayWindow
 import java.time.LocalDate
 import java.time.ZoneId
 import java.time.ZonedDateTime
@@ -47,7 +48,8 @@ private const val TAG = "AdaptivePulse"
  *  - 数値メトリクス (歩数 / カロリー / 栄養) は aggregate API で日次集計を 1 リクエストで取る。
  *  - サンプル列 (心拍 / 安静時心拍 / HRV / 体重・体脂肪・LBM・身長) は最新値 1 点が
  *    意味を持つので read API で当日分を読み、平均 (or 最新) を取る。
- *  - 睡眠は [SleepSessionRecord] を当日の暦日に重ねた区間として取り、stage 別に合算する。
+ *  - 睡眠は [SleepSessionRecord] を「夕方 18:00 〜 翌 18:00」の sleep day で取り、stage 別に合算する
+ *    (深夜入眠が翌日扱いになる暦日 cut の問題を回避。[SleepDayWindow] 参照)。
  *  - per-source breakdown は aggregate では返らないので readRecords + dataOrigin.packageName で
  *    集計し直す。
  *
@@ -295,11 +297,11 @@ class HealthDataSource(private val context: Context) {
             avgHeartRateBpm = hrStats?.avg,
             minHeartRateBpm = hrStats?.min,
             maxHeartRateBpm = hrStats?.max,
-            sleepDurationMin = readSleepDuration(hc, granted, start, end),
-            sleepDeepMin = readSleepStage(hc, granted, start, end, SleepSessionRecord.STAGE_TYPE_DEEP),
-            sleepRemMin = readSleepStage(hc, granted, start, end, SleepSessionRecord.STAGE_TYPE_REM),
-            sleepLightMin = readSleepStage(hc, granted, start, end, SleepSessionRecord.STAGE_TYPE_LIGHT),
-            sleepAwakeMin = readSleepStage(hc, granted, start, end, SleepSessionRecord.STAGE_TYPE_AWAKE),
+            sleepDurationMin = readSleepDuration(hc, granted, date, zone),
+            sleepDeepMin = readSleepStage(hc, granted, date, zone, SleepSessionRecord.STAGE_TYPE_DEEP),
+            sleepRemMin = readSleepStage(hc, granted, date, zone, SleepSessionRecord.STAGE_TYPE_REM),
+            sleepLightMin = readSleepStage(hc, granted, date, zone, SleepSessionRecord.STAGE_TYPE_LIGHT),
+            sleepAwakeMin = readSleepStage(hc, granted, date, zone, SleepSessionRecord.STAGE_TYPE_AWAKE),
             steps = agg?.get(StepsRecord.COUNT_TOTAL),
             distanceMeters = agg?.get(DistanceRecord.DISTANCE_TOTAL)?.inMeters,
             floorsClimbed = agg?.get(FloorsClimbedRecord.FLOORS_CLIMBED_TOTAL),
@@ -455,14 +457,15 @@ class HealthDataSource(private val context: Context) {
     private suspend fun readSleepDuration(
         hc: HealthConnectClient,
         granted: Set<String>,
-        start: ZonedDateTime,
-        end: ZonedDateTime,
+        date: LocalDate,
+        zone: ZoneId,
     ): Long? {
         if (HealthPermission.getReadPermission(SleepSessionRecord::class) !in granted) return null
+        val window = sleepWindow(date, zone)
         return runCatching {
-            val total = hc.readRecords(
-                ReadRecordsRequest(SleepSessionRecord::class, TimeRangeFilter.between(start.toInstant(), end.toInstant())),
-            ).records.sumOf { (it.endTime.toEpochMilli() - it.startTime.toEpochMilli()) / 60_000.0 }
+            val total = hc.readRecords(ReadRecordsRequest(SleepSessionRecord::class, window))
+                .records
+                .sumOf { (it.endTime.toEpochMilli() - it.startTime.toEpochMilli()) / 60_000.0 }
             if (total <= 0.0) null else total.roundToLong()
         }.onFailure { Log.w(TAG, "HC sleep 読み込み失敗", it) }.getOrNull()
     }
@@ -470,21 +473,27 @@ class HealthDataSource(private val context: Context) {
     private suspend fun readSleepStage(
         hc: HealthConnectClient,
         granted: Set<String>,
-        start: ZonedDateTime,
-        end: ZonedDateTime,
+        date: LocalDate,
+        zone: ZoneId,
         stage: Int,
     ): Long? {
         if (HealthPermission.getReadPermission(SleepSessionRecord::class) !in granted) return null
+        val window = sleepWindow(date, zone)
         return runCatching {
-            val total = hc.readRecords(
-                ReadRecordsRequest(SleepSessionRecord::class, TimeRangeFilter.between(start.toInstant(), end.toInstant())),
-            ).records
+            val total = hc.readRecords(ReadRecordsRequest(SleepSessionRecord::class, window))
+                .records
                 .flatMap { it.stages }
                 .filter { it.stage == stage }
                 .sumOf { (it.endTime.toEpochMilli() - it.startTime.toEpochMilli()) / 60_000.0 }
             if (total <= 0.0) null else total.roundToLong()
         }.onFailure { Log.w(TAG, "HC sleep stage 読み込み失敗", it) }.getOrNull()
     }
+
+    private fun sleepWindow(date: LocalDate, zone: ZoneId): TimeRangeFilter =
+        TimeRangeFilter.between(
+            SleepDayWindow.startOf(date, zone).toInstant(),
+            SleepDayWindow.endOf(date, zone).toInstant(),
+        )
 
     private suspend fun <T : Record> readLatest(
         hc: HealthConnectClient,
