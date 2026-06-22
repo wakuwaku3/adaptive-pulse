@@ -5,6 +5,8 @@ import io.github.wakuwaku3.adaptivepulse.core.Phase
 import io.github.wakuwaku3.adaptivepulse.core.SessionConfig
 import io.github.wakuwaku3.adaptivepulse.core.SessionEvent
 import io.github.wakuwaku3.adaptivepulse.core.SessionMetrics
+import io.github.wakuwaku3.adaptivepulse.core.SessionPhaseSnapshot
+import io.github.wakuwaku3.adaptivepulse.core.cadence.CadenceTier
 import io.github.wakuwaku3.adaptivepulse.core.cadence.RollingMedian
 import io.github.wakuwaku3.adaptivepulse.hr.ExerciseSource
 import kotlin.time.Duration
@@ -32,6 +34,12 @@ data class SessionResult(
     val finalTargetCadenceHigh: Double,
     /** セッション最終時点の回復 target cadence */
     val finalTargetCadenceRecovery: Double,
+    /**
+     * セッション中に SPM 計測で確定した tier。warm-up + discovery 窓を抜けないまま
+     * 終わったセッションでは null。後追いで「どのロジックで測ったセッションか」を
+     * 評価するため履歴に残す (FB 2026-06-22)。
+     */
+    val lockedCadenceTier: CadenceTier? = null,
 )
 
 /**
@@ -43,7 +51,7 @@ data class SessionResult(
  */
 class SessionRunner(
     private val config: SessionConfig,
-    private val sourceFactory: (phaseProvider: () -> Phase) -> ExerciseSource,
+    private val sourceFactory: (sessionPhase: () -> SessionPhaseSnapshot) -> ExerciseSource,
     private val onSessionEvent: (SessionEvent) -> Unit,
     private val onState: (SessionUiState) -> Unit,
     initialTargetCadenceHigh: Double = config.seedTargetCadenceHigh,
@@ -59,6 +67,8 @@ class SessionRunner(
     private val mark = timeSource.markNow()
     private var lastBpm: Int? = null
     private var calories: Double? = null
+    // データソースが確定したロジック (lock tier)。null = warm-up/discovery 終了前
+    private var lockedCadenceTier: CadenceTier? = null
     // 瞬時値はノイジーなので 5 秒窓の median を掛ける (pace-metric note の方針)
     private val cadenceSpmWindow = RollingMedian(window = 5.seconds)
 
@@ -88,7 +98,7 @@ class SessionRunner(
             }
         }
 
-        sourceFactory { engine.phase }.samples().first { sample ->
+        sourceFactory { SessionPhaseSnapshot(engine.phase, engine.isWarmingUp) }.samples().first { sample ->
             lastBpm = sample.bpm
             sample.totalCalories?.let { calories = it }
             sample.stepsPerMinute?.let {
@@ -96,6 +106,8 @@ class SessionRunner(
                 // engine の制御ループ anchor 用に実測 cadence を流す (pace-metric Q2 修正)
                 engine.onCadenceSample(it)
             }
+            // データソース側で確定した tier を覚えておく。tier は一度確定したら変わらない (lock)
+            sample.cadenceTier?.let { lockedCadenceTier = it }
             metrics.onHeartRate(sample.bpm)
             update(engine.onHeartRate(sample.bpm, mark.elapsedNow()))
             engine.phase == Phase.FINISHED
@@ -118,6 +130,7 @@ class SessionRunner(
         config = config,
         finalTargetCadenceHigh = engine.targetCadenceHigh,
         finalTargetCadenceRecovery = engine.targetCadenceRecovery,
+        lockedCadenceTier = lockedCadenceTier,
     )
 
     private fun update(event: SessionEvent?) {

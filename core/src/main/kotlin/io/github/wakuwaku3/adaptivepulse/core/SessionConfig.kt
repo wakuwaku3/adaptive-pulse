@@ -69,6 +69,16 @@ data class SessionConfig(
     val cadenceStallCadenceTolerance: Double = 5.0,
     /** stall 判定 1 回あたりの target nudge (SPM)。HIGH は +、RECOVERY は - 方向 */
     val cadenceStallNudge: Double = 1.0,
+    /**
+     * サイクル間 HR 閾値疲労 decay (bpm/cycle)。
+     * 教科書的 HIIT (時間 anchor) と違い、本アプリは HR 到達で次フェーズに進むため、
+     * 蓄積疲労で同強度の HR 到達が遅くなるサイクル後半で「永遠に届かない」状態に陥りやすい。
+     * 上限到達による回復遷移ごとに次サイクルの upperBpm を本値だけ下げる
+     * (= 「後半は同じ HR でなく、少し低めで切り上げる」の表明)。
+     * 0 を指定すれば decay 無効。clamp は lowerBpm + MIN_THRESHOLD_GAP。
+     * 永続化はしないセッション内のみの動的調整 (FB 2026-06-22)。
+     */
+    val upperBpmFatigueDecay: Int = 2,
 ) {
     init {
         // チャタリング防止のため上限<下限の逆転を構造的に弾く
@@ -92,5 +102,6 @@ data class SessionConfig(
             "回復 duration 窓は min < max"
         }
         require(cadenceControlGain > 0.0) { "cadence 制御ゲインは正" }
+        require(upperBpmFatigueDecay >= 0) { "疲労 decay は 0 以上 (0 で無効)" }
     }
 }

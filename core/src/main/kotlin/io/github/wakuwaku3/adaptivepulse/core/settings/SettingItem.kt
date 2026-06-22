@@ -86,6 +86,14 @@ enum class SettingItem(
         progression = { 30..100 },
         format = { "$it bpm" },
     ),
+    UpperBpmFatigueDecay(
+        title = "UPPER DECAY / CYCLE",
+        read = { it.upperBpmFatigueDecay },
+        write = { c, v -> c.copy(upperBpmFatigueDecay = v) },
+        // 0 = 無効、5 まで。clamp 下限 = lowerBpm+5 なので大きすぎる値は数サイクルで張り付く
+        progression = { 0..5 },
+        format = { "$it bpm" },
+    ),
 }
 
 private fun formatMinSec(totalSecs: Int): String = "%d:%02d".format(totalSecs / 60, totalSecs % 60)

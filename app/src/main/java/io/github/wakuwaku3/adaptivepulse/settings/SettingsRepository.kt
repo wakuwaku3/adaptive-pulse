@@ -47,6 +47,7 @@ class SettingsRepository(private val context: Context) {
         val SeedTargetCadenceHigh = doublePreferencesKey("seed_target_cadence_high")
         val SeedTargetCadenceRecovery = doublePreferencesKey("seed_target_cadence_recovery")
         val HeightCm = intPreferencesKey("height_cm")
+        val UpperBpmFatigueDecay = intPreferencesKey("upper_bpm_fatigue_decay")
     }
 
     val config: Flow<SessionConfig> = context.settingsDataStore.data.map { it.toConfig() }
@@ -98,6 +99,7 @@ class SettingsRepository(private val context: Context) {
         this[Keys.UpdatedBy] = updatedBy
         this[Keys.SeedTargetCadenceHigh] = config.seedTargetCadenceHigh
         this[Keys.SeedTargetCadenceRecovery] = config.seedTargetCadenceRecovery
+        this[Keys.UpperBpmFatigueDecay] = config.upperBpmFatigueDecay
         // 身長は watch では使わないが、phone との往復同期で消えないよう保持する
         val h = config.heightCm
         if (h != null) this[Keys.HeightCm] = h else remove(Keys.HeightCm)
@@ -130,6 +132,8 @@ class SettingsRepository(private val context: Context) {
                 seedTargetCadenceRecovery = this[Keys.SeedTargetCadenceRecovery]
                     ?: defaults.seedTargetCadenceRecovery,
                 heightCm = this[Keys.HeightCm] ?: defaults.heightCm,
+                upperBpmFatigueDecay = this[Keys.UpperBpmFatigueDecay]
+                    ?: defaults.upperBpmFatigueDecay,
             )
         }.getOrElse {
             Log.w(TAG, "保存設定が不正なためデフォルトを使用", it)

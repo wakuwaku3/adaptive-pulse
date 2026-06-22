@@ -15,10 +15,16 @@ class HeartRateZonesTest {
     @Test
     fun `Karvonen 式 - 安静時心拍 + 強度×心拍予備能 を四捨五入で返す`() {
         // age=39, restHR=60 → maxHR=181, HRR=121
-        // 86% HRR: 60 + 0.86×121 = 60 + 104.06 = 164.06 → 164
         // 77% HRR: 60 + 0.77×121 = 60 + 93.17 = 153.17 → 153
-        assertEquals(164, HeartRateZones.karvonen(39, 60, 0.86))
+        // 60% HRR: 60 + 0.60×121 = 60 + 72.60 = 132.60 → 133
         assertEquals(153, HeartRateZones.karvonen(39, 60, 0.77))
+        assertEquals(133, HeartRateZones.karvonen(39, 60, 0.60))
+    }
+
+    @Test
+    fun `デフォルト強度 - 上限 077 (HR-anchored で届く閾値), 下限 060 (HRR の sweet spot)`() {
+        assertEquals(0.77, HeartRateZones.DEFAULT_UPPER_INTENSITY)
+        assertEquals(0.60, HeartRateZones.DEFAULT_LOWER_INTENSITY)
     }
 
     @Test

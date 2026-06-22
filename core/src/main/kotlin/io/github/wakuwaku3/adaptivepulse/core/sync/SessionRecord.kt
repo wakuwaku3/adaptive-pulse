@@ -1,6 +1,7 @@
 package io.github.wakuwaku3.adaptivepulse.core.sync
 
 import io.github.wakuwaku3.adaptivepulse.core.SessionConfig
+import io.github.wakuwaku3.adaptivepulse.core.cadence.CadenceTier
 import kotlin.time.Duration.Companion.seconds
 import kotlinx.serialization.Serializable
 
@@ -11,7 +12,7 @@ import kotlinx.serialization.Serializable
 @Serializable
 data class SessionRecord(
     val id: String,
-    val schema: Int = 1,
+    val schema: Int = 2,
     val startedAtMs: Long,
     val durationSec: Long,
     val cycles: Int,
@@ -33,6 +34,12 @@ data class SessionRecord(
      */
     val finalTargetCadenceHigh: Double? = null,
     val finalTargetCadenceRecovery: Double? = null,
+    /**
+     * SPM を計測した tier (3 段フォールバックのどれか)。warm-up + discovery 窓内で
+     * セッションが終わった場合は null。後追いで「どのロジックで測ったセッションか」を
+     * 評価するために残す (schema 2 で追加, FB 2026-06-22)。
+     */
+    val lockedCadenceTier: CadenceTier? = null,
 )
 
 /** セッション時点の設定スナップショット (履歴の文脈として残す) */
@@ -51,6 +58,7 @@ data class SessionConfigSnapshot(
     val seedTargetCadenceHigh: Double = 130.0,
     val seedTargetCadenceRecovery: Double = 65.0,
     val heightCm: Int? = null,
+    val upperBpmFatigueDecay: Int = 2,
 ) {
     companion object {
         fun from(config: SessionConfig) = SessionConfigSnapshot(
@@ -67,6 +75,7 @@ data class SessionConfigSnapshot(
             seedTargetCadenceHigh = config.seedTargetCadenceHigh,
             seedTargetCadenceRecovery = config.seedTargetCadenceRecovery,
             heightCm = config.heightCm,
+            upperBpmFatigueDecay = config.upperBpmFatigueDecay,
         )
     }
 }
@@ -92,6 +101,7 @@ data class SettingsDocument(
     val seedTargetCadenceHigh: Double = 130.0,
     val seedTargetCadenceRecovery: Double = 65.0,
     val heightCm: Int? = null,
+    val upperBpmFatigueDecay: Int = 2,
 ) {
     fun toSessionConfig() = SessionConfig(
         ageYears = ageYears,
@@ -107,6 +117,7 @@ data class SettingsDocument(
         seedTargetCadenceHigh = seedTargetCadenceHigh,
         seedTargetCadenceRecovery = seedTargetCadenceRecovery,
         heightCm = heightCm,
+        upperBpmFatigueDecay = upperBpmFatigueDecay,
     )
 
     companion object {
@@ -126,6 +137,7 @@ data class SettingsDocument(
             seedTargetCadenceHigh = config.seedTargetCadenceHigh,
             seedTargetCadenceRecovery = config.seedTargetCadenceRecovery,
             heightCm = config.heightCm,
+            upperBpmFatigueDecay = config.upperBpmFatigueDecay,
         )
     }
 }

@@ -9,6 +9,7 @@ import androidx.health.services.client.data.ExerciseConfig
 import androidx.health.services.client.data.ExerciseLapSummary
 import androidx.health.services.client.data.ExerciseType
 import androidx.health.services.client.data.ExerciseUpdate
+import io.github.wakuwaku3.adaptivepulse.core.SessionPhaseSnapshot
 import io.github.wakuwaku3.adaptivepulse.core.cadence.CadenceTier
 import io.github.wakuwaku3.adaptivepulse.core.cadence.StepsDeltaCadenceEstimator
 import io.github.wakuwaku3.adaptivepulse.core.cadence.TieredCadenceLock
@@ -29,7 +30,8 @@ import kotlinx.coroutines.guava.await
  * として認識させ、画面オフ中のセンサー継続取得や将来の Health Connect 連携の
  * 土台になる (docs/stock/tech.md)。BODY_SENSORS 許可済みであることが前提。
  *
- * cadence (SPM) は 3 段で取り、セッション開始直後の discovery 窓 (15s) で最良 tier を確定する:
+ * cadence (SPM) は 3 段で取り、**warm-up を抜けた瞬間 (= 実走開始)** から discovery 窓
+ * (30s) を回して最良 tier を確定する:
  *   tier 1: `DataType.STEPS_PER_MINUTE` (watch の歩行検出が出す瞬時 rate)
  *   tier 2: `DataType.STEPS_TOTAL` の差分から再構成した SPM
  *   tier 3: 注入された加速度由来の SPM Flow (歩行検出が効かない動きの保険)
@@ -37,6 +39,7 @@ import kotlinx.coroutines.guava.await
  */
 class HealthServicesExerciseSource(
     private val context: Context,
+    private val sessionPhase: () -> SessionPhaseSnapshot,
     private val exerciseType: ExerciseType = ExerciseType.ELLIPTICAL,
     private val accelerometerSpm: Flow<Double?> = emptyFlow(),
     private val timeSource: TimeSource = TimeSource.Monotonic,
@@ -68,6 +71,8 @@ class HealthServicesExerciseSource(
         val callback = object : ExerciseUpdateCallback {
             override fun onExerciseUpdateReceived(update: ExerciseUpdate) {
                 val now = mark.elapsedNow()
+                // warm-up を抜けた瞬間に discovery 窓を起動する (= 実走開始トリガ)
+                if (!sessionPhase().isWarmingUp) lock.startDiscovery(now)
                 update.latestMetrics.getData(DataType.CALORIES_TOTAL)?.let {
                     totalCalories = it.total
                 }
@@ -82,12 +87,14 @@ class HealthServicesExerciseSource(
                 }
                 update.latestMetrics.getData(DataType.HEART_RATE_BPM).forEach { sample ->
                     val emitNow = mark.elapsedNow()
-                    val spm = pickSpm(emitNow, lock, stepsDelta, tier1Value, tier3Value)
+                    val tier = lock.currentTier(emitNow)
+                    val spm = pickSpm(tier, stepsDelta, tier1Value, tier3Value, emitNow)
                     trySend(
                         ExerciseSample(
                             bpm = sample.value.roundToInt(),
                             totalCalories = totalCalories,
                             stepsPerMinute = spm,
+                            cadenceTier = lock.lockedTier ?: tier,
                         ),
                     )
                 }
@@ -141,12 +148,12 @@ class HealthServicesExerciseSource(
     }
 
     private fun pickSpm(
-        now: Duration,
-        lock: TieredCadenceLock,
+        tier: CadenceTier?,
         stepsDelta: StepsDeltaCadenceEstimator,
         tier1: AtomicReference<Double?>,
         tier3: AtomicReference<Double?>,
-    ): Double? = when (lock.currentTier(now)) {
+        now: Duration,
+    ): Double? = when (tier) {
         CadenceTier.STEPS_PER_MINUTE -> tier1.get()
         CadenceTier.STEPS_TOTAL_DELTA -> stepsDelta.spm(now)
         CadenceTier.ACCELEROMETER -> tier3.get()

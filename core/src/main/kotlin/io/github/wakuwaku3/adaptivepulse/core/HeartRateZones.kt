@@ -13,8 +13,18 @@ import kotlin.math.roundToInt
  */
 object HeartRateZones {
 
-    /** 高強度フェーズ上限のデフォルト強度 (%HRR)。≒91% HRmax で Buchheit & Laursen (2013) の T@VO₂max 帯 */
-    const val DEFAULT_UPPER_INTENSITY = 0.86
+    /**
+     * 高強度フェーズ上限のデフォルト強度 (%HRR)。
+     *
+     * 旧 0.86 (≒91% HRmax, T@VO₂max 帯) は教科書的 HIIT (時間 anchor で次フェーズに進む) を
+     * 前提とした値だが、本アプリは **HR anchor** (上限到達で初めて回復に進む) のため、
+     * 86% を置くと「到達できないサイクルが永遠に終わらない / timeout で疲労ブレーキ発動」と
+     * いう病的挙動が出やすかった (FB 2026-06-22)。
+     *
+     * 0.77 (≒82% HRmax) は ACSM ガイドラインの "vigorous" 帯下端 (中強度〜高強度の境界) で、
+     * 「数サイクル繰り返しても届く閾値」として再設定したもの。
+     */
+    const val DEFAULT_UPPER_INTENSITY = 0.77
 
     /**
      * 回復フェーズ復帰のデフォルト強度 (%HRR)。Norwegian 4×4 等の長尺 HIIT が

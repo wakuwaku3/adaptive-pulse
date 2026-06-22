@@ -162,8 +162,8 @@ class SessionService : LifecycleService() {
             val livePusher = LiveSnapshotPusher(applicationContext)
             val runner = SessionRunner(
                 config = config,
-                sourceFactory = { phaseProvider ->
-                    AutoExerciseSource(applicationContext, phaseProvider)
+                sourceFactory = { sessionPhase ->
+                    AutoExerciseSource(applicationContext, sessionPhase)
                 },
                 onSessionEvent = vibrator::vibrate,
                 onState = { state ->
@@ -246,6 +246,7 @@ class SessionService : LifecycleService() {
             // 次セッション開始時の rolling median 初期値に使われる (pace-metric Q1)
             finalTargetCadenceHigh = result.finalTargetCadenceHigh,
             finalTargetCadenceRecovery = result.finalTargetCadenceRecovery,
+            lockedCadenceTier = result.lockedCadenceTier,
         )
         runCatching { WatchHistoryStore(applicationContext).save(record) }
             .onFailure { Log.w(TAG, "履歴の保存に失敗", it) }

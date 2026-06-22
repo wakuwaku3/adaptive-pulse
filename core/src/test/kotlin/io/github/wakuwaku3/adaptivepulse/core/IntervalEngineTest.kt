@@ -10,6 +10,8 @@ import kotlin.time.Duration.Companion.seconds
 class IntervalEngineTest {
 
     // テストの見通しを優先し、サイクル数と時間を小さくした設定を基本にする
+    // 既存テストは upperBpm を一定として扱うため、fatigue decay は明示的に 0 にする
+    // (decay 自体は専用テストブロックで検証)
     private val config = SessionConfig(
         upperBpm = 155,
         lowerBpm = 140,
@@ -18,6 +20,7 @@ class IntervalEngineTest {
         minBaseline = 45.seconds,
         highPhaseTimeout = 3.minutes,
         recoveryTimeout = 3.minutes,
+        upperBpmFatigueDecay = 0,
     )
 
     /** (経過秒, bpm) の列を流し、発火したイベントを (経過秒, イベント) で集める */
@@ -451,7 +454,7 @@ class IntervalEngineTest {
 
     // ----- pace-metric Phase B: 制御ループ (cadence 適応) -----
 
-    /** d_min=45s, d_max=90s, k=0.2 SPM/sec を使った engine */
+    /** d_min=45s, d_max=90s, k=0.2 SPM/sec を使った engine (HR 閾値疲労 decay 無効) */
     private val controlConfig = SessionConfig(
         upperBpm = 155,
         lowerBpm = 140,
@@ -465,6 +468,7 @@ class IntervalEngineTest {
         cadenceTargetRecoveryDurationMin = 30.seconds,
         cadenceTargetRecoveryDurationMax = 75.seconds,
         cadenceControlGain = 0.2,
+        upperBpmFatigueDecay = 0,
     )
 
     @Test
@@ -689,6 +693,64 @@ class IntervalEngineTest {
         engine.onCadenceSample(130.0)
         engine.onHeartRate(120, 17.seconds)
         assertEquals(130.0, engine.targetCadenceHigh)
+    }
+
+    // ----- HR 閾値の per-cycle 疲労 decay (FB 2026-06-22) -----
+
+    @Test
+    fun `疲労 decay - 上限到達で回復遷移する毎に upperBpm が decay 分下がる`() {
+        val engine = IntervalEngine(config.copy(upperBpmFatigueDecay = 2, targetCycles = 7))
+        assertEquals(155, engine.upperBpm)
+        // cycle 1: 上限 155 → 到達 → 153 (decay 2)
+        run(engine, listOf(0 to 141, 60 to 156))
+        assertEquals(153, engine.upperBpm)
+        // cycle 2: 上限 153 → 154 で到達 → 151
+        run(engine, listOf(120 to 139, 130 to 141, 200 to 154))
+        assertEquals(151, engine.upperBpm)
+        // cycle 3: 上限 151 → 152 で到達 → 149
+        run(engine, listOf(260 to 139, 270 to 141, 330 to 152))
+        assertEquals(149, engine.upperBpm)
+    }
+
+    @Test
+    fun `疲労 decay - lowerBpm + 最小ギャップ まで下がったらそれ以上下がらない`() {
+        // upperBpm 155, lowerBpm 140, decay 7, MIN_THRESHOLD_GAP 5 → clamp 下限 145
+        // cycle 1: 155 - 7 = 148 (clamp 未到達)
+        // cycle 2: 148 - 7 = 141 → clamp 145
+        // cycle 3: 145 - 7 = 138 → clamp 145 (張り付き)
+        val engine = IntervalEngine(
+            config.copy(upperBpm = 155, lowerBpm = 140, upperBpmFatigueDecay = 7, targetCycles = 5),
+        )
+        run(engine, listOf(0 to 141, 60 to 156))
+        assertEquals(148, engine.upperBpm)
+        run(engine, listOf(120 to 139, 130 to 141, 200 to 149))
+        assertEquals(145, engine.upperBpm)
+        run(engine, listOf(260 to 139, 270 to 141, 330 to 146))
+        assertEquals(145, engine.upperBpm)
+    }
+
+    @Test
+    fun `疲労 decay - decay=0 なら upperBpm は不変`() {
+        val engine = IntervalEngine(config.copy(upperBpmFatigueDecay = 0, targetCycles = 5))
+        run(engine, listOf(0 to 141, 60 to 156, 120 to 139, 130 to 141, 200 to 156))
+        assertEquals(155, engine.upperBpm)
+    }
+
+    @Test
+    fun `疲労 decay - 高強度タイムアウトでは decay は発動しない (= 即終了なので意味が無い)`() {
+        val engine = IntervalEngine(config.copy(upperBpmFatigueDecay = 5))
+        run(engine, hold(0, 185, 150)) // タイムアウト
+        // 上限到達せず終了 = upperBpm 不変
+        assertEquals(155, engine.upperBpm)
+    }
+
+    @Test
+    fun `疲労 decay - 手動 adjust と独立に重なる`() {
+        val engine = IntervalEngine(config.copy(upperBpmFatigueDecay = 2, targetCycles = 5))
+        engine.adjustActiveThreshold(+5) // 155 → 160
+        assertEquals(160, engine.upperBpm)
+        run(engine, listOf(0 to 141, 60 to 161)) // 上限 160 到達 → 158
+        assertEquals(158, engine.upperBpm)
     }
 
     @Test

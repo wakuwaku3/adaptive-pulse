@@ -1,11 +1,15 @@
 package io.github.wakuwaku3.adaptivepulse.core.sync
 
 import io.github.wakuwaku3.adaptivepulse.core.SessionConfig
+import io.github.wakuwaku3.adaptivepulse.core.cadence.CadenceTier
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNull
 import kotlinx.serialization.json.Json
 
 class SessionRecordTest {
+
+    private val lenient = Json { ignoreUnknownKeys = true }
 
     @Test
     fun `SessionRecord は JSON を往復しても等価`() {
@@ -22,9 +26,31 @@ class SessionRecordTest {
             avgBpm = 132,
             maxBpm = 158,
             config = SessionConfigSnapshot.from(SessionConfig()),
+            lockedCadenceTier = CadenceTier.STEPS_PER_MINUTE,
         )
         val json = Json.encodeToString(SessionRecord.serializer(), record)
         assertEquals(record, Json.decodeFromString(SessionRecord.serializer(), json))
+    }
+
+    @Test
+    fun `SessionRecord schema は 2 (lockedCadenceTier 追加で bump)`() {
+        val record = SessionRecord(
+            id = "x",
+            startedAtMs = 0,
+            durationSec = 0,
+            cycles = 0,
+            plannedCycles = 0,
+            fatigueBrake = false,
+            config = SessionConfigSnapshot.from(SessionConfig()),
+        )
+        assertEquals(2, record.schema)
+        // 旧クライアントが書いた schema=1 + lockedCadenceTier 無し JSON も読める
+        val configJson = Json.encodeToString(SessionConfigSnapshot.serializer(), record.config)
+        val legacy = """{"id":"y","schema":1,"startedAtMs":1,"durationSec":1,"cycles":1,
+            "plannedCycles":1,"fatigueBrake":false,"config":$configJson}"""
+        val decoded = lenient.decodeFromString(SessionRecord.serializer(), legacy)
+        assertEquals(1, decoded.schema)
+        assertNull(decoded.lockedCadenceTier)
     }
 
     @Test
@@ -40,7 +66,6 @@ class SessionRecordTest {
         val json = """{"upperBpm":155,"lowerBpm":140,"targetCycles":7,"fatigueRatio":0.5,
             "minBaselineSec":45,"highTimeoutSec":240,"recoveryTimeoutSec":180,
             "updatedAtMs":1,"updatedBy":"phone","futureField":true}"""
-        val lenient = Json { ignoreUnknownKeys = true }
         assertEquals(155, lenient.decodeFromString(SettingsDocument.serializer(), json).upperBpm)
     }
 }

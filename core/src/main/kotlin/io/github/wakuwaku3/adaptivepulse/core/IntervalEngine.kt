@@ -342,6 +342,12 @@ class IntervalEngine(
     private fun enterRecovery(elapsed: Duration) {
         phase = Phase.RECOVERY
         phaseStartedAt = elapsed
+        // 蓄積疲労分: 次サイクルの上限到達が同じ HR では届かなくなるため、
+        // 上限到達で 1 サイクル完了するたびに upperBpm を decay 分下げる (FB 2026-06-22)
+        if (config.upperBpmFatigueDecay > 0) {
+            upperBpm = (upperBpm - config.upperBpmFatigueDecay)
+                .coerceAtLeast(lowerBpm + MIN_THRESHOLD_GAP)
+        }
         resetStallCheckpoint()
     }
 
