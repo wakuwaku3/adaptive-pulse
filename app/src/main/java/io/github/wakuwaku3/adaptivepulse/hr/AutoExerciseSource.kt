@@ -7,7 +7,6 @@ import android.util.Log
 import androidx.health.services.client.HealthServices
 import androidx.health.services.client.data.DataType
 import androidx.health.services.client.data.ExerciseType
-import io.github.wakuwaku3.adaptivepulse.core.SessionPhaseSnapshot
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.flow
@@ -22,7 +21,7 @@ private const val TAG = "AdaptivePulse"
  */
 class AutoExerciseSource(
     private val context: Context,
-    private val sessionPhase: () -> SessionPhaseSnapshot,
+    private val phase: () -> io.github.wakuwaku3.adaptivepulse.core.Phase,
 ) : ExerciseSource {
 
     override fun samples(): Flow<ExerciseSample> = flow {
@@ -34,7 +33,7 @@ class AutoExerciseSource(
             PackageManager.PERMISSION_GRANTED
         ) {
             Log.i(TAG, "BODY_SENSORS 未許可のため合成データソースを使用")
-            return SyntheticExerciseSource(sessionPhase)
+            return SyntheticExerciseSource(phase)
         }
         val exerciseType = runCatching { supportedExerciseType() }.getOrElse {
             Log.w(TAG, "Health Services の能力照会に失敗。合成データソースを使用", it)
@@ -42,15 +41,12 @@ class AutoExerciseSource(
         }
         if (exerciseType == null) {
             Log.i(TAG, "心拍対応のワークアウト種別が無いため合成データソースを使用")
-            return SyntheticExerciseSource(sessionPhase)
+            return SyntheticExerciseSource(phase)
         }
         Log.i(TAG, "ExerciseClient ($exerciseType) で計測")
-        // tier 1/2 で SPM が出ないクロストレーナーでも、加速度 peak で穴埋めする
         return HealthServicesExerciseSource(
             context = context,
-            sessionPhase = sessionPhase,
             exerciseType = exerciseType,
-            accelerometerSpm = AccelerometerCadenceSource(context).spm(),
         )
     }
 

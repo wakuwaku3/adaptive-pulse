@@ -13,7 +13,7 @@ import kotlinx.serialization.Serializable
  */
 @Serializable
 data class SessionLiveSnapshot(
-    val schema: Int = 4,
+    val schema: Int = 5,
     val updatedAtMs: Long,
     val phase: LivePhase,
     val bpm: Int?,
@@ -25,20 +25,10 @@ data class SessionLiveSnapshot(
     val upperBpm: Int,
     val lowerBpm: Int,
     val calories: Double? = null,
-    /**
-     * 3〜5 秒窓の median による現在の cadence (SPM)。
-     * pace-metric note の単位流儀 (step = 片足踏み込み 1 回 → SPM)。
-     * 拍動円の色判定 (current vs target) と "now" 数値表示に使う。
-     */
-    val currentCadenceSpm: Double? = null,
-    /**
-     * 高強度フェーズの**動的に追従する**目標 cadence (SPM)。
-     * Day-1 は seed (130)、cycle 毎に target duration 窓 (45〜90s) を
-     * 達成するよう制御ループで調整される (pace-metric note §ペースをどう決めるか)。
-     */
-    val targetCadenceHigh: Double = 0.0,
-    /** 回復フェーズの動的目標 cadence (SPM)。Day-1 seed 65、duration 窓 30〜75s */
-    val targetCadenceRecovery: Double = 0.0,
+    /** 高強度フェーズの目標 cadence (SPM)。phone 回転体の tempo に使う。設定値そのまま */
+    val targetCadenceHigh: Int = 0,
+    /** 回復フェーズの目標 cadence (SPM)。同上 */
+    val targetCadenceRecovery: Int = 0,
 )
 
 /** 表示フェーズ。WARM_UP は engine の HIGH_INTENSITY かつ measureStartedAt==null を別ラベル化 */

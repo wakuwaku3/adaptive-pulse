@@ -1,7 +1,6 @@
 package io.github.wakuwaku3.adaptivepulse.hr
 
 import io.github.wakuwaku3.adaptivepulse.core.Phase
-import io.github.wakuwaku3.adaptivepulse.core.SessionPhaseSnapshot
 import kotlin.math.roundToInt
 import kotlin.random.Random
 import kotlin.time.Duration.Companion.seconds
@@ -16,13 +15,13 @@ import kotlinx.coroutines.flow.flow
  * カロリーは提供しない (実経路でのみ表示される)。
  */
 class SyntheticExerciseSource(
-    private val sessionPhase: () -> SessionPhaseSnapshot,
+    private val phase: () -> Phase,
 ) : ExerciseSource {
 
     override fun samples(): Flow<ExerciseSample> = flow {
         var bpm = 115.0
         while (true) {
-            val target = when (sessionPhase().phase) {
+            val target = when (phase()) {
                 Phase.HIGH_INTENSITY -> 170.0
                 Phase.RECOVERY -> 120.0
                 Phase.FINISHED -> 100.0

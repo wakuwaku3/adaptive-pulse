@@ -44,8 +44,8 @@ class SettingsRepository(private val context: Context) {
         val RestingBpm = intPreferencesKey("resting_bpm")
         val UpdatedAtMs = longPreferencesKey("updated_at_ms")
         val UpdatedBy = stringPreferencesKey("updated_by")
-        val SeedTargetCadenceHigh = doublePreferencesKey("seed_target_cadence_high")
-        val SeedTargetCadenceRecovery = doublePreferencesKey("seed_target_cadence_recovery")
+        val TargetCadenceHigh = intPreferencesKey("target_cadence_high")
+        val TargetCadenceRecovery = intPreferencesKey("target_cadence_recovery")
         val HeightCm = intPreferencesKey("height_cm")
         val UpperBpmFatigueDecay = intPreferencesKey("upper_bpm_fatigue_decay")
     }
@@ -97,8 +97,8 @@ class SettingsRepository(private val context: Context) {
         this[Keys.RestingBpm] = config.restingBpm
         this[Keys.UpdatedAtMs] = updatedAtMs
         this[Keys.UpdatedBy] = updatedBy
-        this[Keys.SeedTargetCadenceHigh] = config.seedTargetCadenceHigh
-        this[Keys.SeedTargetCadenceRecovery] = config.seedTargetCadenceRecovery
+        this[Keys.TargetCadenceHigh] = config.targetCadenceHigh
+        this[Keys.TargetCadenceRecovery] = config.targetCadenceRecovery
         this[Keys.UpperBpmFatigueDecay] = config.upperBpmFatigueDecay
         // 身長は watch では使わないが、phone との往復同期で消えないよう保持する
         val h = config.heightCm
@@ -127,10 +127,10 @@ class SettingsRepository(private val context: Context) {
                 highPhaseTimeout = this[Keys.HighTimeoutSecs]?.seconds ?: defaults.highPhaseTimeout,
                 recoveryTimeout = this[Keys.RecoveryTimeoutSecs]?.seconds
                     ?: defaults.recoveryTimeout,
-                seedTargetCadenceHigh = this[Keys.SeedTargetCadenceHigh]
-                    ?: defaults.seedTargetCadenceHigh,
-                seedTargetCadenceRecovery = this[Keys.SeedTargetCadenceRecovery]
-                    ?: defaults.seedTargetCadenceRecovery,
+                targetCadenceHigh = this[Keys.TargetCadenceHigh]
+                    ?: defaults.targetCadenceHigh,
+                targetCadenceRecovery = this[Keys.TargetCadenceRecovery]
+                    ?: defaults.targetCadenceRecovery,
                 heightCm = this[Keys.HeightCm] ?: defaults.heightCm,
                 upperBpmFatigueDecay = this[Keys.UpperBpmFatigueDecay]
                     ?: defaults.upperBpmFatigueDecay,

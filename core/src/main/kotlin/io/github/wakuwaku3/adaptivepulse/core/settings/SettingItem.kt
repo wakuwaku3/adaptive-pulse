@@ -94,6 +94,32 @@ enum class SettingItem(
         progression = { 0..5 },
         format = { "$it bpm" },
     ),
+    TargetCadenceHigh(
+        title = "TARGET SPM (HIGH)",
+        read = { it.targetCadenceHigh },
+        write = { c, v -> c.copy(targetCadenceHigh = v) },
+        progression = { c ->
+            IntProgression.fromClosedRange(
+                maxOf(60, c.targetCadenceRecovery + 5),
+                220,
+                5,
+            )
+        },
+        format = { "$it spm" },
+    ),
+    TargetCadenceRecovery(
+        title = "TARGET SPM (RECOVERY)",
+        read = { it.targetCadenceRecovery },
+        write = { c, v -> c.copy(targetCadenceRecovery = v) },
+        progression = { c ->
+            IntProgression.fromClosedRange(
+                30,
+                minOf(180, c.targetCadenceHigh - 5),
+                5,
+            )
+        },
+        format = { "$it spm" },
+    ),
 }
 
 private fun formatMinSec(totalSecs: Int): String = "%d:%02d".format(totalSecs / 60, totalSecs % 60)

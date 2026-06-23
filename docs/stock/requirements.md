@@ -64,6 +64,8 @@
 | 最低基準時間 | 45 秒 | 初回サイクル基準の妥当性ガード |
 | 高強度フェーズ上限時間 | 4 分 | タイムアウトで疲労ブレーキ終了 |
 | 回復フェーズ上限時間 | 4 分 | タイムアウトで疲労ブレーキ終了 |
+| 目標 SPM (高強度) | 130 | phone ライブ画面の回転体 tempo に使う設定値 |
+| 目標 SPM (回復) | 90 | 同上 |
 
 ### セッション中の閾値ナッジ
 
@@ -104,7 +106,7 @@
 - **表示**: 心拍数字を最大サイズで中央に置き、フェーズ色 (高強度=コーラル / 回復=ミント / WARM-UP=クールブルー / 完了=ゴールド) で帯を塗る。下に (1) セッション総経過 (2) 現サイクル経過 (3) 現フェーズ経過、現フェーズが見ている閾値 (▲ upper / ▼ lower)、サイクル進捗 (n/N)、カロリーを並べる。watch 側 Running 画面と同じ情報密度をスマホサイズで提示する。
 - **自動起動**: watch でセッションを開始した瞬間、phone を手で開かなくてもライブ画面が前面に出る。Wear → Phone の通知経由で full-screen intent を発火させ、`MainActivity` をライブ画面で立ち上げる。
 - **スリープ抑止**: ライブ画面表示中は `FLAG_KEEP_SCREEN_ON` で画面オフを抑止する (watch 側と同じ理由で、画面オフによるサンプル欠落と表示中断を避ける)。
-- **状態同期**: watch の Foreground Service が現在値スナップショット (心拍・フェーズ・サイクル・3 経過時間・閾値・カロリー・cadence) を Wearable Data Layer (`DataClient`) に約 1Hz で書き、phone 側 listener が in-memory `StateFlow` に流す。セッション終了時は DataItem を削除して phone のライブ画面を自動で閉じる。
+- **状態同期**: watch の Foreground Service が現在値スナップショット (心拍・フェーズ・サイクル・3 経過時間・閾値・カロリー・目標 SPM) を Wearable Data Layer (`DataClient`) に約 1Hz で書き、phone 側 listener が in-memory `StateFlow` に流す。セッション終了時は DataItem を削除して phone のライブ画面を自動で閉じる。
 - **操作は watch 側で完結**: 閾値ナッジ・停止操作は watch 側のみ。phone はビューワーに徹し、読みやすさを優先する。
 - **権限**: Android 13+ の `POST_NOTIFICATIONS`、Android 14+ の `USE_FULL_SCREEN_INTENT` をユーザに 1 度許可してもらう (初回は通知タップで開く fallback でも動く)。
 
@@ -112,6 +114,14 @@
 
 - **消費カロリー**: Health Services の CALORIES_TOTAL をセッション中・終了画面に表示する (減量目的の直接的なフィードバック)。取得には ACTIVITY_RECOGNITION 許可が必要で、拒否時はカロリー無しで計測を継続する。
 - **ゾーン滞在率**: 下限〜上限の帯にいた時間の割合を終了画面に表示する (トレーニング品質の指標)。
+
+## ペース表示 (目標 SPM)
+
+phone のライブ画面に拍動する回転体 (2 ドットが楕円を周回する) を出し、ユーザが踏むべき tempo を視覚化する。
+
+- 回転速度は **active phase の目標 SPM (設定値)** で決まる。高強度フェーズ中は `targetCadenceHigh`、回復フェーズ中は `targetCadenceRecovery` を使う。
+- 目標 SPM は Settings 画面で `高強度` と `回復` それぞれ独立に設定する (恒久設定)。
+- 目標 SPM はライブ画面の tempo 表示にだけ使う。フェーズ遷移ロジックは心拍だけで判定する。
 
 ## 振動パターン
 

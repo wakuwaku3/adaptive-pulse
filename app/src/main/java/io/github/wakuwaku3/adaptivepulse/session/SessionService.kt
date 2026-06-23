@@ -37,9 +37,6 @@ private const val TAG = "AdaptivePulse"
 private const val CHANNEL_ID = "session"
 private const val NOTIFICATION_ID = 1
 
-/** 初期 target cadence を求める際の rolling window 件数 (pace-metric note Q1) */
-private const val TARGET_CADENCE_HISTORY_WINDOW = 5
-
 /** SessionUiState → 同期 DTO の変換。Idle は live 表示対象外なので null */
 private fun SessionUiState.toLiveSnapshot(nowMs: Long): SessionLiveSnapshot? = when (this) {
     SessionUiState.Idle -> null
@@ -60,7 +57,6 @@ private fun SessionUiState.toLiveSnapshot(nowMs: Long): SessionLiveSnapshot? = w
         upperBpm = upperBpm,
         lowerBpm = lowerBpm,
         calories = calories,
-        currentCadenceSpm = currentCadenceSpm,
         targetCadenceHigh = targetCadenceHigh,
         targetCadenceRecovery = targetCadenceRecovery,
     )
@@ -76,9 +72,8 @@ private fun SessionUiState.toLiveSnapshot(nowMs: Long): SessionLiveSnapshot? = w
         upperBpm = 0,
         lowerBpm = 0,
         calories = calories,
-        currentCadenceSpm = null,
-        targetCadenceHigh = 0.0,
-        targetCadenceRecovery = 0.0,
+        targetCadenceHigh = 0,
+        targetCadenceRecovery = 0,
     )
 }
 
@@ -99,9 +94,6 @@ class SessionService : LifecycleService() {
         @Volatile
         private var activeAdjustThreshold: ((Int) -> Unit)? = null
 
-        @Volatile
-        private var activeAdjustTargetCadence: ((Double) -> Unit)? = null
-
         fun start(context: Context) {
             context.startForegroundService(Intent(context, SessionService::class.java))
         }
@@ -115,14 +107,6 @@ class SessionService : LifecycleService() {
         /** 現フェーズが見ている閾値を delta だけ動かす (高強度=上限、回復=下限)。セッション外は no-op */
         fun adjustActiveThreshold(delta: Int) {
             activeAdjustThreshold?.invoke(delta)
-        }
-
-        /**
-         * 現フェーズの目標 cadence を delta SPM だけ動かす (phone のペース ± から呼ぶ)。
-         * 次 cycle 完了時の自動制御ループが上書きしうる (手動 ± は「次サイクルまでの暫定指示」)。
-         */
-        fun adjustActiveTargetCadence(delta: Double) {
-            activeAdjustTargetCadence?.invoke(delta)
         }
     }
 
@@ -143,42 +127,25 @@ class SessionService : LifecycleService() {
 
         val vibrator = SessionVibrator.from(applicationContext)
         val settings = SettingsRepository(applicationContext)
-        val history = WatchHistoryStore(applicationContext)
         sessionJob = lifecycleScope.launch {
             val config = settings.load()
             Log.i(TAG, "セッション開始: $config")
-            // pace-metric Phase B: 直近 N 件 (= TARGET_CADENCE_HISTORY_WINDOW) の median を初期値に。
-            // 1 セッションのコンディションブレを吸収する。値が無ければ seed (Day-1) に fallback
-            val recent = history.list().take(TARGET_CADENCE_HISTORY_WINDOW)
-            val initialTargetHigh = recent
-                .mapNotNull { it.finalTargetCadenceHigh }
-                .medianOrNull() ?: config.seedTargetCadenceHigh
-            val initialTargetRecovery = recent
-                .mapNotNull { it.finalTargetCadenceRecovery }
-                .medianOrNull() ?: config.seedTargetCadenceRecovery
-            Log.i(TAG, "target cadence 初期値: high=$initialTargetHigh, recovery=$initialTargetRecovery (直近 ${recent.size} 件の median)")
             val startedAtMs = System.currentTimeMillis()
             WearSync.sendStartForeground(applicationContext)
             val livePusher = LiveSnapshotPusher(applicationContext)
             val runner = SessionRunner(
                 config = config,
-                sourceFactory = { sessionPhase ->
-                    AutoExerciseSource(applicationContext, sessionPhase)
+                sourceFactory = { phase ->
+                    AutoExerciseSource(applicationContext, phase)
                 },
                 onSessionEvent = vibrator::vibrate,
                 onState = { state ->
                     _state.value = state
                     livePusher.maybePush(state)
                 },
-                initialTargetCadenceHigh = initialTargetHigh,
-                initialTargetCadenceRecovery = initialTargetRecovery,
             )
             activeAdjustThreshold = { delta ->
                 runner.adjustActiveThreshold(delta)
-                vibrator.vibrateTap()
-            }
-            activeAdjustTargetCadence = { delta ->
-                runner.adjustActiveTargetCadence(delta)
                 vibrator.vibrateTap()
             }
             try {
@@ -196,19 +163,11 @@ class SessionService : LifecycleService() {
                 _state.value = SessionUiState.Idle
             } finally {
                 activeAdjustThreshold = null
-                activeAdjustTargetCadence = null
                 sessionJob = null
                 withContext(NonCancellable) { WearSync.deleteLiveSnapshot(applicationContext) }
                 stopSelf()
             }
         }
-    }
-
-    private fun List<Double>.medianOrNull(): Double? {
-        if (isEmpty()) return null
-        val sorted = sorted()
-        val n = size
-        return if (n % 2 == 1) sorted[n / 2] else (sorted[n / 2 - 1] + sorted[n / 2]) / 2.0
     }
 
     /** 1Hz 程度に間引いて live snapshot を Data Layer に書く */
@@ -243,10 +202,6 @@ class SessionService : LifecycleService() {
             avgBpm = result.avgBpm,
             maxBpm = result.maxBpm,
             config = SessionConfigSnapshot.from(result.config),
-            // 次セッション開始時の rolling median 初期値に使われる (pace-metric Q1)
-            finalTargetCadenceHigh = result.finalTargetCadenceHigh,
-            finalTargetCadenceRecovery = result.finalTargetCadenceRecovery,
-            lockedCadenceTier = result.lockedCadenceTier,
         )
         runCatching { WatchHistoryStore(applicationContext).save(record) }
             .onFailure { Log.w(TAG, "履歴の保存に失敗", it) }

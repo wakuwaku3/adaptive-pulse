@@ -1,10 +1,8 @@
 package io.github.wakuwaku3.adaptivepulse.core.sync
 
 import io.github.wakuwaku3.adaptivepulse.core.SessionConfig
-import io.github.wakuwaku3.adaptivepulse.core.cadence.CadenceTier
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertNull
 import kotlinx.serialization.json.Json
 
 class SessionRecordTest {
@@ -26,14 +24,13 @@ class SessionRecordTest {
             avgBpm = 132,
             maxBpm = 158,
             config = SessionConfigSnapshot.from(SessionConfig()),
-            lockedCadenceTier = CadenceTier.STEPS_PER_MINUTE,
         )
         val json = Json.encodeToString(SessionRecord.serializer(), record)
         assertEquals(record, Json.decodeFromString(SessionRecord.serializer(), json))
     }
 
     @Test
-    fun `SessionRecord schema は 2 (lockedCadenceTier 追加で bump)`() {
+    fun `SessionRecord schema は 3 (実測 SPM 廃止で bump)`() {
         val record = SessionRecord(
             id = "x",
             startedAtMs = 0,
@@ -43,14 +40,15 @@ class SessionRecordTest {
             fatigueBrake = false,
             config = SessionConfigSnapshot.from(SessionConfig()),
         )
-        assertEquals(2, record.schema)
-        // 旧クライアントが書いた schema=1 + lockedCadenceTier 無し JSON も読める
+        assertEquals(3, record.schema)
+        // 旧クライアントが書いた schema=2 + lockedCadenceTier / 旧 final target 等を含む JSON も読める
         val configJson = Json.encodeToString(SessionConfigSnapshot.serializer(), record.config)
-        val legacy = """{"id":"y","schema":1,"startedAtMs":1,"durationSec":1,"cycles":1,
-            "plannedCycles":1,"fatigueBrake":false,"config":$configJson}"""
+        val legacy = """{"id":"y","schema":2,"startedAtMs":1,"durationSec":1,"cycles":1,
+            "plannedCycles":1,"fatigueBrake":false,"config":$configJson,
+            "finalTargetCadenceHigh":135.0,"finalTargetCadenceRecovery":70.0,
+            "lockedCadenceTier":"STEPS_PER_MINUTE"}"""
         val decoded = lenient.decodeFromString(SessionRecord.serializer(), legacy)
-        assertEquals(1, decoded.schema)
-        assertNull(decoded.lockedCadenceTier)
+        assertEquals(2, decoded.schema)
     }
 
     @Test

@@ -14,7 +14,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -44,27 +43,22 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.wakuwaku3.adaptivepulse.core.sync.LivePhase
 import io.github.wakuwaku3.adaptivepulse.core.sync.SessionLiveSnapshot
-import kotlin.math.abs
 import kotlin.math.cos
-import kotlin.math.roundToInt
 import kotlin.math.sin
 
 /**
  * watch から流れてくるライブ状態を表示し、操作も受ける phone 画面。
- * 機材コンソール上に置いて視野の端で読む想定。タップ操作は ± 系と停止のみ。
+ * 機材コンソール上に置いて視野の端で読む想定。タップ操作は閾値 ± と停止のみ。
  *
  * デザイン上の意図:
- * - HR (♥) と SPM (run glyph) は同じサイズで横並び。どちらも "now" を表す値
- * - ペース楕円の tempo は **現在値 + nudge** にして target を上限/下限として clamp する。
- *   こうすると「徐々に加速 / 徐々に減速」が視覚的に伝わる (target そのものをぶつけると階段状になる)
+ * - HR (♥) を中央最大サイズで表示
+ * - 回転体 (PaceEllipse) は active phase の target SPM (設定値) で回す。実測はしない
  * - DONE では楕円アニメを停止 (運動が終わっているのに回転が続くと違和感)
- * - 閾値 / ペース target の調整は同じ形式 (▲/▼ 両表示 + 単位 + 左右 ±)
  */
 @Composable
 fun ActiveSessionScreen(
     snapshot: SessionLiveSnapshot,
     onAdjustThreshold: (Int) -> Unit,
-    onAdjustTargetSpm: (Int) -> Unit,
     onStop: () -> Unit,
 ) {
     val phaseColor = colorFor(snapshot.phase)
@@ -79,11 +73,11 @@ fun ActiveSessionScreen(
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             PhaseBadge(snapshot.phase, phaseColor)
-            NowValues(snapshot, phaseColor)
+            HeartRate(snapshot, phaseColor)
             CycleAndTimers(snapshot)
             Spacer(modifier = Modifier.height(2.dp))
             ThresholdControl(snapshot, phaseColor, onAdjustThreshold)
-            PaceControl(snapshot, phaseColor, onAdjustTargetSpm)
+            PaceDisplay(snapshot, phaseColor)
             snapshot.calories?.let {
                 Text(
                     text = "${it.toInt()} kcal",
@@ -121,116 +115,25 @@ private fun PhaseBadge(phase: LivePhase, color: Color) {
     }
 }
 
-/** HR と現在 SPM を同じサイズで横並びに置く ("now" として等価) */
 @Composable
-private fun NowValues(snapshot: SessionLiveSnapshot, color: Color) {
-    val currentSpm = snapshot.currentCadenceSpm?.roundToInt()
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(16.dp),
-    ) {
-        NowMetric(
-            iconContent = {
-                Icon(
-                    imageVector = Icons.Filled.Favorite,
-                    contentDescription = "bpm",
-                    tint = color,
-                    modifier = Modifier.size(26.dp),
-                )
-            },
-            value = snapshot.bpm?.toString() ?: "--",
-            unit = "bpm",
-            color = color,
-        )
-        Box(modifier = Modifier.width(1.dp).height(80.dp).background(MobileColors.TextDim.copy(alpha = 0.4f)))
-        NowMetric(
-            iconContent = { RunGlyph(color = color, sizeDp = 26) },
-            value = currentSpm?.toString() ?: "--",
-            unit = "spm",
-            color = color,
-        )
-    }
-}
-
-@Composable
-private fun NowMetric(
-    iconContent: @Composable () -> Unit,
-    value: String,
-    unit: String,
-    color: Color,
-) {
+private fun HeartRate(snapshot: SessionLiveSnapshot, color: Color) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            iconContent()
-            Spacer(Modifier.width(6.dp))
+            Icon(
+                imageVector = Icons.Filled.Favorite,
+                contentDescription = "bpm",
+                tint = color,
+                modifier = Modifier.size(32.dp),
+            )
+            Spacer(Modifier.size(8.dp))
             Text(
-                text = value,
+                text = snapshot.bpm?.toString() ?: "--",
                 color = color,
-                fontSize = 64.sp,
+                fontSize = 84.sp,
                 fontWeight = FontWeight.Bold,
             )
         }
-        Text(text = unit, color = MobileColors.TextDim, fontSize = 13.sp)
-    }
-}
-
-/**
- * 走者の stick figure (自前 Canvas、26dp 程度で読めるよう単純化)。
- * 頭・前傾姿勢の胴・前方に出た腕と後ろに引いた腕・前後にずれた脚 で運動感を出す。
- * material-icons-extended の DirectionsRun を引き込むと dex 上限を超えるため自前描画。
- */
-@Composable
-private fun RunGlyph(color: Color, sizeDp: Int) {
-    Canvas(modifier = Modifier.size(sizeDp.dp)) {
-        val w = size.width
-        val h = size.height
-        val stroke = w * 0.10f
-        // 頭 (右上)
-        drawCircle(
-            color = color,
-            radius = w * 0.12f,
-            center = Offset(w * 0.62f, h * 0.16f),
-        )
-        // 胴 (前傾)
-        drawLine(
-            color = color,
-            start = Offset(w * 0.55f, h * 0.30f),
-            end = Offset(w * 0.42f, h * 0.58f),
-            strokeWidth = stroke,
-            cap = StrokeCap.Round,
-        )
-        // 前腕 (前方上に)
-        drawLine(
-            color = color,
-            start = Offset(w * 0.52f, h * 0.38f),
-            end = Offset(w * 0.78f, h * 0.32f),
-            strokeWidth = stroke,
-            cap = StrokeCap.Round,
-        )
-        // 後腕 (後ろ下に)
-        drawLine(
-            color = color,
-            start = Offset(w * 0.50f, h * 0.42f),
-            end = Offset(w * 0.22f, h * 0.50f),
-            strokeWidth = stroke,
-            cap = StrokeCap.Round,
-        )
-        // 前脚 (蹴り出し)
-        drawLine(
-            color = color,
-            start = Offset(w * 0.42f, h * 0.58f),
-            end = Offset(w * 0.72f, h * 0.82f),
-            strokeWidth = stroke,
-            cap = StrokeCap.Round,
-        )
-        // 後脚 (後ろにつま先)
-        drawLine(
-            color = color,
-            start = Offset(w * 0.42f, h * 0.58f),
-            end = Offset(w * 0.18f, h * 0.90f),
-            strokeWidth = stroke,
-            cap = StrokeCap.Round,
-        )
+        Text(text = "bpm", color = MobileColors.TextDim, fontSize = 14.sp)
     }
 }
 
@@ -259,65 +162,6 @@ private fun ThresholdControl(
     onAdjust: (Int) -> Unit,
 ) {
     val activeUpper = snapshot.phase == LivePhase.HIGH || snapshot.phase == LivePhase.WARM_UP
-    TwoLimitsControl(
-        upperGlyph = "▲",
-        upperValue = snapshot.upperBpm,
-        lowerGlyph = "▼",
-        lowerValue = snapshot.lowerBpm,
-        unit = "bpm",
-        activeUpper = activeUpper,
-        activeColor = activeColor,
-        onAdjust = onAdjust,
-    )
-}
-
-/**
- * ペース target: ▲high / ▼recovery 両表示 + ± を左右に配置 + 単位 "spm"。
- * pace-metric note の新仕様: target は cycle 毎に制御ループで動的に変わる **動的目標**。
- * 拍動円の tempo は active target そのもので回す (`current ± nudge` 案は廃止)。
- * 色は `current vs active target` のズレで within / 速すぎ / 遅すぎ を判定。
- */
-@Composable
-private fun PaceControl(
-    snapshot: SessionLiveSnapshot,
-    activeColor: Color,
-    onAdjust: (Int) -> Unit,
-) {
-    val activeUpper = snapshot.phase == LivePhase.HIGH || snapshot.phase == LivePhase.WARM_UP
-    val currentSpm = snapshot.currentCadenceSpm?.roundToInt()
-    val activeTarget = if (activeUpper) snapshot.targetCadenceHigh else snapshot.targetCadenceRecovery
-    val ellipseSpm = if (snapshot.phase == LivePhase.DONE) 0 else activeTarget.roundToInt()
-    val syncColor = ellipseColor(snapshot, currentSpm, activeTarget, activeColor)
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        PaceEllipse(spm = ellipseSpm, color = syncColor)
-        TwoLimitsControl(
-            upperGlyph = "▲",
-            upperValue = snapshot.targetCadenceHigh.roundToInt(),
-            lowerGlyph = "▼",
-            lowerValue = snapshot.targetCadenceRecovery.roundToInt(),
-            unit = "spm",
-            activeUpper = activeUpper,
-            activeColor = activeColor,
-            onAdjust = onAdjust,
-        )
-    }
-}
-
-@Composable
-private fun TwoLimitsControl(
-    upperGlyph: String,
-    upperValue: Int,
-    lowerGlyph: String,
-    lowerValue: Int,
-    unit: String,
-    activeUpper: Boolean,
-    activeColor: Color,
-    onAdjust: (Int) -> Unit,
-) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(14.dp),
@@ -325,40 +169,57 @@ private fun TwoLimitsControl(
         NudgeButton(glyph = "−", color = activeColor, onClick = { onAdjust(-1) })
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text(
-                text = "$upperGlyph$upperValue",
+                text = "▲${snapshot.upperBpm}",
                 color = if (activeUpper) activeColor else MobileColors.TextDim,
                 fontSize = 22.sp,
                 fontWeight = if (activeUpper) FontWeight.Bold else FontWeight.Normal,
             )
             Text(
-                text = "$lowerGlyph$lowerValue",
+                text = "▼${snapshot.lowerBpm}",
                 color = if (!activeUpper) activeColor else MobileColors.TextDim,
                 fontSize = 22.sp,
                 fontWeight = if (!activeUpper) FontWeight.Bold else FontWeight.Normal,
             )
-            Text(
-                text = unit,
-                color = MobileColors.TextDim,
-                fontSize = 13.sp,
-            )
+            Text(text = "bpm", color = MobileColors.TextDim, fontSize = 13.sp)
         }
         NudgeButton(glyph = "+", color = activeColor, onClick = { onAdjust(+1) })
     }
 }
 
-/** within / 速すぎ / 遅すぎ の色判定。active target と current のズレで決める */
-private fun ellipseColor(
-    snapshot: SessionLiveSnapshot,
-    currentSpm: Int?,
-    activeTarget: Double,
-    activeColor: Color,
-): Color {
-    if (snapshot.phase == LivePhase.DONE || currentSpm == null) return MobileColors.TextDim
-    val diff = currentSpm - activeTarget
-    return when {
-        abs(diff) <= PACE_WITHIN_BAND -> activeColor
-        diff > 0 -> MobileColors.High // 速すぎ
-        else -> Color(0xFF54C7EC) // 遅すぎ
+/**
+ * ペース表示: active phase の target SPM (設定値) で回転体を回す。
+ * 計測値は使わない (実測 SPM は精度が不安定なため機能から外した)。
+ * 設定変更は Settings 画面から行う。
+ */
+@Composable
+private fun PaceDisplay(snapshot: SessionLiveSnapshot, activeColor: Color) {
+    val activeUpper = snapshot.phase == LivePhase.HIGH || snapshot.phase == LivePhase.WARM_UP
+    val activeTarget = if (activeUpper) snapshot.targetCadenceHigh else snapshot.targetCadenceRecovery
+    val ellipseSpm = if (snapshot.phase == LivePhase.DONE) 0 else activeTarget
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        PaceEllipse(spm = ellipseSpm, color = activeColor)
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = "▲${snapshot.targetCadenceHigh}",
+                color = if (activeUpper) activeColor else MobileColors.TextDim,
+                fontSize = 18.sp,
+                fontWeight = if (activeUpper) FontWeight.Bold else FontWeight.Normal,
+            )
+            Text(
+                text = "▼${snapshot.targetCadenceRecovery}",
+                color = if (!activeUpper) activeColor else MobileColors.TextDim,
+                fontSize = 18.sp,
+                fontWeight = if (!activeUpper) FontWeight.Bold else FontWeight.Normal,
+            )
+            Text(text = "spm", color = MobileColors.TextDim, fontSize = 12.sp)
+        }
     }
 }
 
@@ -457,6 +318,3 @@ private fun formatSeconds(seconds: Double): String {
     val total = seconds.toInt().coerceAtLeast(0)
     return "%d:%02d".format(total / 60, total % 60)
 }
-
-/** active target との差がこの SPM 以内ならニュートラル色 */
-private const val PACE_WITHIN_BAND = 3

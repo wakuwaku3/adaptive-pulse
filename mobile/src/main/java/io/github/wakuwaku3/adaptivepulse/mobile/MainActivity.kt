@@ -132,10 +132,6 @@ class MainActivity : ComponentActivity() {
                 if (isDemo) DemoSessionController.adjustThreshold(delta)
                 else LiveSessionCommander.adjustThreshold(applicationContext, delta)
             },
-            onAdjustTargetSpm = { delta ->
-                if (isDemo) DemoSessionController.adjustTargetCadence(delta.toDouble())
-                else LiveSessionCommander.adjustTargetCadence(applicationContext, delta)
-            },
             onStop = {
                 if (isDemo) DemoSessionController.stop()
                 else LiveSessionCommander.stop(applicationContext)

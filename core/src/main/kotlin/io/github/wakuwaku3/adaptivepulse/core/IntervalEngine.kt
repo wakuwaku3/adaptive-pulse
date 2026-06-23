@@ -13,13 +13,6 @@ enum class Phase { HIGH_INTENSITY, RECOVERY, FINISHED }
  */
 class IntervalEngine(
     private val config: SessionConfig,
-    /**
-     * 高強度目標 cadence の初期値。前回セッション最終値 (持ち越し) or seed。
-     * pace-metric note §ペースをどう決めるか / Day-1 seed
-     */
-    initialTargetCadenceHigh: Double = config.seedTargetCadenceHigh,
-    /** 回復目標 cadence の初期値。同上 */
-    initialTargetCadenceRecovery: Double = config.seedTargetCadenceRecovery,
 ) {
 
     var phase: Phase = Phase.HIGH_INTENSITY
@@ -31,18 +24,6 @@ class IntervalEngine(
 
     /** 現在有効な下限閾値 */
     var lowerBpm: Int = config.lowerBpm
-        private set
-
-    /**
-     * 高強度フェーズの目標 cadence (SPM)。
-     * cycle 完了毎に target duration 窓 (45〜90s) を達成するよう制御ループで自動調整。
-     * 手動 ± も [adjustActiveTargetCadence] で許容するが、次 cycle の自動更新が上書きしうる。
-     */
-    var targetCadenceHigh: Double = initialTargetCadenceHigh
-        private set
-
-    /** 回復フェーズの目標 cadence (SPM)。同様に cycle 毎に duration 窓 (30〜75s) を狙って自動調整 */
-    var targetCadenceRecovery: Double = initialTargetCadenceRecovery
         private set
 
     /**
@@ -93,32 +74,6 @@ class IntervalEngine(
     // セッション開始直後のウォームアップ区間を計測から外し、全サイクルを公平に比較するため。
     private var measureStartedAt: Duration? = null
 
-    // pace-metric Phase B: 制御ループは「実測 cadence の phase median」を anchor にする
-    // (target 基準だとユーザが target を無視して別ペースで踏んだ場合 target が現実から乖離して固定する)
-    private val highCadenceSamples = mutableListOf<Double>()
-    private val recoveryCadenceSamples = mutableListOf<Double>()
-
-    /** 直近の実測 cadence (SPM)。intra-cycle stall 検知で「target に近いか」判定に使う */
-    private var lastCadenceSample: Double? = null
-
-    // intra-cycle stall 検知: 「実測 cadence は target に達しているのに BPM が動かない」状態を
-    // 周期的に検出して、phase 中であろうと target を nudge する (pace-metric 2026-06-21 FB)
-    private var stallCheckpointBpm: Int? = null
-    private var stallCheckpointAt: Duration = Duration.ZERO
-
-    /**
-     * 任意の cadence サンプル (SPM) を engine に流す (SessionRunner / DemoSessionController から呼ぶ)。
-     * 現フェーズに蓄積し、cycle 完了時に median を計算して制御ループの anchor として使う。
-     */
-    fun onCadenceSample(spm: Double) {
-        when (phase) {
-            Phase.HIGH_INTENSITY -> highCadenceSamples += spm
-            Phase.RECOVERY -> recoveryCadenceSamples += spm
-            Phase.FINISHED -> Unit
-        }
-        if (phase != Phase.FINISHED) lastCadenceSample = spm
-    }
-
     /** セッション開始直後、まだ下限閾値を上向きに超えていないウォームアップ区間か */
     val isWarmingUp: Boolean
         get() = phase == Phase.HIGH_INTENSITY && currentCycle == 0 && measureStartedAt == null
@@ -126,14 +81,11 @@ class IntervalEngine(
     /** 心拍サンプルを処理する。遷移が起きたときだけイベントを 1 つ返す */
     fun onHeartRate(bpm: Int, elapsed: Duration): SessionEvent? {
         onTimePassed(elapsed)?.let { return it }
-        val event = when (phase) {
+        return when (phase) {
             Phase.HIGH_INTENSITY -> onHighIntensitySample(bpm, elapsed)
             Phase.RECOVERY -> onRecoverySample(bpm, elapsed)
             Phase.FINISHED -> null
         }
-        // 遷移が起きていなければ stall 検知を回す。遷移済なら次の phase で初回 sample から始める
-        if (event == null) maybeNudgeForStall(bpm, elapsed)
-        return event
     }
 
     /**
@@ -152,24 +104,18 @@ class IntervalEngine(
         fatigueBrakeFired = true
         finalCycle = currentCycle
         phase = Phase.FINISHED
-        resetStallCheckpoint()
         return SessionEvent.SessionFinished
     }
 
     private fun onHighIntensitySample(bpm: Int, elapsed: Duration): SessionEvent? {
         if (measureStartedAt == null && bpm > lowerBpm) {
             measureStartedAt = elapsed
-            // warmup 終了 = "real HIGH" 開始。stall 用の checkpoint をここからリセットして
-            // grace period を真の高強度フェーズ突入から数える
-            resetStallCheckpoint()
         }
         if (bpm <= upperBpm) return null
 
         // 上限到達 = この高強度フェーズ完了 → cycle カウントをここで進める
         currentCycle++
         val highDuration = elapsed - (measureStartedAt ?: elapsed)
-        // pace-metric Phase B: cycle 完了時に制御ループで高強度 target を更新
-        updateTargetCadenceHigh(highDuration)
         val event = judgeFatigue(highDuration)
         enterRecovery(elapsed)
         return event
@@ -222,102 +168,22 @@ class IntervalEngine(
         Phase.FINISHED -> upperBpm
     }
 
-    /** 現フェーズの目標 cadence (UI のフィードバック表示・拍動円 tempo に使う) */
-    fun activeTargetCadence(): Double = when (phase) {
-        Phase.HIGH_INTENSITY -> targetCadenceHigh
-        Phase.RECOVERY -> targetCadenceRecovery
-        Phase.FINISHED -> targetCadenceHigh
-    }
-
-    /**
-     * 現フェーズの目標 cadence を delta だけ動かす (高強度なら high、回復なら recovery)。
-     * 高強度 > 回復 + 最小ギャップを保つよう clamp。永続化はせずセッション内のみ有効。
-     * 次 cycle 完了時の自動制御ループが上書きしうる。
-     */
-    fun adjustActiveTargetCadence(delta: Double): Double {
-        when (phase) {
-            Phase.HIGH_INTENSITY -> {
-                targetCadenceHigh = (targetCadenceHigh + delta)
-                    .coerceIn(targetCadenceRecovery + MIN_CADENCE_GAP, MAX_SPM)
-                return targetCadenceHigh
-            }
-            Phase.RECOVERY -> {
-                targetCadenceRecovery = (targetCadenceRecovery + delta)
-                    .coerceIn(MIN_SPM, targetCadenceHigh - MIN_CADENCE_GAP)
-                return targetCadenceRecovery
-            }
-            Phase.FINISHED -> return targetCadenceHigh
-        }
-    }
-
-    /**
-     * 高強度フェーズ完了時の制御ループ。pace-metric note §ペースをどう決めるか:
-     *   anchor = phase 中で実測した cadence の median (= ユーザが実際に踏んだ pace)。
-     *   observed < d_min: new_target = anchor - k × (d_min - observed)   (速すぎ → anchor より遅め推奨)
-     *   observed > d_max: new_target = anchor + k × (observed - d_max)   (遅すぎ → anchor より速め推奨)
-     *   else:             new_target = anchor                            (sweet spot: 実測 pace を採用)
-     *
-     * 実測 cadence サンプルが無い場合は target を維持 (= 旧 target-anchor と同じ fallback)。
-     */
-    private fun updateTargetCadenceHigh(observed: Duration) {
-        val anchor = highCadenceSamples.medianOrNull() ?: targetCadenceHigh
-        targetCadenceHigh = applyControlLoop(
-            anchor = anchor,
-            observed = observed,
-            dMin = config.cadenceTargetHighDurationMin,
-            dMax = config.cadenceTargetHighDurationMax,
-        ).coerceIn(targetCadenceRecovery + MIN_CADENCE_GAP, MAX_SPM)
-        highCadenceSamples.clear()
-    }
-
-    /** 回復フェーズ完了時の制御ループ (高強度側の鏡像。窓は 30〜75s) */
-    private fun updateTargetCadenceRecovery(observed: Duration) {
-        val anchor = recoveryCadenceSamples.medianOrNull() ?: targetCadenceRecovery
-        targetCadenceRecovery = applyControlLoop(
-            anchor = anchor,
-            observed = observed,
-            dMin = config.cadenceTargetRecoveryDurationMin,
-            dMax = config.cadenceTargetRecoveryDurationMax,
-        ).coerceIn(MIN_SPM, targetCadenceHigh - MIN_CADENCE_GAP)
-        recoveryCadenceSamples.clear()
-    }
-
-    private fun applyControlLoop(
-        anchor: Double,
-        observed: Duration,
-        dMin: Duration,
-        dMax: Duration,
-    ): Double {
-        val k = config.cadenceControlGain
-        return when {
-            observed < dMin -> anchor - k * (dMin - observed).inWholeMilliseconds / 1000.0
-            observed > dMax -> anchor + k * (observed - dMax).inWholeMilliseconds / 1000.0
-            else -> anchor
-        }
-    }
-
-    private fun List<Double>.medianOrNull(): Double? {
-        if (isEmpty()) return null
-        val sorted = sorted()
-        val n = size
-        return if (n % 2 == 1) sorted[n / 2] else (sorted[n / 2 - 1] + sorted[n / 2]) / 2.0
+    /** 現フェーズの目標 cadence (UI の回転体 tempo に使う)。設定値そのまま */
+    fun activeTargetCadence(): Int = when (phase) {
+        Phase.HIGH_INTENSITY -> config.targetCadenceHigh
+        Phase.RECOVERY -> config.targetCadenceRecovery
+        Phase.FINISHED -> config.targetCadenceHigh
     }
 
     companion object {
         const val MIN_THRESHOLD_GAP = 5
         const val MIN_BPM = 100
         const val MAX_BPM = 200
-        /** 高強度と回復の cadence 差は最低限残す (機材実測でも約 2 倍差。10 SPM 安全マージン) */
-        const val MIN_CADENCE_GAP = 10.0
-        const val MIN_SPM = 30.0
-        const val MAX_SPM = 220.0
     }
 
     private fun completeCycle(elapsed: Duration): SessionEvent {
         val recoveryDuration = elapsed - phaseStartedAt
         measuredRecoveryDurations += recoveryDuration
-        // pace-metric Phase B: 回復完了時の制御ループ更新
-        updateTargetCadenceRecovery(recoveryDuration)
 
         val base = recoveryBaseline
         if (base == null && baseline != null) {
@@ -335,7 +201,6 @@ class IntervalEngine(
         phaseStartedAt = elapsed
         cycleStartedAt = elapsed
         measureStartedAt = null
-        resetStallCheckpoint()
         return SessionEvent.EnterHighIntensity
     }
 
@@ -348,61 +213,5 @@ class IntervalEngine(
             upperBpm = (upperBpm - config.upperBpmFatigueDecay)
                 .coerceAtLeast(lowerBpm + MIN_THRESHOLD_GAP)
         }
-        resetStallCheckpoint()
-    }
-
-    private fun resetStallCheckpoint() {
-        stallCheckpointBpm = null
-        stallCheckpointAt = Duration.ZERO
-    }
-
-    /**
-     * intra-cycle stall 検知。grace period 経過後、`cadenceStallCheckInterval` ごとに
-     * 「実測 cadence が active target ± tolerance に居る」かつ「BPM が予想方向に
-     * `cadenceStallBpmThreshold` 以上動いていない」場合、active target を nudge する。
-     *
-     * HIGH:    BPM 上がらない → target を上げ (push 強化)
-     * RECOVERY: BPM 下がらない → target を下げ (負荷軽減)
-     */
-    private fun maybeNudgeForStall(bpm: Int, elapsed: Duration) {
-        if (phase == Phase.FINISHED || isWarmingUp) return
-        // 高強度は "real HIGH" 開始 (measureStartedAt) から、回復は phase 開始から grace を測る
-        val anchorTime = measureStartedAt?.takeIf { phase == Phase.HIGH_INTENSITY } ?: phaseStartedAt
-        val phaseElapsed = elapsed - anchorTime
-        if (phaseElapsed < config.cadenceStallGracePeriod) return
-
-        val checkpointBpm = stallCheckpointBpm
-        if (checkpointBpm == null) {
-            // grace 後の最初のサンプル: checkpoint をセット、次回まで判定なし
-            stallCheckpointBpm = bpm
-            stallCheckpointAt = elapsed
-            return
-        }
-        if (elapsed - stallCheckpointAt < config.cadenceStallCheckInterval) return
-
-        val nearTarget = lastCadenceSample
-            ?.let { kotlin.math.abs(it - activeTargetCadence()) <= config.cadenceStallCadenceTolerance }
-            ?: false
-        val movement = bpm - checkpointBpm
-        val stalled = nearTarget && when (phase) {
-            Phase.HIGH_INTENSITY -> movement < config.cadenceStallBpmThreshold
-            Phase.RECOVERY -> movement > -config.cadenceStallBpmThreshold
-            Phase.FINISHED -> false
-        }
-        if (stalled) {
-            when (phase) {
-                Phase.HIGH_INTENSITY -> {
-                    targetCadenceHigh = (targetCadenceHigh + config.cadenceStallNudge)
-                        .coerceAtMost(MAX_SPM)
-                }
-                Phase.RECOVERY -> {
-                    targetCadenceRecovery = (targetCadenceRecovery - config.cadenceStallNudge)
-                        .coerceAtLeast(MIN_SPM)
-                }
-                Phase.FINISHED -> Unit
-            }
-        }
-        stallCheckpointBpm = bpm
-        stallCheckpointAt = elapsed
     }
 }

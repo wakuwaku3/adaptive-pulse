@@ -23,12 +23,10 @@ sealed interface SessionUiState {
         val upperBpm: Int,
         /** セッション中に動かしうる現在の下限閾値 */
         val lowerBpm: Int,
-        /** 3〜5 秒窓の median による cadence (SPM)。pace-metric note の単位流儀 */
-        val currentCadenceSpm: Double? = null,
-        /** 高強度の動的目標 cadence。Day-1 seed 130、cycle 毎に制御ループで更新 (pace-metric Phase B) */
-        val targetCadenceHigh: Double = 0.0,
-        /** 回復の動的目標 cadence。Day-1 seed 65 */
-        val targetCadenceRecovery: Double = 0.0,
+        /** 高強度の目標 cadence (SPM)。phone 回転体の tempo に使う。設定値そのまま */
+        val targetCadenceHigh: Int = 0,
+        /** 回復の目標 cadence (SPM)。同上 */
+        val targetCadenceRecovery: Int = 0,
     ) : SessionUiState
 
     data class Finished(

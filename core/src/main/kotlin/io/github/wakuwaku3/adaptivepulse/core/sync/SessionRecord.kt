@@ -1,7 +1,6 @@
 package io.github.wakuwaku3.adaptivepulse.core.sync
 
 import io.github.wakuwaku3.adaptivepulse.core.SessionConfig
-import io.github.wakuwaku3.adaptivepulse.core.cadence.CadenceTier
 import kotlin.time.Duration.Companion.seconds
 import kotlinx.serialization.Serializable
 
@@ -12,7 +11,7 @@ import kotlinx.serialization.Serializable
 @Serializable
 data class SessionRecord(
     val id: String,
-    val schema: Int = 2,
+    val schema: Int = 3,
     val startedAtMs: Long,
     val durationSec: Long,
     val cycles: Int,
@@ -28,18 +27,6 @@ data class SessionRecord(
     val maxBpm: Int? = null,
     val config: SessionConfigSnapshot,
     val device: String = "watch",
-    /**
-     * セッション終了時点の target cadence (pace-metric Phase B)。
-     * 次セッション開始時に直近 N 件の median を初期値として使う (= 1 セッションのブレを吸収)。
-     */
-    val finalTargetCadenceHigh: Double? = null,
-    val finalTargetCadenceRecovery: Double? = null,
-    /**
-     * SPM を計測した tier (3 段フォールバックのどれか)。warm-up + discovery 窓内で
-     * セッションが終わった場合は null。後追いで「どのロジックで測ったセッションか」を
-     * 評価するために残す (schema 2 で追加, FB 2026-06-22)。
-     */
-    val lockedCadenceTier: CadenceTier? = null,
 )
 
 /** セッション時点の設定スナップショット (履歴の文脈として残す) */
@@ -55,8 +42,8 @@ data class SessionConfigSnapshot(
     val ageYears: Int = 39,
     val restingBpm: Int = 60,
     val recoveryFatigueRatio: Double = 1.5,
-    val seedTargetCadenceHigh: Double = 130.0,
-    val seedTargetCadenceRecovery: Double = 65.0,
+    val targetCadenceHigh: Int = 130,
+    val targetCadenceRecovery: Int = 90,
     val heightCm: Int? = null,
     val upperBpmFatigueDecay: Int = 2,
 ) {
@@ -72,8 +59,8 @@ data class SessionConfigSnapshot(
             ageYears = config.ageYears,
             restingBpm = config.restingBpm,
             recoveryFatigueRatio = config.recoveryFatigueRatio,
-            seedTargetCadenceHigh = config.seedTargetCadenceHigh,
-            seedTargetCadenceRecovery = config.seedTargetCadenceRecovery,
+            targetCadenceHigh = config.targetCadenceHigh,
+            targetCadenceRecovery = config.targetCadenceRecovery,
             heightCm = config.heightCm,
             upperBpmFatigueDecay = config.upperBpmFatigueDecay,
         )
@@ -98,8 +85,8 @@ data class SettingsDocument(
     val ageYears: Int = 39,
     val restingBpm: Int = 60,
     val recoveryFatigueRatio: Double = 1.5,
-    val seedTargetCadenceHigh: Double = 130.0,
-    val seedTargetCadenceRecovery: Double = 65.0,
+    val targetCadenceHigh: Int = 130,
+    val targetCadenceRecovery: Int = 90,
     val heightCm: Int? = null,
     val upperBpmFatigueDecay: Int = 2,
 ) {
@@ -114,8 +101,8 @@ data class SettingsDocument(
         minBaseline = minBaselineSec.seconds,
         highPhaseTimeout = highTimeoutSec.seconds,
         recoveryTimeout = recoveryTimeoutSec.seconds,
-        seedTargetCadenceHigh = seedTargetCadenceHigh,
-        seedTargetCadenceRecovery = seedTargetCadenceRecovery,
+        targetCadenceHigh = targetCadenceHigh,
+        targetCadenceRecovery = targetCadenceRecovery,
         heightCm = heightCm,
         upperBpmFatigueDecay = upperBpmFatigueDecay,
     )
@@ -134,8 +121,8 @@ data class SettingsDocument(
             ageYears = config.ageYears,
             restingBpm = config.restingBpm,
             recoveryFatigueRatio = config.recoveryFatigueRatio,
-            seedTargetCadenceHigh = config.seedTargetCadenceHigh,
-            seedTargetCadenceRecovery = config.seedTargetCadenceRecovery,
+            targetCadenceHigh = config.targetCadenceHigh,
+            targetCadenceRecovery = config.targetCadenceRecovery,
             heightCm = config.heightCm,
             upperBpmFatigueDecay = config.upperBpmFatigueDecay,
         )
