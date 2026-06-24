@@ -302,54 +302,6 @@
         }
       }
     },
-    "terraform@latest": {
-      "last_modified": "2026-06-05T19:07:58Z",
-      "resolved": "github:NixOS/nixpkgs/891eaa77f0eed53352194677991bd30978f9b0ad#terraform",
-      "source": "devbox-search",
-      "version": "1.15.5",
-      "systems": {
-        "aarch64-darwin": {
-          "outputs": [
-            {
-              "name": "out",
-              "path": "/nix/store/pvvcwf3pvc60iyfzml81slw2w63m7zzc-terraform-1.15.5",
-              "default": true
-            }
-          ],
-          "store_path": "/nix/store/pvvcwf3pvc60iyfzml81slw2w63m7zzc-terraform-1.15.5"
-        },
-        "aarch64-linux": {
-          "outputs": [
-            {
-              "name": "out",
-              "path": "/nix/store/i01dx60xpnab1q6mv7zaqwg9dq7vf148-terraform-1.15.5",
-              "default": true
-            }
-          ],
-          "store_path": "/nix/store/i01dx60xpnab1q6mv7zaqwg9dq7vf148-terraform-1.15.5"
-        },
-        "x86_64-darwin": {
-          "outputs": [
-            {
-              "name": "out",
-              "path": "/nix/store/kx6kccjgaw7ky07vxk3wbp8hq7m3ap93-terraform-1.15.5",
-              "default": true
-            }
-          ],
-          "store_path": "/nix/store/kx6kccjgaw7ky07vxk3wbp8hq7m3ap93-terraform-1.15.5"
-        },
-        "x86_64-linux": {
-          "outputs": [
-            {
-              "name": "out",
-              "path": "/nix/store/z0h2f46j46bfjf52yahlwrm866z5xd74-terraform-1.15.5",
-              "default": true
-            }
-          ],
-          "store_path": "/nix/store/z0h2f46j46bfjf52yahlwrm866z5xd74-terraform-1.15.5"
-        }
-      }
-    },
     "unzip@latest": {
       "last_modified": "2026-05-21T08:15:18Z",
       "resolved": "github:NixOS/nixpkgs/4a29d733e8a7d5b824c3d8c958a946a9867b3eb2#unzip",

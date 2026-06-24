@@ -30,3 +30,6 @@ node_modules/
 firebase-debug.log
 firestore-debug.log
 ui-debug.log
+
+# analyze skill の出力 (個人健康データを含むため絶対にコミットしない)
+tmp/
