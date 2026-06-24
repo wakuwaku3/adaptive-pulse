@@ -33,7 +33,6 @@ import io.github.wakuwaku3.adaptivepulse.mobile.ui.dashboard.SessionHighDuration
 import io.github.wakuwaku3.adaptivepulse.mobile.ui.dashboard.SessionMaxBpmChart
 import io.github.wakuwaku3.adaptivepulse.mobile.ui.dashboard.SessionZoneRatioChart
 import io.github.wakuwaku3.adaptivepulse.mobile.ui.dashboard.SleepChart
-import io.github.wakuwaku3.adaptivepulse.mobile.ui.dashboard.Spo2Chart
 import io.github.wakuwaku3.adaptivepulse.mobile.ui.dashboard.StepsChart
 import io.github.wakuwaku3.adaptivepulse.mobile.ui.dashboard.TdeeIntakeChart
 import io.github.wakuwaku3.adaptivepulse.mobile.ui.dashboard.TodayCard
@@ -79,7 +78,7 @@ fun HistoryScreen(
                 Text(it, color = MobileColors.TextDim, style = MaterialTheme.typography.bodySmall)
             }
         }
-        item { TodayCard(today = today) }
+        item { TodayCard(today = today, rows = recentDays) }
         item { PeriodSelector(current = period, onChange = onPeriodChange) }
 
         // セッションも period に追従させる: 期間内に開始したものだけ通す
@@ -106,7 +105,7 @@ private fun SectionHeader(label: String) {
  *  1. BODY: 体重・BMI (減量フェーズの全体進捗)
  *  2. CALORIES: deficit・TDEE vs intake / Protein・Fat / Carbs
  *     (P/F/C はカロリー構成要素なので CALORIES に集約)
- *  3. RECOVERY: Sleep・HRV / RHR・SpO2
+ *  3. RECOVERY: Sleep・HRV / RHR
  *  4. TRAINING: Steps・HR 24h (日次系) / 高強度区間・ゾーン滞在率 / avg HR・max HR (セッション系)
  */
 private fun LazyListScope.chartGrid(
@@ -126,7 +125,7 @@ private fun LazyListScope.chartGrid(
 
     item { SectionHeader("RECOVERY") }
     item { ChartRow({ SleepChart(rows, it) }, { HrvChart(rows, it) }) }
-    item { ChartRow({ RestingHrChart(rows, it) }, { Spo2Chart(rows, it) }) }
+    item { ChartRow({ RestingHrChart(rows, it) }) }
 
     item { SectionHeader("TRAINING") }
     item { ChartRow({ StepsChart(rows, it) }, { HeartRate24hChart(hrSamples, upperBpm, lowerBpm, it) }) }

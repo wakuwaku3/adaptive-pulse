@@ -211,17 +211,6 @@ object RestingHr {
     fun categoryOf(v: Double): String = bands.firstOrNull { v in it.from..it.to }?.label ?: "—"
 }
 
-/** SpO2 (%) — 95% 以上が正常、それ未満は注意 */
-object Spo2 {
-    val bands = listOf(
-        Band("低酸素", 80.0, 90.0, BadBand),
-        Band("注意", 90.0, 95.0, NeutralBand),
-        Band("正常", 95.0, 100.0, GoodBand),
-    )
-
-    fun categoryOf(v: Double): String = bands.firstOrNull { v in it.from..it.to }?.label ?: "—"
-}
-
 /**
  * 体重の適正帯。BMI バンドを身長から逆算する (kg = BMI × (身長 m)²)。
  * 身長が不明なら空配列を返す = チャートには帯を描かない。
@@ -266,6 +255,29 @@ fun hrCategoryFor(bpm: Double, upperBpm: Int, lowerBpm: Int): String = when {
     bpm >= lowerBpm -> "中強度"
     else -> "低強度"
 }
+
+/**
+ * 末端移動平均 (trailing moving average)。null 値はウィンドウから除外し、
+ * 有効サンプル数がウィンドウの半分未満の点は null (端の値が偏らないように)。
+ */
+internal fun movingAverage(values: List<Double?>, window: Int): List<Double?> {
+    if (window <= 1) return values
+    val minSamples = (window / 2).coerceAtLeast(1)
+    return values.indices.map { i ->
+        val from = maxOf(0, i - window + 1)
+        val slice = values.subList(from, i + 1).filterNotNull()
+        if (slice.size < minSamples) null else slice.average()
+    }
+}
+
+/**
+ * データ点数に応じた移動平均ウィンドウ。
+ * - Day (n≈3): n が少なすぎて MA を出さない (呼び出し側で抑制)
+ * - Week (n≈7): 3 日
+ * - Month (n≈30): 7 日
+ * - Year (n≈365): 14 日 (cap)
+ */
+internal fun pickMaWindow(n: Int): Int = (n / 4).coerceIn(3, 14)
 
 /** ダッシュボードの表示期間 */
 enum class Period(val days: Int, val label: String) {

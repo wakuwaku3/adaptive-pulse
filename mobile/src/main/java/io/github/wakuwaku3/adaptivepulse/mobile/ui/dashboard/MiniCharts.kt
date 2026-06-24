@@ -57,6 +57,8 @@ import kotlin.math.roundToInt
  *  - **ⓘ**: 全チャートに必ず表示 (説明はタップで Popup フローティング)。
  *  - **基準**: 単線チャートには適正帯か参照線を必ず置く (今が良いか悪いかが一目でわかる)。
  *  - **タップ詳細**: 点タップで該当日の値を floating tooltip で表示 (レイアウト不変、右端クランプ)。
+ *  - **凡例 value 色**: 同じ band を共有する系列 (raw と移動平均、TDEE と Intake 等) は同一の
+ *    `bandStateColor` ロジックで色付けする。raw だけ band 色、MA は TextDim、のような不揃いは避ける。
  */
 
 private val ChartHeight = 110.dp
@@ -394,7 +396,13 @@ private fun DrawScope.drawDeficitArea(values: List<Double?>, scale: Scale) {
     }
 }
 
-private fun DrawScope.drawLineChart(values: List<Double?>, scale: Scale, color: Color, pointRadius: Float = 3f) {
+private fun DrawScope.drawLineChart(
+    values: List<Double?>,
+    scale: Scale,
+    color: Color,
+    pointRadius: Float = 3f,
+    strokeWidth: Float = 2f,
+) {
     val w = size.width
     val h = size.height
     val stepX = if (values.size > 1) w / (values.size - 1) else 0f
@@ -406,10 +414,11 @@ private fun DrawScope.drawLineChart(values: List<Double?>, scale: Scale, color: 
         val y = scale.y(h, v)
         if (!started) { path.moveTo(x, y); started = true } else path.lineTo(x, y)
         // 点は線と同色で統一 (棒/線/点で色がブレないようにする)
-        if (stepX > 6f) drawCircle(color = color, radius = pointRadius, center = Offset(x, y))
+        if (pointRadius > 0f && stepX > 6f) drawCircle(color = color, radius = pointRadius, center = Offset(x, y))
     }
-    if (started) drawPath(path = path, color = color, style = Stroke(width = 2f))
+    if (started) drawPath(path = path, color = color, style = Stroke(width = strokeWidth))
 }
+
 
 private fun DrawScope.drawBars(values: List<Double?>, scale: Scale, color: Color) {
     val w = size.width
@@ -457,23 +466,40 @@ fun WeightChart(rows: List<DashboardComputed>, modifier: Modifier = Modifier) {
     val nonNull = values.filterNotNull()
     val heightCm = rows.firstNotNullOfOrNull { it.heightCm }
     val bands = weightBandsForHeight(heightCm)
-    val scale = when {
-        nonNull.isEmpty() -> Scale(60.0, 100.0)
-        bands.isNotEmpty() -> expandWithBands(nonNull, bands, 0.08)
-        else -> expandScale(nonNull, 0.10)
-    }
+    val maWindow = pickMaWindow(rows.size)
+    // データ点が少ない (Day = 3) ときは移動平均が点になるだけで意味がないので出さない
+    val showMa = rows.size >= 5 && nonNull.size >= maWindow
+    val movingAvg = if (showMa) movingAverage(values, maWindow) else List(rows.size) { null }
+    val maNonNull = movingAvg.filterNotNull()
+    // scale はデータ実値中心 (band は背景描画で必要に応じて clamp 表示)。
+    // expandWithBands を使うと band 全幅 (例: BMI 18.5-35 帯) を抱え込んで縦軸が無駄に広くなる。
+    val combined = nonNull + maNonNull
+    val scale = if (combined.isEmpty()) Scale(60.0, 100.0) else expandScale(combined, 0.10)
     val today = rows.lastOrNull()
+    val latestMa = maNonNull.lastOrNull()
+    // raw 値と同じ band 判定 (BMI 帯) で色付けするため、MA kg を BMI に換算する
+    val latestMaBmi = if (heightCm != null && heightCm > 0 && latestMa != null) {
+        val m = heightCm / 100.0
+        latestMa / (m * m)
+    } else null
     MiniChartCard(
         title = "Weight",
         info = "身長 ${heightCm?.let { "%.0f cm".format(it) } ?: "—"} の BMI 基準で帯を描画。" +
-            "緑 = 普通 (BMI 18.5-25) / 黄 = 過体重 (25-30) / 赤 = 肥満 (30+)",
-        legend = listOf(
+            "緑 = 普通 (BMI 18.5-25) / 黄 = 過体重 (25-30) / 赤 = 肥満 (30+)。" +
+            if (showMa) "赤線 = ${maWindow} 日移動平均" else "",
+        legend = listOfNotNull(
             LegendItem(
                 "Weight",
                 today?.weightKg?.let { "%.1f kg".format(it) } ?: "—",
                 PrimaryColor,
                 bandStateColor(today?.bmi, Bmi.bands),
             ),
+            if (showMa) LegendItem(
+                "MA-${maWindow}d",
+                latestMa?.let { "%.1f kg".format(it) } ?: "—",
+                SecondaryColor,
+                bandStateColor(latestMaBmi, Bmi.bands),
+            ) else null,
         ),
         yLabels = yLabelsFor(scale) { "%.1f".format(it) },
         xLabels = rows.firstAndLastDateLabels(),
@@ -483,6 +509,7 @@ fun WeightChart(rows: List<DashboardComputed>, modifier: Modifier = Modifier) {
         drawContent = {
             drawBands(bands, scale)
             drawLineChart(values, scale, PrimaryColor)
+            if (showMa) drawLineChart(movingAvg, scale, SecondaryColor, pointRadius = 0f, strokeWidth = 2.5f)
         },
     )
 }
@@ -491,18 +518,31 @@ fun WeightChart(rows: List<DashboardComputed>, modifier: Modifier = Modifier) {
 fun BmiChart(rows: List<DashboardComputed>, modifier: Modifier = Modifier) {
     val values = rows.map { it.bmi }
     val nonNull = values.filterNotNull()
-    val scale = if (nonNull.isNotEmpty()) expandWithBands(nonNull, Bmi.bands, 0.12) else Scale(18.0, 35.0)
+    val maWindow = pickMaWindow(rows.size)
+    val showMa = rows.size >= 5 && nonNull.size >= maWindow
+    val movingAvg = if (showMa) movingAverage(values, maWindow) else List(rows.size) { null }
+    val maNonNull = movingAvg.filterNotNull()
+    val combined = nonNull + maNonNull
+    val scale = if (combined.isEmpty()) Scale(18.0, 35.0) else expandScale(combined, 0.12)
     val today = rows.lastOrNull()
+    val latestMa = maNonNull.lastOrNull()
     MiniChartCard(
         title = "BMI",
-        info = "体重 ÷ (身長 m)²。普通 18.5-25 / 過体重 25-30 / 肥満 1 度 30-35 / 肥満 2 度 35+",
-        legend = listOf(
+        info = "体重 ÷ (身長 m)²。普通 18.5-25 / 過体重 25-30 / 肥満 1 度 30-35 / 肥満 2 度 35+。" +
+            if (showMa) "赤線 = ${maWindow} 日移動平均" else "",
+        legend = listOfNotNull(
             LegendItem(
                 "BMI",
                 today?.bmi?.let { "%.1f".format(it) } ?: "—",
                 PrimaryColor,
                 bandStateColor(today?.bmi, Bmi.bands),
             ),
+            if (showMa) LegendItem(
+                "MA-${maWindow}d",
+                latestMa?.let { "%.1f".format(it) } ?: "—",
+                SecondaryColor,
+                bandStateColor(latestMa, Bmi.bands),
+            ) else null,
         ),
         yLabels = yLabelsFor(scale) { "%.1f".format(it) },
         xLabels = rows.firstAndLastDateLabels(),
@@ -512,6 +552,7 @@ fun BmiChart(rows: List<DashboardComputed>, modifier: Modifier = Modifier) {
         drawContent = {
             drawBands(Bmi.bands, scale)
             drawLineChart(values, scale, PrimaryColor)
+            if (showMa) drawLineChart(movingAvg, scale, SecondaryColor, pointRadius = 0f, strokeWidth = 2.5f)
         },
     )
 }
@@ -823,35 +864,6 @@ fun RestingHrChart(rows: List<DashboardComputed>, modifier: Modifier = Modifier)
         pointAt = { i -> rows.getOrNull(i)?.let { "${it.date}: ${it.restingHrBpm?.let { v -> "$v bpm" } ?: "—"}" } ?: "" },
         drawContent = {
             drawBands(RestingHr.bands, scale)
-            drawLineChart(values, scale, PrimaryColor)
-        },
-    )
-}
-
-@Composable
-fun Spo2Chart(rows: List<DashboardComputed>, modifier: Modifier = Modifier) {
-    val values = rows.map { it.spo2AvgPct }
-    val nonNull = values.filterNotNull()
-    val scale = if (nonNull.isNotEmpty()) expandWithBands(nonNull, Spo2.bands, 0.10) else Scale(92.0, 100.0)
-    val today = rows.lastOrNull()
-    MiniChartCard(
-        title = "SpO2",
-        info = "血中酸素飽和度 (%)。緑 = 正常 95%+ / 黄 = 注意 90-95% / 赤 = 低酸素 90% 未満",
-        legend = listOf(
-            LegendItem(
-                "SpO2",
-                today?.spo2AvgPct?.let { "%.1f %%".format(it) } ?: "—",
-                PrimaryColor,
-                bandStateColor(today?.spo2AvgPct, Spo2.bands),
-            ),
-        ),
-        yLabels = yLabelsFor(scale) { "%.1f".format(it) },
-        xLabels = rows.firstAndLastDateLabels(),
-        modifier = modifier,
-        pointCount = rows.size,
-        pointAt = { i -> rows.getOrNull(i)?.let { formatPoint(it.date, it.spo2AvgPct, "%") } ?: "" },
-        drawContent = {
-            drawBands(Spo2.bands, scale)
             drawLineChart(values, scale, PrimaryColor)
         },
     )

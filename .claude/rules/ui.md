@@ -18,6 +18,8 @@ paths:
 - バンドルフォントのライセンスは `licenses/` に置く。
 - **全画面は `Scaffold` (or `Surface`) で包む**。Material3 の `Text` は `color` 未指定時に `LocalContentColor` を見るが、Surface 配下じゃないと default が `Color.Black` になり、dark theme でも本文が黒のまま不可視になる。SignIn 画面のような単発の `Column` も Scaffold で包むこと。
 - Theme は `onBackground` / `onSurface` 等の `onXxx` 色を明示的に定義する。
+- **派生値 (移動平均・前日比・MA-Nd など) を併記するときは、raw 値と同じ band 判定で着色する** (2026-06-24)。主値だけ band 色で派生値が `TextDim` 固定のような不揃いは禁止。Today カードの `sub`、MiniChart 凡例の dot/value、Settings の補足値など、テキスト位置に関わらず適用する。raw の単位と派生値の単位が違う (例: Weight kg → BMI band) 場合は派生値を band 軸 (BMI) に換算してから判定する。
+- **値表記の "内数"**: 主値の隣に半角スペース + 括弧で派生値を内包する 1 行表記を指す (例: ラベル `Weight (MA d3)` / 値 `91.4 (91.5) kg`)。`(` の前には必ず半角スペースを入れる。2 行に分けたり別行 sub にしたりしない。Compose では `AnnotatedString` + `SpanStyle` で raw / MA をそれぞれ band 色に、括弧・単位は通常色に塗り分ける。
 
 ## :app (Wear OS) 特有
 
