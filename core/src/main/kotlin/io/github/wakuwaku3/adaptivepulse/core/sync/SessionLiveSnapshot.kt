@@ -1,5 +1,6 @@
 package io.github.wakuwaku3.adaptivepulse.core.sync
 
+import io.github.wakuwaku3.adaptivepulse.core.SessionSuggestion
 import kotlinx.serialization.Serializable
 
 /**
@@ -29,6 +30,11 @@ data class SessionLiveSnapshot(
     val targetCadenceHigh: Int = 0,
     /** 回復フェーズの目標 cadence (SPM)。同上 */
     val targetCadenceRecovery: Int = 0,
+    /**
+     * engine の最新行動提案 (ペース緩めるか中断するか)。null = 出ていない。
+     * phone ライブ画面でユーザに判断を委ねる UI として表示する (FB 2026-06-24)。
+     */
+    val suggestion: SessionSuggestion? = null,
 )
 
 /** 表示フェーズ。WARM_UP は engine の HIGH_INTENSITY かつ measureStartedAt==null を別ラベル化 */

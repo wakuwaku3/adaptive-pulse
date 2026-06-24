@@ -59,6 +59,7 @@ private fun SessionUiState.toLiveSnapshot(nowMs: Long): SessionLiveSnapshot? = w
         calories = calories,
         targetCadenceHigh = targetCadenceHigh,
         targetCadenceRecovery = targetCadenceRecovery,
+        suggestion = suggestion,
     )
     is SessionUiState.Finished -> SessionLiveSnapshot(
         updatedAtMs = nowMs,
@@ -74,6 +75,7 @@ private fun SessionUiState.toLiveSnapshot(nowMs: Long): SessionLiveSnapshot? = w
         calories = calories,
         targetCadenceHigh = 0,
         targetCadenceRecovery = 0,
+        suggestion = suggestion,
     )
 }
 
@@ -86,6 +88,7 @@ class SessionService : LifecycleService() {
 
     companion object {
         private const val ACTION_STOP = "io.github.wakuwaku3.adaptivepulse.STOP_SESSION"
+        private const val ACTION_DONE = "io.github.wakuwaku3.adaptivepulse.DONE_SESSION"
 
         private val _state = MutableStateFlow<SessionUiState>(SessionUiState.Idle)
         val state: StateFlow<SessionUiState> = _state
@@ -98,9 +101,23 @@ class SessionService : LifecycleService() {
             context.startForegroundService(Intent(context, SessionService::class.java))
         }
 
+        /**
+         * セッション中断 (Running → Finished)。
+         * live snapshot は維持して phone に「DONE 画面で Done 待ち」を見せ続ける (FB 2026-06-24)。
+         */
         fun stop(context: Context) {
             context.startService(
                 Intent(context, SessionService::class.java).setAction(ACTION_STOP),
+            )
+        }
+
+        /**
+         * Done 確認 (Finished → Idle)。live snapshot を消して phone を dashboard に戻す。
+         * 「セッション終了後すぐにダッシュボードへ戻る」挙動を抑え、ユーザの確認操作を要件化する。
+         */
+        fun done(context: Context) {
+            context.startService(
+                Intent(context, SessionService::class.java).setAction(ACTION_DONE),
             )
         }
 
@@ -116,6 +133,7 @@ class SessionService : LifecycleService() {
         super.onStartCommand(intent, flags, startId)
         when (intent?.action) {
             ACTION_STOP -> stopSession()
+            ACTION_DONE -> finishSession()
             else -> startSession()
         }
         return START_NOT_STICKY
@@ -156,15 +174,36 @@ class SessionService : LifecycleService() {
                 if (snap.cycles >= 1) {
                     withContext(NonCancellable) { recordSession(startedAtMs, snap) }
                 }
+                // ユーザ stop 経由でも Finished 画面で Done を待たせる (要件: Done を押すまで戻らない)。
+                // snapshot 経由で抽出した値だけを使い、UI 側で同じ「DONE」表現に着地させる
+                val finished = SessionUiState.Finished(
+                    cycles = snap.cycles,
+                    elapsed = snap.elapsed,
+                    calories = snap.calories,
+                    zoneRatio = snap.zoneRatio,
+                    suggestion = runner.snapshotSuggestion(),
+                )
+                _state.value = finished
+                withContext(NonCancellable) { livePusher.maybePush(finished) }
                 throw e
             } catch (e: Exception) {
                 Log.e(TAG, "セッションが異常終了", e)
-                withContext(NonCancellable) { recordSession(startedAtMs, runner.snapshot()) }
-                _state.value = SessionUiState.Idle
+                val snap = runner.snapshot()
+                withContext(NonCancellable) { recordSession(startedAtMs, snap) }
+                // 異常終了でも phone を勝手に dashboard へ戻さず、Finished 画面で Done を待つ
+                val finished = SessionUiState.Finished(
+                    cycles = snap.cycles,
+                    elapsed = snap.elapsed,
+                    calories = snap.calories,
+                    zoneRatio = snap.zoneRatio,
+                    suggestion = runner.snapshotSuggestion(),
+                )
+                _state.value = finished
+                withContext(NonCancellable) { livePusher.maybePush(finished) }
             } finally {
                 activeAdjustThreshold = null
                 sessionJob = null
-                withContext(NonCancellable) { WearSync.deleteLiveSnapshot(applicationContext) }
+                // live snapshot は Done が押されるまで残す。phone は DONE 画面で確認待ちにする
                 stopSelf()
             }
         }
@@ -209,12 +248,28 @@ class SessionService : LifecycleService() {
         Log.i(TAG, "セッションを記録: ${record.id}")
     }
 
+    /**
+     * セッション中断: job を cancel して runner の catch 経路で Finished に遷移させる。
+     * live snapshot は維持したまま service を止める (Done 確認は [finishSession] で行う)。
+     * 既に Finished の状態 (自然完走 → stop が誤って 2 回押された等) で来ても、cancel は no-op。
+     */
     private fun stopSession() {
-        // 手動停止は結果を残さず Idle に戻す (DONE 画面の OK もここに来る)
+        sessionJob?.cancel()
+        // service 自体は job の finally から stopSelf される。ここでは何もしない
+    }
+
+    /**
+     * Done 確認: live snapshot を消して状態を Idle に戻す。
+     * 自然完走後・stop 後のどちらからも呼べる (sessionJob は既に null のことが多い)。
+     */
+    private fun finishSession() {
         sessionJob?.cancel()
         sessionJob = null
         _state.value = SessionUiState.Idle
-        stopSelf()
+        lifecycleScope.launch(NonCancellable) {
+            WearSync.deleteLiveSnapshot(applicationContext)
+            stopSelf()
+        }
     }
 
     private fun goForeground() {

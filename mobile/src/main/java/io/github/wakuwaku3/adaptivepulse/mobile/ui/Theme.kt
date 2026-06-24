@@ -10,6 +10,7 @@ object MobileColors {
     val High = Color(0xFFFF4E5E)
     val Recover = Color(0xFF2CE8B5)
     val Done = Color(0xFFFFC857)
+    val Text = Color.White
     val TextDim = Color(0xFF8A93A0)
     val Surface = Color(0xFF15181D)
 }

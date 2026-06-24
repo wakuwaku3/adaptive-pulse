@@ -73,6 +73,7 @@ class MainActivity : ComponentActivity() {
                 state = sessionState,
                 onStart = ::startWithPermissions,
                 onStop = { SessionService.stop(this) },
+                onDone = { SessionService.done(this) },
                 onOpenSettings = { screen = AppScreen.Settings },
                 onAdjustThreshold = { delta -> SessionService.adjustActiveThreshold(delta) },
             )

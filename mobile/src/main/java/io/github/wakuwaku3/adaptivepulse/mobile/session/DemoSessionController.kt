@@ -79,7 +79,18 @@ object DemoSessionController {
         }
     }
 
+    /**
+     * stop: watch 側と揃え、DONE フェーズに遷移して live snapshot は維持する。
+     * 完了確認は [done] で行う (FB 2026-06-24)。
+     */
     fun stop() {
+        if (phase == LivePhase.DONE) return
+        advanceTo(LivePhase.DONE)
+        push()
+    }
+
+    /** Done 確認: live snapshot を消して dashboard に戻す */
+    fun done() {
         job?.cancel()
         job = null
         _active.value = false
@@ -122,15 +133,8 @@ object DemoSessionController {
                 }
             }
             LivePhase.DONE -> {
-                val phaseElapsedMs = System.currentTimeMillis() - phaseStartMs
-                if (phaseElapsedMs >= 5_000) {
-                    startedAtMs = System.currentTimeMillis()
-                    cycleStartMs = startedAtMs
-                    cycle = 0
-                    bpmF = 105.0
-                    bpm = 105
-                    advanceTo(LivePhase.WARM_UP)
-                }
+                // DONE は Done が押されるまで動かない (本体 watch の挙動と揃える)。
+                // デモを次セッションでリスタートしたい場合は dashboard に戻ってから「Show demo session」を押し直す
             }
         }
     }

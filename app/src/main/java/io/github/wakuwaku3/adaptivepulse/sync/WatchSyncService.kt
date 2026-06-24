@@ -43,6 +43,10 @@ class WatchSyncService : WearableListenerService() {
                 Log.i(TAG, "phone からセッション停止コマンド")
                 SessionService.stop(applicationContext)
             }
+            SyncPaths.SESSION_CMD_DONE -> {
+                Log.i(TAG, "phone から Done 確認コマンド")
+                SessionService.done(applicationContext)
+            }
             SyncPaths.SESSION_CMD_THRESHOLD -> {
                 val delta = event.data.toIntDelta() ?: return
                 SessionService.adjustActiveThreshold(delta)

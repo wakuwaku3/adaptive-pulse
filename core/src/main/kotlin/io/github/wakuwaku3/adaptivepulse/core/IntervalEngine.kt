@@ -58,8 +58,19 @@ class IntervalEngine(
     val recoveryDurations: List<Duration> get() = measuredRecoveryDurations
     private val measuredRecoveryDurations = mutableListOf<Duration>()
 
-    /** 疲労ブレーキが発動したか (タイムアウトによる強制終了も含める。履歴用) */
+    /**
+     * タイムアウトによる強制終了が起きたか (履歴用)。
+     * 疲労検知による自動中断は廃止 (FB 2026-06-24) され、本フラグは「上限/下限に到達しないまま
+     * フェーズ上限時間を超えた」セーフティ停止のみで立つ。
+     */
     var fatigueBrakeFired: Boolean = false
+        private set
+
+    /**
+     * engine が直近で出した提案。null = まだ出ていない / 解消済み。
+     * 「ペースを緩めるか」「中断するか」の判断材料を UI に出すための値で、engine は何も操作しない。
+     */
+    var latestSuggestion: SessionSuggestion? = null
         private set
 
     /** 現フェーズが始まった時刻 (セッション開始からの経過)。UI のフェーズ経過時間に使う */
@@ -131,9 +142,16 @@ class IntervalEngine(
             return SessionEvent.EnterRecovery
         }
         if (highDuration <= base * config.fatigueRatio && currentCycle < finalCycle) {
-            finalCycle = currentCycle
-            fatigueBrakeFired = true
-            return SessionEvent.FatigueBrake
+            val baseSec = base.inWholeSeconds
+            val currentSec = highDuration.inWholeSeconds
+            val ratioPct = (config.fatigueRatio * 100).toInt()
+            latestSuggestion = SessionSuggestion(
+                kind = SuggestionKind.EASE_PACE,
+                title = "ペースを緩めましょう",
+                reason = "高強度の到達が ${currentSec} 秒と速くなっています " +
+                    "(初回 ${baseSec} 秒の ${ratioPct}% 以下)。" +
+                    "心拍が早く上がっているサインなので、無理せずペースを落としてください。",
+            )
         }
         return SessionEvent.EnterRecovery
     }
@@ -189,8 +207,16 @@ class IntervalEngine(
         if (base == null && baseline != null) {
             recoveryBaseline = recoveryDuration
         } else if (base != null && recoveryDuration >= base * config.recoveryFatigueRatio && currentCycle < finalCycle) {
-            finalCycle = currentCycle
-            fatigueBrakeFired = true
+            val baseSec = base.inWholeSeconds
+            val currentSec = recoveryDuration.inWholeSeconds
+            val ratioPct = (config.recoveryFatigueRatio * 100).toInt()
+            latestSuggestion = SessionSuggestion(
+                kind = SuggestionKind.CONSIDER_STOP,
+                title = "中断を検討してください",
+                reason = "回復に ${currentSec} 秒かかりました " +
+                    "(初回 ${baseSec} 秒の ${ratioPct}% 以上)。" +
+                    "自律神経の回復が追いついていない可能性があるので、無理せず中断も選んでください。",
+            )
         }
 
         if (currentCycle >= finalCycle) {
@@ -207,11 +233,5 @@ class IntervalEngine(
     private fun enterRecovery(elapsed: Duration) {
         phase = Phase.RECOVERY
         phaseStartedAt = elapsed
-        // 蓄積疲労分: 次サイクルの上限到達が同じ HR では届かなくなるため、
-        // 上限到達で 1 サイクル完了するたびに upperBpm を decay 分下げる (FB 2026-06-22)
-        if (config.upperBpmFatigueDecay > 0) {
-            upperBpm = (upperBpm - config.upperBpmFatigueDecay)
-                .coerceAtLeast(lowerBpm + MIN_THRESHOLD_GAP)
-        }
     }
 }

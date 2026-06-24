@@ -87,6 +87,9 @@ class SessionRunner(
         config = config,
     )
 
+    /** Finished 状態に着地させる時、最後に出ていた提案を一緒に表示するため取り出す */
+    fun snapshotSuggestion() = engine.latestSuggestion
+
     private fun update(event: SessionEvent?) {
         event?.let(onSessionEvent)
         val elapsed = mark.elapsedNow()
@@ -97,6 +100,7 @@ class SessionRunner(
                     elapsed = elapsed,
                     calories = calories,
                     zoneRatio = metrics.zoneRatio,
+                    suggestion = engine.latestSuggestion,
                 )
             } else {
                 SessionUiState.Running(
@@ -113,6 +117,7 @@ class SessionRunner(
                     lowerBpm = engine.lowerBpm,
                     targetCadenceHigh = config.targetCadenceHigh,
                     targetCadenceRecovery = config.targetCadenceRecovery,
+                    suggestion = engine.latestSuggestion,
                 )
             },
         )

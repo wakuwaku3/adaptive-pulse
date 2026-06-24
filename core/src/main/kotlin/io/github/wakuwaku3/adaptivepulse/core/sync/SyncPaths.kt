@@ -11,9 +11,12 @@ object SyncPaths {
     /** MessageClient: watch がセッション開始時に phone を前面化する ping */
     const val SESSION_START_FOREGROUND = "/session/start-foreground"
 
-    /** MessageClient: phone から watch への遠隔操作 (停止 / 閾値ナッジ) */
+    /** MessageClient: phone から watch への遠隔操作 (停止 / Done / 閾値ナッジ) */
     const val SESSION_CMD_PREFIX = "/session/cmd/"
     const val SESSION_CMD_STOP = "/session/cmd/stop"
+
+    /** phone 側 Done ボタン: live snapshot を消して phone を dashboard に戻すトリガー */
+    const val SESSION_CMD_DONE = "/session/cmd/done"
     const val SESSION_CMD_THRESHOLD = "/session/cmd/threshold"
 
     fun session(id: String) = "$SESSIONS_PREFIX$id"

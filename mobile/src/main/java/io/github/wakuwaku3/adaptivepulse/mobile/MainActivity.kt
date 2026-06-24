@@ -140,6 +140,10 @@ class MainActivity : ComponentActivity() {
                 if (isDemo) DemoSessionController.stop()
                 else LiveSessionCommander.stop(applicationContext)
             },
+            onDone = {
+                if (isDemo) DemoSessionController.done()
+                else LiveSessionCommander.done(applicationContext)
+            },
         )
     }
 

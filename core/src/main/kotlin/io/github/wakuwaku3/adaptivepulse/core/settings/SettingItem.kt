@@ -38,14 +38,14 @@ enum class SettingItem(
         format = { "$it" },
     ),
     FatigueRatio(
-        title = "FATIGUE RATIO",
+        title = "EASE PACE HINT",
         read = { (it.fatigueRatio * 100).roundToInt() },
         write = { c, v -> c.copy(fatigueRatio = v / 100.0) },
         progression = { IntProgression.fromClosedRange(10, 90, 5) },
         format = { "$it %" },
     ),
     RecoveryFatigueRatio(
-        title = "RECOVERY FATIGUE",
+        title = "STOP HINT",
         read = { (it.recoveryFatigueRatio * 100).roundToInt() },
         write = { c, v -> c.copy(recoveryFatigueRatio = v / 100.0) },
         progression = { IntProgression.fromClosedRange(110, 300, 10) },
@@ -84,14 +84,6 @@ enum class SettingItem(
         read = { it.restingBpm },
         write = { c, v -> c.copy(restingBpm = v) },
         progression = { 30..100 },
-        format = { "$it bpm" },
-    ),
-    UpperBpmFatigueDecay(
-        title = "UPPER DECAY / CYCLE",
-        read = { it.upperBpmFatigueDecay },
-        write = { c, v -> c.copy(upperBpmFatigueDecay = v) },
-        // 0 = 無効、5 まで。clamp 下限 = lowerBpm+5 なので大きすぎる値は数サイクルで張り付く
-        progression = { 0..5 },
         format = { "$it bpm" },
     ),
     TargetCadenceHigh(

@@ -24,7 +24,15 @@ data class SessionConfig(
     val upperBpm: Int = HeartRateZones.defaultUpperBpm(ageYears, restingBpm),
     val lowerBpm: Int = HeartRateZones.defaultLowerBpm(ageYears, restingBpm),
     val targetCycles: Int = 5,
+    /**
+     * 高強度短縮の「ペースを緩めましょう」提案閾値: 現サイクルの高強度所要時間が
+     * 初回基準の本比率以下になったら engine が提案を出す。auto-brake は廃止 (FB 2026-06-24)。
+     */
     val fatigueRatio: Double = 0.5,
+    /**
+     * 回復遅延の「中断を検討してください」提案閾値: 現サイクルの回復所要時間が
+     * 基準の本比率以上になったら提案を出す。auto-brake は廃止 (FB 2026-06-24)。
+     */
     val recoveryFatigueRatio: Double = 1.5,
     val minBaseline: Duration = 45.seconds,
     // 上限-下限ギャップ ~30bpm (Karvonen 0.86/0.60) を前提に 4 分。
@@ -39,16 +47,6 @@ data class SessionConfig(
     val targetCadenceHigh: Int = 130,
     /** 回復フェーズの目標 cadence (SPM)。同様にユーザ設定のみ */
     val targetCadenceRecovery: Int = 90,
-    /**
-     * サイクル間 HR 閾値疲労 decay (bpm/cycle)。
-     * 教科書的 HIIT (時間 anchor) と違い、本アプリは HR 到達で次フェーズに進むため、
-     * 蓄積疲労で同強度の HR 到達が遅くなるサイクル後半で「永遠に届かない」状態に陥りやすい。
-     * 上限到達による回復遷移ごとに次サイクルの upperBpm を本値だけ下げる
-     * (= 「後半は同じ HR でなく、少し低めで切り上げる」の表明)。
-     * 0 を指定すれば decay 無効。clamp は lowerBpm + MIN_THRESHOLD_GAP。
-     * 永続化はしないセッション内のみの動的調整 (FB 2026-06-22)。
-     */
-    val upperBpmFatigueDecay: Int = 2,
 ) {
     init {
         // チャタリング防止のため上限<下限の逆転を構造的に弾く
@@ -65,6 +63,5 @@ data class SessionConfig(
         }
         require(targetCadenceHigh in 60..220) { "高強度 cadence は 60〜220 SPM の範囲" }
         require(targetCadenceRecovery in 30..180) { "回復 cadence は 30〜180 SPM の範囲" }
-        require(upperBpmFatigueDecay >= 0) { "疲労 decay は 0 以上 (0 で無効)" }
     }
 }

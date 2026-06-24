@@ -45,7 +45,6 @@ data class SessionConfigSnapshot(
     val targetCadenceHigh: Int = 130,
     val targetCadenceRecovery: Int = 90,
     val heightCm: Int? = null,
-    val upperBpmFatigueDecay: Int = 2,
 ) {
     companion object {
         fun from(config: SessionConfig) = SessionConfigSnapshot(
@@ -62,7 +61,6 @@ data class SessionConfigSnapshot(
             targetCadenceHigh = config.targetCadenceHigh,
             targetCadenceRecovery = config.targetCadenceRecovery,
             heightCm = config.heightCm,
-            upperBpmFatigueDecay = config.upperBpmFatigueDecay,
         )
     }
 }
@@ -88,7 +86,6 @@ data class SettingsDocument(
     val targetCadenceHigh: Int = 130,
     val targetCadenceRecovery: Int = 90,
     val heightCm: Int? = null,
-    val upperBpmFatigueDecay: Int = 2,
 ) {
     fun toSessionConfig() = SessionConfig(
         ageYears = ageYears,
@@ -104,7 +101,6 @@ data class SettingsDocument(
         targetCadenceHigh = targetCadenceHigh,
         targetCadenceRecovery = targetCadenceRecovery,
         heightCm = heightCm,
-        upperBpmFatigueDecay = upperBpmFatigueDecay,
     )
 
     companion object {
@@ -124,7 +120,6 @@ data class SettingsDocument(
             targetCadenceHigh = config.targetCadenceHigh,
             targetCadenceRecovery = config.targetCadenceRecovery,
             heightCm = config.heightCm,
-            upperBpmFatigueDecay = config.upperBpmFatigueDecay,
         )
     }
 }

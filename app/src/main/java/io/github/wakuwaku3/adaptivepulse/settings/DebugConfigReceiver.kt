@@ -34,10 +34,6 @@ class DebugConfigReceiver : BroadcastReceiver() {
                         intent.secondsExtra("high_timeout_secs", current.highPhaseTimeout),
                     recoveryTimeout =
                         intent.secondsExtra("recovery_timeout_secs", current.recoveryTimeout),
-                    upperBpmFatigueDecay = intent.intExtra(
-                        "upper_bpm_fatigue_decay",
-                        current.upperBpmFatigueDecay,
-                    ),
                 )
             }
             Log.i(TAG, "設定を更新: ${SettingsRepository(context).load()}")

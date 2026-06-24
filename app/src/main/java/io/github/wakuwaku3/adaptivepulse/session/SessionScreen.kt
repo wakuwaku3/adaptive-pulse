@@ -46,6 +46,7 @@ fun SessionScreen(
     state: SessionUiState,
     onStart: () -> Unit,
     onStop: () -> Unit,
+    onDone: () -> Unit,
     onOpenSettings: () -> Unit,
     onAdjustThreshold: (Int) -> Unit,
 ) {
@@ -56,7 +57,7 @@ fun SessionScreen(
         when (state) {
             SessionUiState.Idle -> IdleScreen(onStart = onStart, onOpenSettings = onOpenSettings)
             is SessionUiState.Running -> RunningScreen(state, onStop = onStop, onAdjustThreshold = onAdjustThreshold)
-            is SessionUiState.Finished -> FinishedScreen(state, onReset = onStop)
+            is SessionUiState.Finished -> FinishedScreen(state, onReset = onDone)
         }
     }
 }

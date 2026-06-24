@@ -41,6 +41,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import io.github.wakuwaku3.adaptivepulse.core.SessionSuggestion
+import io.github.wakuwaku3.adaptivepulse.core.SuggestionKind
 import io.github.wakuwaku3.adaptivepulse.core.sync.LivePhase
 import io.github.wakuwaku3.adaptivepulse.core.sync.SessionLiveSnapshot
 import kotlin.math.cos
@@ -48,20 +50,24 @@ import kotlin.math.sin
 
 /**
  * watch から流れてくるライブ状態を表示し、操作も受ける phone 画面。
- * 機材コンソール上に置いて視野の端で読む想定。タップ操作は閾値 ± と停止のみ。
+ * 機材コンソール上に置いて視野の端で読む想定。タップ操作は閾値 ± と停止/Done のみ。
  *
  * デザイン上の意図:
  * - HR (♥) を中央最大サイズで表示
  * - 回転体 (PaceEllipse) は active phase の target SPM (設定値) で回す。実測はしない
  * - DONE では楕円アニメを停止 (運動が終わっているのに回転が続くと違和感)
+ * - DONE 中はボタンを ✓ (Done) にして、押すまで dashboard に戻さない (FB 2026-06-24)
+ * - engine の行動提案 (ペース緩める / 中断) があれば日本語の banner で見せる。文言のみ日本語 (例外)
  */
 @Composable
 fun ActiveSessionScreen(
     snapshot: SessionLiveSnapshot,
     onAdjustThreshold: (Int) -> Unit,
     onStop: () -> Unit,
+    onDone: () -> Unit,
 ) {
     val phaseColor = colorFor(snapshot.phase)
+    val isDone = snapshot.phase == LivePhase.DONE
     Scaffold(containerColor = Color.Black) { innerPadding ->
         Column(
             modifier = Modifier
@@ -73,10 +79,13 @@ fun ActiveSessionScreen(
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             PhaseBadge(snapshot.phase, phaseColor)
+            snapshot.suggestion?.let { SuggestionBanner(it) }
             HeartRate(snapshot, phaseColor)
             CycleAndTimers(snapshot)
             Spacer(modifier = Modifier.height(2.dp))
-            ThresholdControl(snapshot, phaseColor, onAdjustThreshold)
+            if (!isDone) {
+                ThresholdControl(snapshot, phaseColor, onAdjustThreshold)
+            }
             PaceDisplay(snapshot, phaseColor)
             snapshot.calories?.let {
                 Text(
@@ -86,8 +95,41 @@ fun ActiveSessionScreen(
                 )
             }
             Spacer(modifier = Modifier.weight(1f))
-            StopButton(onStop)
+            if (isDone) DoneButton(phaseColor, onDone) else StopButton(onStop)
         }
+    }
+}
+
+/**
+ * 提案 banner: kind に応じた severity 色で枠を塗り、タイトル + 理由を日本語で出す。
+ * UI 全体は英語だが、判断を促す説明は誤読しないよう日本語で出す (FB 2026-06-24)。
+ */
+@Composable
+private fun SuggestionBanner(suggestion: SessionSuggestion) {
+    val tint = when (suggestion.kind) {
+        SuggestionKind.EASE_PACE -> MobileColors.Recover
+        SuggestionKind.CONSIDER_STOP -> MobileColors.High
+    }
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(tint.copy(alpha = 0.12f))
+            .border(width = 1.dp, color = tint.copy(alpha = 0.6f), shape = RoundedCornerShape(12.dp))
+            .padding(horizontal = 14.dp, vertical = 10.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Text(
+            text = suggestion.title,
+            color = tint,
+            fontSize = 18.sp,
+            fontWeight = FontWeight.SemiBold,
+        )
+        Text(
+            text = suggestion.reason,
+            color = MobileColors.Text,
+            fontSize = 14.sp,
+        )
     }
 }
 
@@ -304,6 +346,21 @@ private fun StopButton(onClick: () -> Unit) {
         contentAlignment = Alignment.Center,
     ) {
         Box(modifier = Modifier.size(22.dp).background(MobileColors.TextDim))
+    }
+}
+
+/** DONE 確認ボタン: ✓ グリフ + フェーズ色塗りで「完了」を明示する */
+@Composable
+private fun DoneButton(color: Color, onClick: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .size(72.dp)
+            .clip(CircleShape)
+            .background(color)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(text = "✓", color = Color.Black, fontSize = 36.sp, fontWeight = FontWeight.Bold)
     }
 }
 

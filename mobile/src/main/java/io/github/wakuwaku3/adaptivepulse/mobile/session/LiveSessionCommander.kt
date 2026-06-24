@@ -23,6 +23,9 @@ object LiveSessionCommander {
 
     fun stop(context: Context) = send(context, SyncPaths.SESSION_CMD_STOP, ByteArray(0))
 
+    /** Done 確認: live snapshot を消して phone を dashboard に戻す (Finished 画面から) */
+    fun done(context: Context) = send(context, SyncPaths.SESSION_CMD_DONE, ByteArray(0))
+
     fun adjustThreshold(context: Context, delta: Int) =
         send(context, SyncPaths.SESSION_CMD_THRESHOLD, encodeInt(delta))
 

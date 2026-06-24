@@ -9,8 +9,6 @@ import kotlin.time.Duration.Companion.seconds
 class IntervalEngineTest {
 
     // テストの見通しを優先し、サイクル数と時間を小さくした設定を基本にする
-    // 既存テストは upperBpm を一定として扱うため、fatigue decay は明示的に 0 にする
-    // (decay 自体は専用テストブロックで検証)
     private val config = SessionConfig(
         upperBpm = 155,
         lowerBpm = 140,
@@ -19,7 +17,6 @@ class IntervalEngineTest {
         minBaseline = 45.seconds,
         highPhaseTimeout = 3.minutes,
         recoveryTimeout = 3.minutes,
-        upperBpmFatigueDecay = 0,
     )
 
     /** (経過秒, bpm) の列を流し、発火したイベントを (経過秒, イベント) で集める */
@@ -110,7 +107,7 @@ class IntervalEngineTest {
     }
 
     @Test
-    fun `疲労ブレーキ - 基準の半分以下で上限到達したら現サイクルを最終化し回復完了で終了する`() {
+    fun `高強度短縮 - 基準の半分以下で上限到達したら EASE_PACE 提案を出し、auto-brake はしない`() {
         val engine = IntervalEngine(config.copy(targetCycles = 7))
         val events = run(
             engine,
@@ -119,24 +116,26 @@ class IntervalEngineTest {
                 60 to 156,  // 基準 = 60 秒
                 120 to 139, // サイクル1 完了
                 130 to 141,
-                155 to 156, // サイクル2: 25 秒 ≤ 60×0.5 → 疲労
-                215 to 139, // サイクル2 (最終化済み) の回復完了 → 終了
+                155 to 156, // サイクル2: 25 秒 ≤ 60×0.5 → 提案を出すだけ
             ),
         )
+        // auto-brake 廃止後は通常の EnterRecovery イベント。FatigueBrake は発火しない
         assertEquals(
             listOf(
                 60 to SessionEvent.EnterRecovery,
                 120 to SessionEvent.EnterHighIntensity,
-                155 to SessionEvent.FatigueBrake,
-                215 to SessionEvent.SessionFinished,
+                155 to SessionEvent.EnterRecovery,
             ),
             events,
         )
-        assertEquals(2, engine.finalCycle)
+        assertEquals(7, engine.finalCycle) // finalCycle を勝手に縮めない
+        kotlin.test.assertFalse(engine.fatigueBrakeFired) // 自動ブレーキフラグは立たない
+        val suggestion = engine.latestSuggestion!!
+        assertEquals(SuggestionKind.EASE_PACE, suggestion.kind)
     }
 
     @Test
-    fun `疲労ブレーキ - 境界値ちょうど (基準×係数) でも発動する`() {
+    fun `高強度短縮 - 境界値ちょうど (基準×係数) でも提案を出す`() {
         val engine = IntervalEngine(config.copy(targetCycles = 7))
         run(
             engine,
@@ -147,8 +146,9 @@ class IntervalEngineTest {
                 130 to 141,
             ),
         )
-        // 130 秒に下限超過 → 160 秒に上限到達 = 30 秒 = 60×0.5 ちょうど
-        assertEquals(SessionEvent.FatigueBrake, engine.onHeartRate(156, 160.seconds))
+        // 130 秒に下限超過 → 160 秒に上限到達 = 30 秒 = 60×0.5 ちょうど → 提案を出すだけ
+        assertEquals(SessionEvent.EnterRecovery, engine.onHeartRate(156, 160.seconds))
+        assertEquals(SuggestionKind.EASE_PACE, engine.latestSuggestion?.kind)
     }
 
     @Test
@@ -229,17 +229,19 @@ class IntervalEngineTest {
     }
 
     @Test
-    fun `per-cycle 高強度所要時間と疲労ブレーキ発動が履歴用に残る`() {
+    fun `per-cycle 高強度所要時間が履歴用に残り、短縮時は EASE_PACE 提案が出ている`() {
         val engine = IntervalEngine(config.copy(targetCycles = 7))
         run(
             engine,
             listOf(
                 0 to 141, 60 to 156, // サイクル1: 60 秒 (基準)
-                120 to 139, 130 to 141, 155 to 156, // サイクル2: 25 秒 → 疲労
+                120 to 139, 130 to 141, 155 to 156, // サイクル2: 25 秒 → 提案を出すだけ
             ),
         )
         assertEquals(listOf(60.seconds, 25.seconds), engine.highDurations)
-        kotlin.test.assertTrue(engine.fatigueBrakeFired)
+        // auto-brake は無し、提案は残っている
+        kotlin.test.assertFalse(engine.fatigueBrakeFired)
+        assertEquals(SuggestionKind.EASE_PACE, engine.latestSuggestion?.kind)
     }
 
     @Test
@@ -257,18 +259,20 @@ class IntervalEngineTest {
     }
 
     @Test
-    fun `currentCycle - 疲労ブレーキ発動時もカウントは進める (最終サイクルとして扱う)`() {
+    fun `currentCycle - 提案 (EASE_PACE) が出てもセッションは続き、サイクルは加算される`() {
         val engine = IntervalEngine(config.copy(targetCycles = 7))
         run(
             engine,
             listOf(
                 0 to 141, 60 to 156, 120 to 139, // サイクル1
-                130 to 141, 155 to 156,          // サイクル2 高強度 25 秒 → 疲労ブレーキ (currentCycle=2)
-                215 to 139,                       // サイクル2 (最終化) 回復完了
+                130 to 141, 155 to 156,          // サイクル2 高強度 25 秒 → EASE_PACE 提案を出すだけ
+                215 to 139,                       // サイクル2 回復完了 → サイクル 3 へ
             ),
         )
         assertEquals(2, engine.currentCycle)
-        assertEquals(2, engine.finalCycle)
+        // 自動ブレーキ廃止により finalCycle は元のまま
+        assertEquals(7, engine.finalCycle)
+        assertEquals(SuggestionKind.EASE_PACE, engine.latestSuggestion?.kind)
     }
 
     @Test
@@ -340,7 +344,7 @@ class IntervalEngineTest {
     }
 
     @Test
-    fun `回復疲労ブレーキ - 回復時間が基準の係数倍を超えたらサイクル完了で終了する`() {
+    fun `回復遅延 - 回復時間が基準の係数倍を超えたら CONSIDER_STOP 提案を出し、auto-brake はしない`() {
         val engine = IntervalEngine(config.copy(targetCycles = 7))
         val events = run(
             engine,
@@ -350,7 +354,7 @@ class IntervalEngineTest {
                 120 to 139,  // 回復1 60 秒 (基準)
                 130 to 141,
                 190 to 156,  // 高強度2 60 秒
-                280 to 139,  // 回復2 90 秒 = 60×1.5 → 疲労 → 終了
+                280 to 139,  // 回復2 90 秒 = 60×1.5 → 提案を出すだけで継続
             ),
         )
         assertEquals(
@@ -358,19 +362,20 @@ class IntervalEngineTest {
                 60 to SessionEvent.EnterRecovery,
                 120 to SessionEvent.EnterHighIntensity,
                 190 to SessionEvent.EnterRecovery,
-                280 to SessionEvent.SessionFinished,
+                280 to SessionEvent.EnterHighIntensity,
             ),
             events,
         )
-        assertEquals(Phase.FINISHED, engine.phase)
-        kotlin.test.assertTrue(engine.fatigueBrakeFired)
+        assertEquals(Phase.HIGH_INTENSITY, engine.phase)
+        kotlin.test.assertFalse(engine.fatigueBrakeFired)
         assertEquals(2, engine.currentCycle)
-        assertEquals(2, engine.finalCycle)
+        assertEquals(7, engine.finalCycle) // 自動短縮しない
         assertEquals(60.seconds, engine.recoveryBaseline)
+        assertEquals(SuggestionKind.CONSIDER_STOP, engine.latestSuggestion?.kind)
     }
 
     @Test
-    fun `回復疲労ブレーキ - 基準内なら継続する`() {
+    fun `回復遅延 - 基準内なら提案は出ない`() {
         val engine = IntervalEngine(config.copy(targetCycles = 7))
         run(
             engine,
@@ -380,40 +385,18 @@ class IntervalEngineTest {
             ),
         )
         kotlin.test.assertFalse(engine.fatigueBrakeFired)
+        kotlin.test.assertNull(engine.latestSuggestion)
         assertEquals(Phase.HIGH_INTENSITY, engine.phase)
         assertEquals(listOf(60.seconds, 89.seconds), engine.recoveryDurations)
     }
 
     @Test
-    fun `回復疲労ブレーキ - 高強度疲労で短縮された最終サイクルでは再発動しない`() {
-        val engine = IntervalEngine(config.copy(targetCycles = 7))
-        val events = run(
-            engine,
-            listOf(
-                0 to 141, 60 to 156, 120 to 139,  // サイクル1: 回復 60 秒 (基準)
-                130 to 141,
-                155 to 156,                        // サイクル2 高強度 25 秒 → 高強度疲労
-                250 to 139,                        // サイクル2 回復 95 秒 (> 60×1.5=90)
-            ),
-        )
-        // 高強度疲労で finalCycle=2 になっているので、回復が基準超えでも二重発動せず終了のみ
-        assertEquals(
-            listOf(
-                60 to SessionEvent.EnterRecovery,
-                120 to SessionEvent.EnterHighIntensity,
-                155 to SessionEvent.FatigueBrake,
-                250 to SessionEvent.SessionFinished,
-            ),
-            events,
-        )
-    }
-
-    @Test
-    fun `回復疲労ブレーキ - targetCycles=1 では発動しない (基準を設定して終了)`() {
+    fun `回復遅延 - targetCycles=1 では提案も出ない (基準を設定して終了)`() {
         val engine = IntervalEngine(config.copy(targetCycles = 1))
         run(engine, listOf(0 to 141, 60 to 156, 120 to 139))
         assertEquals(Phase.FINISHED, engine.phase)
         kotlin.test.assertFalse(engine.fatigueBrakeFired)
+        kotlin.test.assertNull(engine.latestSuggestion)
         assertEquals(60.seconds, engine.recoveryBaseline)
     }
 
@@ -464,62 +447,17 @@ class IntervalEngineTest {
         assertEquals(80, engine.activeTargetCadence())
     }
 
-    // ----- HR 閾値の per-cycle 疲労 decay (FB 2026-06-22) -----
+    // ----- 上限到達後の上限保持 (auto-decay 廃止後) -----
 
     @Test
-    fun `疲労 decay - 上限到達で回復遷移する毎に upperBpm が decay 分下がる`() {
-        val engine = IntervalEngine(config.copy(upperBpmFatigueDecay = 2, targetCycles = 7))
+    fun `上限到達で回復に入っても upperBpm は不変 (auto-decay 廃止)`() {
+        val engine = IntervalEngine(config.copy(targetCycles = 5))
         assertEquals(155, engine.upperBpm)
-        // cycle 1: 上限 155 → 到達 → 153 (decay 2)
         run(engine, listOf(0 to 141, 60 to 156))
-        assertEquals(153, engine.upperBpm)
-        // cycle 2: 上限 153 → 154 で到達 → 151
-        run(engine, listOf(120 to 139, 130 to 141, 200 to 154))
-        assertEquals(151, engine.upperBpm)
-        // cycle 3: 上限 151 → 152 で到達 → 149
-        run(engine, listOf(260 to 139, 270 to 141, 330 to 152))
-        assertEquals(149, engine.upperBpm)
-    }
-
-    @Test
-    fun `疲労 decay - lowerBpm + 最小ギャップ まで下がったらそれ以上下がらない`() {
-        // upperBpm 155, lowerBpm 140, decay 7, MIN_THRESHOLD_GAP 5 → clamp 下限 145
-        // cycle 1: 155 - 7 = 148 (clamp 未到達)
-        // cycle 2: 148 - 7 = 141 → clamp 145
-        // cycle 3: 145 - 7 = 138 → clamp 145 (張り付き)
-        val engine = IntervalEngine(
-            config.copy(upperBpm = 155, lowerBpm = 140, upperBpmFatigueDecay = 7, targetCycles = 5),
-        )
-        run(engine, listOf(0 to 141, 60 to 156))
-        assertEquals(148, engine.upperBpm)
-        run(engine, listOf(120 to 139, 130 to 141, 200 to 149))
-        assertEquals(145, engine.upperBpm)
-        run(engine, listOf(260 to 139, 270 to 141, 330 to 146))
-        assertEquals(145, engine.upperBpm)
-    }
-
-    @Test
-    fun `疲労 decay - decay=0 なら upperBpm は不変`() {
-        val engine = IntervalEngine(config.copy(upperBpmFatigueDecay = 0, targetCycles = 5))
-        run(engine, listOf(0 to 141, 60 to 156, 120 to 139, 130 to 141, 200 to 156))
+        // 上限 155 のまま
         assertEquals(155, engine.upperBpm)
-    }
-
-    @Test
-    fun `疲労 decay - 高強度タイムアウトでは decay は発動しない (= 即終了なので意味が無い)`() {
-        val engine = IntervalEngine(config.copy(upperBpmFatigueDecay = 5))
-        run(engine, hold(0, 185, 150)) // タイムアウト
-        // 上限到達せず終了 = upperBpm 不変
+        run(engine, listOf(120 to 139, 130 to 141, 200 to 156))
         assertEquals(155, engine.upperBpm)
-    }
-
-    @Test
-    fun `疲労 decay - 手動 adjust と独立に重なる`() {
-        val engine = IntervalEngine(config.copy(upperBpmFatigueDecay = 2, targetCycles = 5))
-        engine.adjustActiveThreshold(+5) // 155 → 160
-        assertEquals(160, engine.upperBpm)
-        run(engine, listOf(0 to 141, 60 to 161)) // 上限 160 到達 → 158
-        assertEquals(158, engine.upperBpm)
     }
 
 }

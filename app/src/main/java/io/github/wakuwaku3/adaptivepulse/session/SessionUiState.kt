@@ -1,6 +1,7 @@
 package io.github.wakuwaku3.adaptivepulse.session
 
 import io.github.wakuwaku3.adaptivepulse.core.Phase
+import io.github.wakuwaku3.adaptivepulse.core.SessionSuggestion
 import kotlin.time.Duration
 
 sealed interface SessionUiState {
@@ -27,6 +28,8 @@ sealed interface SessionUiState {
         val targetCadenceHigh: Int = 0,
         /** 回復の目標 cadence (SPM)。同上 */
         val targetCadenceRecovery: Int = 0,
+        /** engine が直近で出した行動提案。watch では未表示、phone ライブ画面で読ませる想定 */
+        val suggestion: SessionSuggestion? = null,
     ) : SessionUiState
 
     data class Finished(
@@ -34,5 +37,7 @@ sealed interface SessionUiState {
         val elapsed: Duration,
         val calories: Double?,
         val zoneRatio: Double?,
+        /** Finished 画面でも直近の提案を読み返せるよう保持する */
+        val suggestion: SessionSuggestion? = null,
     ) : SessionUiState
 }
