@@ -70,12 +70,6 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        // Android 8.1+ では full-screen intent 起動時にロック画面の上で表示するためのフラグ。
-        // 普段のフォアグラウンドでは影響しない
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
-            setShowWhenLocked(true)
-            setTurnScreenOn(true)
-        }
         setContent {
             AdaptivePulseMobileTheme {
                 Root()
@@ -106,13 +100,23 @@ class MainActivity : ComponentActivity() {
 
     @Composable
     private fun ActiveSession(snapshot: io.github.wakuwaku3.adaptivepulse.core.sync.SessionLiveSnapshot) {
-        // ライブ画面表示中は画面オフを抑止する (要件「セッション中は画面オフを抑止」)
+        // ライブ画面表示中だけ画面オフを抑止し、full-screen intent で起動された
+        // 場合に限ってロック画面の上に出す。Activity 単位で常時有効にすると
+        // ダッシュボードがロック解除前に丸見えになるため、ライフサイクルに紐付ける
         val view = LocalView.current
         DisposableEffect(Unit) {
             val window = (view.context as? android.app.Activity)?.window
             window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+                setShowWhenLocked(true)
+                setTurnScreenOn(true)
+            }
             onDispose {
                 window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+                    setShowWhenLocked(false)
+                    setTurnScreenOn(false)
+                }
                 LiveSessionLauncher.dismiss(applicationContext)
             }
         }
