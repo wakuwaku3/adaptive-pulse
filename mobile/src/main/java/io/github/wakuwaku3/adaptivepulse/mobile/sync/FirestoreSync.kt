@@ -127,8 +127,15 @@ object FirestoreSync {
     /**
      * Health Connect から取り込んだ 1 日分を upsert する。doc id を `record.date` 固定に
      * することで「同じ日付の上書き」になり、初回 back-fill と日次同期で重複が出ない。
+     *
+     * `record.isEmpty` (= `date` 以外全 null) のときは書き込まない。HC が一時的に応答を
+     * 返さない瞬間に sync が走ると、過去に正しく入っていた行を null で潰してしまうため。
      */
     suspend fun upsertDailyHealth(record: DailyHealthRecord): Boolean {
+        if (record.isEmpty) {
+            Log.i(TAG, "dailyMetrics 空レコードは skip: ${record.date}")
+            return true
+        }
         val uid = uid() ?: return false
         val ref = userDoc(uid)?.collection("dailyMetrics")?.document(record.date) ?: return false
         return runCatching {

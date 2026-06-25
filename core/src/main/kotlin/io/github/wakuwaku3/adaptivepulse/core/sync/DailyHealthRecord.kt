@@ -66,7 +66,15 @@ data class DailyHealthRecord(
     val spo2MinPct: Double? = null,
     val respiratoryRateAvg: Double? = null,
     val skinTemperatureDeltaC: Double? = null,
-)
+) {
+    /**
+     * `date` 以外のすべてのフィールドが null。HC が一時的に応答を返さない / その日にデータが
+     * 一切ない、で発生する。Firestore は LWW の full replace なので、これを書くと過去に
+     * 正しく入っていた行を null まみれに上書きしてしまう。書き込み前に弾く目印に使う。
+     */
+    val isEmpty: Boolean
+        get() = this == DailyHealthRecord(date = date)
+}
 
 /** エクスポート 1 ファイルの top-level シェイプ */
 @Serializable

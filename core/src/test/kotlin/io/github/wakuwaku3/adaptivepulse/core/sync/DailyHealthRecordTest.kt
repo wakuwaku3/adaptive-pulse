@@ -3,6 +3,8 @@ package io.github.wakuwaku3.adaptivepulse.core.sync
 import io.github.wakuwaku3.adaptivepulse.core.SessionConfig
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 import kotlinx.serialization.json.Json
 
 class DailyHealthRecordTest {
@@ -44,6 +46,16 @@ class DailyHealthRecordTest {
         assertEquals(record, decoded)
         assertEquals(null, decoded.weightKg)
         assertEquals(null, decoded.intakeKcal)
+    }
+
+    @Test
+    fun `isEmpty は date 以外が全 null のときだけ true`() {
+        // HC が一時的に何も返さなかった日 (Firestore 書き込みを skip すべきケース)
+        assertTrue(DailyHealthRecord(date = "2026-06-18").isEmpty)
+        // どこか 1 つでも値が入っていれば書き込む
+        assertFalse(DailyHealthRecord(date = "2026-06-18", steps = 0L).isEmpty)
+        assertFalse(DailyHealthRecord(date = "2026-06-18", sleepDurationMin = 1L).isEmpty)
+        assertFalse(DailyHealthRecord(date = "2026-06-18", weightKg = 90.0).isEmpty)
     }
 
     @Test
