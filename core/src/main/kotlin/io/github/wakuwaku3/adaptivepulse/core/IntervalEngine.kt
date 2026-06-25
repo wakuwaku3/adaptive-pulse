@@ -107,7 +107,10 @@ class IntervalEngine(
     fun onTimePassed(elapsed: Duration): SessionEvent? {
         val limit = when (phase) {
             Phase.HIGH_INTENSITY -> config.highPhaseTimeout
-            Phase.RECOVERY -> config.recoveryTimeout
+            Phase.RECOVERY -> {
+                evaluateRecoveryFatigue(elapsed)
+                config.recoveryTimeout
+            }
             Phase.FINISHED -> return null
         }
         if (elapsed - phaseStartedAt <= limit) return null
@@ -116,6 +119,24 @@ class IntervalEngine(
         finalCycle = currentCycle
         phase = Phase.FINISHED
         return SessionEvent.SessionFinished
+    }
+
+    // 回復中の閾値超過は完了の瞬間に判定すると次サイクル開始のクリアと衝突して見えないので、
+    // 回復フェーズ中のティックで判定して提案を立てる。提案は次サイクル開始時に completeCycle がクリアする。
+    private fun evaluateRecoveryFatigue(elapsed: Duration) {
+        if (currentCycle >= finalCycle) return
+        if (latestSuggestion?.kind == SuggestionKind.CONSIDER_STOP) return
+        val base = recoveryBaseline ?: return
+        val elapsedInRecovery = elapsed - phaseStartedAt
+        if (elapsedInRecovery < base * config.recoveryFatigueRatio) return
+        val ratioPct = (config.recoveryFatigueRatio * 100).toInt()
+        latestSuggestion = SessionSuggestion(
+            kind = SuggestionKind.CONSIDER_STOP,
+            title = "中断を検討してください",
+            reason = "回復に ${elapsedInRecovery.inWholeSeconds} 秒かかっています " +
+                "(初回 ${base.inWholeSeconds} 秒の ${ratioPct}% 以上)。" +
+                "自律神経の回復が追いついていない可能性があるので、無理せず中断も選んでください。",
+        )
     }
 
     private fun onHighIntensitySample(bpm: Int, elapsed: Duration): SessionEvent? {
@@ -203,20 +224,8 @@ class IntervalEngine(
         val recoveryDuration = elapsed - phaseStartedAt
         measuredRecoveryDurations += recoveryDuration
 
-        val base = recoveryBaseline
-        if (base == null && baseline != null) {
+        if (recoveryBaseline == null && baseline != null) {
             recoveryBaseline = recoveryDuration
-        } else if (base != null && recoveryDuration >= base * config.recoveryFatigueRatio && currentCycle < finalCycle) {
-            val baseSec = base.inWholeSeconds
-            val currentSec = recoveryDuration.inWholeSeconds
-            val ratioPct = (config.recoveryFatigueRatio * 100).toInt()
-            latestSuggestion = SessionSuggestion(
-                kind = SuggestionKind.CONSIDER_STOP,
-                title = "中断を検討してください",
-                reason = "回復に ${currentSec} 秒かかりました " +
-                    "(初回 ${baseSec} 秒の ${ratioPct}% 以上)。" +
-                    "自律神経の回復が追いついていない可能性があるので、無理せず中断も選んでください。",
-            )
         }
 
         if (currentCycle >= finalCycle) {
@@ -227,6 +236,8 @@ class IntervalEngine(
         phaseStartedAt = elapsed
         cycleStartedAt = elapsed
         measureStartedAt = null
+        // 直前の回復フェーズで出した提案は新サイクル開始でリセットする (FB 2026-06-25)
+        latestSuggestion = null
         return SessionEvent.EnterHighIntensity
     }
 

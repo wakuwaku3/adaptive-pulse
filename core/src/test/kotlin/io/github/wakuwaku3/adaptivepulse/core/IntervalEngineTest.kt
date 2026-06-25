@@ -266,13 +266,14 @@ class IntervalEngineTest {
             listOf(
                 0 to 141, 60 to 156, 120 to 139, // サイクル1
                 130 to 141, 155 to 156,          // サイクル2 高強度 25 秒 → EASE_PACE 提案を出すだけ
-                215 to 139,                       // サイクル2 回復完了 → サイクル 3 へ
+                215 to 139,                       // サイクル2 回復完了 → サイクル 3 へ (提案はクリア)
             ),
         )
         assertEquals(2, engine.currentCycle)
         // 自動ブレーキ廃止により finalCycle は元のまま
         assertEquals(7, engine.finalCycle)
-        assertEquals(SuggestionKind.EASE_PACE, engine.latestSuggestion?.kind)
+        // 提案は次サイクル開始時にクリアされる
+        assertNull(engine.latestSuggestion)
     }
 
     @Test
@@ -344,34 +345,48 @@ class IntervalEngineTest {
     }
 
     @Test
-    fun `回復遅延 - 回復時間が基準の係数倍を超えたら CONSIDER_STOP 提案を出し、auto-brake はしない`() {
+    fun `回復遅延 - 回復中に基準の係数倍を超えた瞬間に CONSIDER_STOP 提案を出し、次サイクル開始でクリアする`() {
         val engine = IntervalEngine(config.copy(targetCycles = 7))
-        val events = run(
+        run(
             engine,
             listOf(
                 0 to 141,
                 60 to 156,   // 高強度1 60 秒 (基準)
-                120 to 139,  // 回復1 60 秒 (基準)
+                120 to 139,  // 回復1 60 秒 → recoveryBaseline = 60 秒
                 130 to 141,
-                190 to 156,  // 高強度2 60 秒
-                280 to 139,  // 回復2 90 秒 = 60×1.5 → 提案を出すだけで継続
+                190 to 156,  // 高強度2 → 回復開始
             ),
         )
-        assertEquals(
-            listOf(
-                60 to SessionEvent.EnterRecovery,
-                120 to SessionEvent.EnterHighIntensity,
-                190 to SessionEvent.EnterRecovery,
-                280 to SessionEvent.EnterHighIntensity,
-            ),
-            events,
-        )
-        assertEquals(Phase.HIGH_INTENSITY, engine.phase)
+        assertEquals(60.seconds, engine.recoveryBaseline)
+        // 回復中の閾値未満では提案は出ない
+        engine.onTimePassed(279.seconds)
+        assertNull(engine.latestSuggestion)
+        // 60×1.5=90 秒に到達した瞬間に CONSIDER_STOP を出す
+        engine.onTimePassed(280.seconds)
+        assertEquals(SuggestionKind.CONSIDER_STOP, engine.latestSuggestion?.kind)
+        // 下限を割って次サイクルが始まったら提案はクリアされる
+        assertEquals(SessionEvent.EnterHighIntensity, engine.onHeartRate(139, 290.seconds))
+        assertNull(engine.latestSuggestion)
         kotlin.test.assertFalse(engine.fatigueBrakeFired)
         assertEquals(2, engine.currentCycle)
         assertEquals(7, engine.finalCycle) // 自動短縮しない
-        assertEquals(60.seconds, engine.recoveryBaseline)
-        assertEquals(SuggestionKind.CONSIDER_STOP, engine.latestSuggestion?.kind)
+    }
+
+    @Test
+    fun `提案クリア - 回復中に出した EASE_PACE は次サイクル開始時にクリアされる`() {
+        val engine = IntervalEngine(config.copy(targetCycles = 7))
+        run(
+            engine,
+            listOf(
+                0 to 141, 60 to 156, 120 to 139,    // サイクル1: 基準確定
+                130 to 141, 155 to 156,             // サイクル2 高強度 25 秒 → EASE_PACE 提案
+            ),
+        )
+        assertEquals(SuggestionKind.EASE_PACE, engine.latestSuggestion?.kind)
+        assertEquals(Phase.RECOVERY, engine.phase)
+        // 回復完了 (= 次サイクル開始) で提案はクリア
+        assertEquals(SessionEvent.EnterHighIntensity, engine.onHeartRate(139, 215.seconds))
+        assertNull(engine.latestSuggestion)
     }
 
     @Test
