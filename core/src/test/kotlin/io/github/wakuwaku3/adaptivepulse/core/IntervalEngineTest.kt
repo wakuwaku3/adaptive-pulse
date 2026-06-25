@@ -107,6 +107,40 @@ class IntervalEngineTest {
     }
 
     @Test
+    fun `最大基準時間ガード - 初回が長すぎたら 2 サイクル目を基準にする (心拍 onset 反応で長くなったケース)`() {
+        // maxBaseline = 150 秒 (デフォルト)。初回が 160 秒 → 範囲外 → 2 サイクル目で確定
+        val engine = IntervalEngine(config.copy(targetCycles = 7))
+        run(
+            engine,
+            listOf(
+                0 to 100, // セッション開始 (ウォームアップ)
+                10 to 141, // 計測開始
+                170 to 156, // 上限到達 = 160 秒 (> maxBaseline 150 秒) → 採用しない
+                230 to 139, // サイクル1 完了
+                240 to 141,
+                300 to 156, // サイクル2: 60 秒 → これを基準にする
+            ),
+        )
+        assertEquals(60.seconds, engine.baseline)
+        // 採用された場合: 160×0.5=80 秒閾値 → サイクル2 (60秒) が EASE_PACE 擬陽性を起こすが、
+        // 不採用なら 60×0.5=30 秒閾値 → 60 秒は閾値超え → 提案出ない
+        assertNull(engine.latestSuggestion)
+    }
+
+    @Test
+    fun `最大基準時間ガード - 境界値 (= maxBaseline ちょうど) は採用する`() {
+        val engine = IntervalEngine(config.copy(maxBaseline = 90.seconds))
+        run(
+            engine,
+            listOf(
+                0 to 141, // 計測開始
+                90 to 156, // 上限到達 = 90 秒 = maxBaseline ちょうど → 採用
+            ),
+        )
+        assertEquals(90.seconds, engine.baseline)
+    }
+
+    @Test
     fun `高強度短縮 - 基準の半分以下で上限到達したら EASE_PACE 提案を出し、auto-brake はしない`() {
         val engine = IntervalEngine(config.copy(targetCycles = 7))
         val events = run(
@@ -222,10 +256,24 @@ class IntervalEngineTest {
     fun `ゾーン滞在率 - 下限〜上限の帯にいたサンプルの割合を返す`() {
         val metrics = SessionMetrics(config)
         assertNull(metrics.zoneRatio)
-        listOf(120, 140, 150, 155, 160).forEach(metrics::onHeartRate) // 帯内は 140/150/155
+        listOf(120, 140, 150, 155, 160).forEach { metrics.onHeartRate(it, inMeasurement = true) } // 帯内は 140/150/155
         assertEquals(0.6, metrics.zoneRatio!!, 1e-9)
         assertEquals(160, metrics.maxBpm)
         assertEquals(145, metrics.avgBpm)
+    }
+
+    @Test
+    fun `ゾーン滞在率 - inMeasurement=false のサンプルは算入しない (ウォームアップ除外)`() {
+        val metrics = SessionMetrics(config)
+        // ウォームアップ中の低心拍は捨てる
+        listOf(80, 100, 120).forEach { metrics.onHeartRate(it, inMeasurement = false) }
+        assertNull(metrics.zoneRatio)
+        assertNull(metrics.avgBpm)
+        assertNull(metrics.maxBpm)
+        // 計測開始後だけ算入される
+        listOf(141, 150, 156).forEach { metrics.onHeartRate(it, inMeasurement = true) }
+        assertEquals(149, metrics.avgBpm) // (141+150+156)/3 = 149
+        assertEquals(156, metrics.maxBpm)
     }
 
     @Test
@@ -342,6 +390,25 @@ class IntervalEngineTest {
         kotlin.test.assertFailsWith<IllegalArgumentException> { SessionConfig(recoveryFatigueRatio = 1.0) }
         kotlin.test.assertFailsWith<IllegalArgumentException> { SessionConfig(ageYears = 5) }
         kotlin.test.assertFailsWith<IllegalArgumentException> { SessionConfig(restingBpm = 20) }
+        kotlin.test.assertFailsWith<IllegalArgumentException> {
+            SessionConfig(minBaseline = 60.seconds, maxBaseline = 45.seconds)
+        }
+    }
+
+    @Test
+    fun `cycleStartedAt - ウォームアップ中は null、計測開始時点でセットされ、サイクル間で null に戻る`() {
+        val engine = IntervalEngine(config)
+        kotlin.test.assertNull(engine.cycleStartedAt) // セッション開始直後 (ウォームアップ中)
+        engine.onHeartRate(120, 10.seconds)
+        kotlin.test.assertNull(engine.cycleStartedAt) // まだ下限未満
+        engine.onHeartRate(141, 30.seconds) // 下限超過 = 計測開始
+        assertEquals(30.seconds, engine.cycleStartedAt)
+        engine.onHeartRate(156, 90.seconds) // 上限到達 → 回復へ
+        assertEquals(30.seconds, engine.cycleStartedAt) // 回復中も値は残る (UI 表示用)
+        engine.onHeartRate(139, 150.seconds) // 回復完了 → サイクル2 高強度開始
+        kotlin.test.assertNull(engine.cycleStartedAt) // サイクル間移行で null
+        engine.onHeartRate(141, 160.seconds) // 下限再超過 = サイクル2 計測開始
+        assertEquals(160.seconds, engine.cycleStartedAt)
     }
 
     @Test

@@ -35,6 +35,12 @@ data class SessionConfig(
      */
     val recoveryFatigueRatio: Double = 1.5,
     val minBaseline: Duration = 45.seconds,
+    // 心拍 onset kinetics の時定数 τ ≈ 30-60 秒 (Linnarsson 1974, Whipp & Wasserman 1972) で
+    // 3τ ≈ 90-180 秒が「正常な onset 反応」の範疇。HIIT 文献 (Buchheit & Laursen 2013) でも
+    // サイクル 1 が ≥90% HRmax 帯に達するのは 60-150 秒。この上端を取り、これを超える初回
+    // 高強度時間は「onset 範疇外 (設定ミスマッチ / モダリティ未慣れ / センサー遅延)」として
+    // 基準にしない (2 サイクル目で基準確定)。highPhaseTimeout 240 秒の安全マージンも確保する
+    val maxBaseline: Duration = 150.seconds,
     // 上限-下限ギャップ ~30bpm (Karvonen 0.86/0.60) を前提に 4 分。
     // HRR は 1 分目 ~25-30bpm 降下後プラトーする (Imai 1994, Cole 1999) ため、
     // 3 分だと後半サイクルで届かないリスクが大きい
@@ -55,6 +61,9 @@ data class SessionConfig(
         require(fatigueRatio > 0.0 && fatigueRatio < 1.0) { "早期終了係数は 0 < r < 1" }
         // 回復遅延係数は「基準より長くなったら疲労」なので r > 1。1 だと初回サイクル = 疲労になる
         require(recoveryFatigueRatio > 1.0) { "回復疲労係数は r > 1" }
+        require(maxBaseline > minBaseline) {
+            "最大基準時間 ($maxBaseline) は最低基準時間 ($minBaseline) より長いこと"
+        }
         require(ageYears in 10..120) { "年齢は 10〜120 の範囲" }
         require(restingBpm in 30..120) { "安静時心拍は 30〜120 の範囲" }
         require(heightCm == null || heightCm in 100..230) { "身長は 100〜230 cm の範囲" }

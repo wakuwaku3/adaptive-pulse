@@ -65,8 +65,11 @@ class SessionRunner(
         sourceFactory { engine.phase }.samples().first { sample ->
             lastBpm = sample.bpm
             sample.totalCalories?.let { calories = it }
-            metrics.onHeartRate(sample.bpm)
-            update(engine.onHeartRate(sample.bpm, mark.elapsedNow()))
+            // engine を先に進めてから metrics に渡すことで、下限上向き超過の「境界サンプル」も
+            // (= isWarmingUp が false に倒れた直後の状態で) 算入する
+            val event = engine.onHeartRate(sample.bpm, mark.elapsedNow())
+            metrics.onHeartRate(sample.bpm, inMeasurement = !engine.isWarmingUp)
+            update(event)
             engine.phase == Phase.FINISHED
         }
         ticker.cancel()
@@ -110,7 +113,7 @@ class SessionRunner(
                     currentCycle = engine.currentCycle,
                     finalCycle = engine.finalCycle,
                     elapsed = elapsed,
-                    cycleElapsed = elapsed - engine.cycleStartedAt,
+                    cycleElapsed = engine.cycleStartedAt?.let { elapsed - it } ?: Duration.ZERO,
                     phaseElapsed = elapsed - engine.phaseStartedAt,
                     calories = calories,
                     upperBpm = engine.upperBpm,

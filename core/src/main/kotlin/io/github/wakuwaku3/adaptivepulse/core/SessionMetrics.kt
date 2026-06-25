@@ -3,6 +3,10 @@ package io.github.wakuwaku3.adaptivepulse.core
 /**
  * セッションのトレーニング品質メトリクス。心拍サンプルは約 1Hz で届く前提のため、
  * サンプル数の比でゾーン滞在率を近似する (時間重み付けはしない)。
+ *
+ * ウォームアップ区間 (= サイクル 1 開始から心拍が下限閾値を上向きに超えるまで) の低心拍
+ * サンプルは zoneRatio/avgBpm/maxBpm に算入しない (`requirements.md` のウォームアップ除外を
+ * 高強度所要時間以外の指標にも一貫適用するため)。
  */
 class SessionMetrics(private val config: SessionConfig) {
 
@@ -13,7 +17,8 @@ class SessionMetrics(private val config: SessionConfig) {
     var maxBpm: Int? = null
         private set
 
-    fun onHeartRate(bpm: Int) {
+    fun onHeartRate(bpm: Int, inMeasurement: Boolean) {
+        if (!inMeasurement) return
         totalSamples++
         bpmSum += bpm
         if (bpm > (maxBpm ?: Int.MIN_VALUE)) maxBpm = bpm

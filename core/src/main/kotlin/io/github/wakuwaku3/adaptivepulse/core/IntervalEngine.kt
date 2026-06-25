@@ -77,8 +77,12 @@ class IntervalEngine(
     var phaseStartedAt: Duration = Duration.ZERO
         private set
 
-    /** 現サイクルの高強度フェーズが始まった時刻 (= サイクル開始時刻)。UI のサイクル経過時間に使う */
-    var cycleStartedAt: Duration = Duration.ZERO
+    /**
+     * 現サイクルの計測開始時刻 (= 心拍が下限閾値を上向きに超えた瞬間)。UI のサイクル経過時間に使う。
+     * ウォームアップ中 (= サイクル 1 開始から下限超過まで) と、サイクル 2 以降の「回復終了 → 下限再超過」
+     * までの一瞬は null になる。non-null になるのは highDurationsSec と完全に同じ起点。
+     */
+    var cycleStartedAt: Duration? = null
         private set
 
     // 高強度所要時間は「下限閾値を上向きに超えてから上限到達まで」で測る。
@@ -142,6 +146,7 @@ class IntervalEngine(
     private fun onHighIntensitySample(bpm: Int, elapsed: Duration): SessionEvent? {
         if (measureStartedAt == null && bpm > lowerBpm) {
             measureStartedAt = elapsed
+            cycleStartedAt = elapsed
         }
         if (bpm <= upperBpm) return null
 
@@ -157,7 +162,9 @@ class IntervalEngine(
         measuredHighDurations += highDuration
         val base = baseline
         if (base == null) {
-            if (highDuration >= config.minBaseline || currentCycle > 1) {
+            // サイクル 1 は心拍 onset 反応で長くなりやすいので、最低基準時間〜最大基準時間の
+            // 範囲内のときだけ採用する。範囲外なら 2 サイクル目の値で確定させる
+            if (highDuration in config.minBaseline..config.maxBaseline || currentCycle > 1) {
                 baseline = highDuration
             }
             return SessionEvent.EnterRecovery
@@ -234,7 +241,7 @@ class IntervalEngine(
         }
         phase = Phase.HIGH_INTENSITY
         phaseStartedAt = elapsed
-        cycleStartedAt = elapsed
+        cycleStartedAt = null
         measureStartedAt = null
         // 直前の回復フェーズで出した提案は新サイクル開始でリセットする (FB 2026-06-25)
         latestSuggestion = null
