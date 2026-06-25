@@ -11,7 +11,6 @@ import io.github.wakuwaku3.adaptivepulse.core.sync.SessionLiveSnapshot
 import io.github.wakuwaku3.adaptivepulse.core.sync.SessionRecord
 import io.github.wakuwaku3.adaptivepulse.core.sync.SettingsDocument
 import io.github.wakuwaku3.adaptivepulse.core.sync.SyncPaths
-import io.github.wakuwaku3.adaptivepulse.mobile.health.HealthDataSource
 import io.github.wakuwaku3.adaptivepulse.mobile.session.LiveSessionLauncher
 import io.github.wakuwaku3.adaptivepulse.mobile.session.LiveSessionStore
 import io.github.wakuwaku3.adaptivepulse.mobile.settings.PhoneSettingsRepository
@@ -78,10 +77,6 @@ class PhoneSyncService : WearableListenerService() {
             // 永続キューに乗ったので DataItem は削除してよい (受領 ack)
             runCatching { Wearable.getDataClient(applicationContext).deleteDataItems(uri).await() }
             val remaining = PhoneSync.syncPendingSessions(applicationContext)
-            // 本アプリを HC のカロリー master にする: HIIT を HC にも書き戻す。
-            // 権限が無ければ 0 を返して no-op (docs/notes/20260621__tdee-recompute/)
-            runCatching { HealthDataSource(applicationContext).writeHiitSession(record) }
-                .onFailure { Log.w(TAG, "HC writeHiitSession 失敗", it) }
             Log.i(TAG, "セッション受信: ${record.id} (未同期 $remaining 件)")
         }
     }

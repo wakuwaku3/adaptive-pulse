@@ -39,11 +39,10 @@
          初回 5 年同期 (HealthSyncWorker) のためにリクエストする。拒否時は HC が 30 日で打ち切る -->
     <uses-permission android:name="android.permission.health.READ_HEALTH_DATA_HISTORY" />
 
-    <!-- 本アプリを「カロリーの master」にする (docs/notes/20260621__tdee-recompute/)。
-         HIIT セッション終了時に ExerciseSession + ActiveCalories を HC に書き戻し、
+    <!-- 本アプリを HC のカロリー master にする (docs/stock/health-data-export.md)。
+         日次の自前 TDEE を TotalCaloriesBurnedRecord として 1 レコード/日 で upsert し、
          他アプリ (Google Fit / MyFitnessPal 等) もこちらの値を読めるようにする -->
-    <uses-permission android:name="android.permission.health.WRITE_EXERCISE" />
-    <uses-permission android:name="android.permission.health.WRITE_ACTIVE_CALORIES_BURNED" />
+    <uses-permission android:name="android.permission.health.WRITE_TOTAL_CALORIES_BURNED" />
 
     <!-- Android 11+ の package visibility 制限を解き、Health Connect の存在判定と
          権限ダイアログ起動を可能にする -->

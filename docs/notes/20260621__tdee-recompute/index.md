@@ -103,3 +103,28 @@ Phase 1 以前の `dailyMetrics` ドキュメントには `tdeeKcal` / `exercise
 
 過去より前の日 (例えば 1 年前のトレンド) は HC に履歴があれば再同期で再計算
 できる。30 日より古い日は `READ_HEALTH_DATA_HISTORY` が要る。
+
+## 追記 2026-06-25: Phase 2 形態変更 (ExerciseSession 書き → TotalCalories 書き)
+
+Phase 2 当初案 (HIIT セッション終了時に `ExerciseSessionRecord` + `ActiveCaloriesBurnedRecord`
+を HC に書く) は不採用にした。理由:
+
+- Pixel Watch (Fitbit / Connected Fitness) も同じ時間帯にエクササイズを auto-detect
+  して HC に書くため、外部から見ると **HC 上に 2 つの ExerciseSession が並ぶ**。
+  本アプリ内 TDEE は `TdeeCalc` の時間重複 skip で問題ないが、HC を素直に読む
+  外部消費者にとっては 2 重計上に見える。
+- 「本アプリを HC のカロリー master にする」の意図は、HIIT 単発の active を足す
+  ことではなく、**1 日合計の TDEE を本アプリ値で代表させる**こと。HIIT だけ書いても
+  外部から見える `TotalCaloriesBurnedRecord` aggregate は Fitbit の inflated 値の
+  ままで master 化されない。
+
+新方針: `HealthSyncWorker` の日次同期完了後に `TotalCaloriesBurnedRecord(date, tdeeKcal)`
+を 1 日 1 レコード upsert する (`clientRecordId="ap-total-{YYYY-MM-DD}"` で冪等)。
+HIIT 個別の session / active は HC には書かず、watch 側の auto-detect に任せる。
+権限は `WRITE_TOTAL_CALORIES_BURNED` に差し替え (`WRITE_EXERCISE` / `WRITE_ACTIVE_CALORIES_BURNED`
+は不要)。
+
+残課題: HC `TotalCaloriesBurnedRecord` aggregate は dataOrigin 横断 SUM のため、
+Fitbit が同じ日を書いている限り外部 aggregate は本アプリ値と二重に積まれる。
+**完全な master 化はユーザが HC 設定で Fitbit (Connected Fitness) の「全カロリー」
+書き込み権限を手動 revoke する運用前提**で受け入れる (`docs/stock/health-data-export.md`)。

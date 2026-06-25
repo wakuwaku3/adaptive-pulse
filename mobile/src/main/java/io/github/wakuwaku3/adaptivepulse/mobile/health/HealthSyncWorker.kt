@@ -49,6 +49,11 @@ class HealthSyncWorker(
         var anyFailed = false
         records.forEach { record ->
             if (!FirestoreSync.upsertDailyHealth(record)) anyFailed = true
+            // 自前 TDEE を HC に master として書き戻す (docs/stock/health-data-export.md)。
+            // clientRecordId で冪等 upsert なので 8 日窓を毎回回しても積み上がらない
+            record.tdeeKcal?.let { tdee ->
+                source.writeDailyTotalCalories(LocalDate.parse(record.date), tdee)
+            }
         }
         // 直近の RHR を SessionConfig.restingBpm に反映 (Karvonen 入力として日々変動を吸収)
         syncRestingBpm(records.firstNotNullOfOrNull { it.restingHeartRateBpm })

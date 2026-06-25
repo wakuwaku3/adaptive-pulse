@@ -158,64 +158,45 @@ class HealthDataSource(private val context: Context) {
     }
 
     /**
-     * 自社 HIIT セッションを HC に書き戻す (本アプリを HC のカロリー master にする目的)。
-     * 詳細は docs/notes/20260621__tdee-recompute/。`clientRecordId` で冪等にし、再受信時は上書き。
-     * 戻り値: 書き込めた件数 (権限なし / 不正レコードなら 0)。
+     * 自前 TDEE を `TotalCaloriesBurnedRecord` として HC に書き出し、本アプリを HC 上の
+     * カロリー master にする。1 日 1 レコード (`clientRecordId = "ap-total-{date}"`) で
+     * 冪等に upsert する。今日の場合は end が未来にならないよう now で頭打ちにする
+     * (HC は endTime > now を弾くため)。
      */
-    suspend fun writeHiitSession(record: io.github.wakuwaku3.adaptivepulse.core.sync.SessionRecord): Int {
-        val hc = client ?: return 0
-        if (record.durationSec <= 0L || record.startedAtMs <= 0L) return 0
+    suspend fun writeDailyTotalCalories(
+        date: LocalDate,
+        tdeeKcal: Double,
+        zone: ZoneId = ZoneId.systemDefault(),
+        now: java.time.Instant = java.time.Instant.now(),
+    ): Boolean {
+        val hc = client ?: return false
+        if (tdeeKcal <= 0.0) return false
         val granted = grantedPermissions()
-        val writeExercise = HealthPermission.getWritePermission(ExerciseSessionRecord::class)
-        val writeActive = HealthPermission.getWritePermission(ActiveCaloriesBurnedRecord::class)
-        if (writeExercise !in granted) return 0
+        if (HealthPermission.getWritePermission(TotalCaloriesBurnedRecord::class) !in granted) return false
 
-        val start = java.time.Instant.ofEpochMilli(record.startedAtMs)
-        val end = start.plusSeconds(record.durationSec)
-        val zone = ZoneId.systemDefault()
-        val offset = zone.rules.getOffset(start)
-        val clientId = "ap-${record.id}"
+        val start = date.atStartOfDay(zone).toInstant()
+        val rawEnd = date.plusDays(1).atStartOfDay(zone).toInstant()
+        val end = if (rawEnd.isAfter(now)) now else rawEnd
+        if (!end.isAfter(start)) return false
+        val startOffset = zone.rules.getOffset(start)
+        val endOffset = zone.rules.getOffset(end)
 
-        val records = mutableListOf<androidx.health.connect.client.records.Record>()
-        records += ExerciseSessionRecord(
+        val record = TotalCaloriesBurnedRecord(
             startTime = start,
-            startZoneOffset = offset,
+            startZoneOffset = startOffset,
             endTime = end,
-            endZoneOffset = offset,
-            exerciseType = ExerciseSessionRecord.EXERCISE_TYPE_HIGH_INTENSITY_INTERVAL_TRAINING,
-            title = "Adaptive Pulse HIIT",
-            notes = null,
+            endZoneOffset = endOffset,
+            energy = androidx.health.connect.client.units.Energy.kilocalories(tdeeKcal),
             metadata = androidx.health.connect.client.records.metadata.Metadata(
-                clientRecordId = clientId,
+                clientRecordId = "ap-total-$date",
                 recordingMethod = androidx.health.connect.client.records.metadata.Metadata.RECORDING_METHOD_AUTOMATICALLY_RECORDED,
             ),
         )
-
-        if (writeActive in granted) {
-            // 最新の体重を HC から取って (8-1) × kg × hours で active 分を計算
-            val weightKg = readLatestEver(hc, granted, end.atZone(zone), WeightRecord::class) { it.weight.inKilograms }
-            if (weightKg != null) {
-                val activeKcal = (io.github.wakuwaku3.adaptivepulse.core.calories.ExerciseKind.HIIT.met - 1.0) *
-                    weightKg * (record.durationSec / 3600.0)
-                records += ActiveCaloriesBurnedRecord(
-                    startTime = start,
-                    startZoneOffset = offset,
-                    endTime = end,
-                    endZoneOffset = offset,
-                    energy = androidx.health.connect.client.units.Energy.kilocalories(activeKcal),
-                    metadata = androidx.health.connect.client.records.metadata.Metadata(
-                        clientRecordId = "$clientId:active",
-                        recordingMethod = androidx.health.connect.client.records.metadata.Metadata.RECORDING_METHOD_AUTOMATICALLY_RECORDED,
-                    ),
-                )
-            }
-        }
-
         return runCatching {
-            hc.insertRecords(records)
-            Log.i(TAG, "HC HIIT write OK: ${record.id} (${records.size} records)")
-            records.size
-        }.onFailure { Log.w(TAG, "HC HIIT write 失敗: ${record.id}", it) }.getOrDefault(0)
+            hc.insertRecords(listOf(record))
+            Log.i(TAG, "HC total write OK: $date (${tdeeKcal.roundToInt()} kcal)")
+            true
+        }.onFailure { Log.w(TAG, "HC total write 失敗: $date", it) }.getOrDefault(false)
     }
 
     suspend fun readExerciseSessions(from: ZonedDateTime, to: ZonedDateTime): List<ExerciseSessionData> {
@@ -554,9 +535,8 @@ class HealthDataSource(private val context: Context) {
             HealthPermission.getReadPermission(OxygenSaturationRecord::class),
             HealthPermission.getReadPermission(RespiratoryRateRecord::class),
             HealthPermission.getReadPermission(SkinTemperatureRecord::class),
-            // 本アプリを「カロリーの master」にするための書き込み権限 (docs/notes/20260621__tdee-recompute/)
-            HealthPermission.getWritePermission(ExerciseSessionRecord::class),
-            HealthPermission.getWritePermission(ActiveCaloriesBurnedRecord::class),
+            // 本アプリを HC のカロリー master にする: 自前 TDEE を TotalCalories として書き戻す
+            HealthPermission.getWritePermission(TotalCaloriesBurnedRecord::class),
         )
 
         /** Android 14+ で過去 30 日より前を読むのに必要。許可されれば 5 年同期が回る */
