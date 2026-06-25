@@ -57,7 +57,9 @@ import kotlin.math.sin
  * - 回転体 (PaceEllipse) は active phase の target SPM (設定値) で回す。実測はしない
  * - DONE では楕円アニメを停止 (運動が終わっているのに回転が続くと違和感)
  * - DONE 中はボタンを ✓ (Done) にして、押すまで dashboard に戻さない (FB 2026-06-24)
- * - engine の行動提案 (ペース緩める / 中断) があれば日本語の banner で見せる。文言のみ日本語 (例外)
+ * - engine の行動提案 (ペース緩める / 中断) は日本語 banner で出す (文言のみ日本語 = 例外)。
+ *   配置はカロリー下の空きエリア (Spacer(weight=1f) を Box に置換) に固定し、
+ *   banner の出現/消滅で HR / cycle / threshold など上の主役群が動かないようにする (FB 2026-06-26)
  */
 @Composable
 fun ActiveSessionScreen(
@@ -79,7 +81,6 @@ fun ActiveSessionScreen(
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             PhaseBadge(snapshot.phase, phaseColor)
-            snapshot.suggestion?.let { SuggestionBanner(it) }
             HeartRate(snapshot, phaseColor)
             CycleAndTimers(snapshot)
             Spacer(modifier = Modifier.height(2.dp))
@@ -94,7 +95,14 @@ fun ActiveSessionScreen(
                     fontSize = 18.sp,
                 )
             }
-            Spacer(modifier = Modifier.weight(1f))
+            // 一過性 banner 用の常設スロット。weight(1f) でカロリーと Stop の間を埋め、
+            // banner 有無に依らず Stop ボタン位置を固定する。banner 非表示時は空 Box で残す。
+            Box(
+                modifier = Modifier.weight(1f).fillMaxWidth(),
+                contentAlignment = Alignment.Center,
+            ) {
+                snapshot.suggestion?.let { SuggestionBanner(it) }
+            }
             if (isDone) DoneButton(phaseColor, onDone) else StopButton(onStop)
         }
     }
