@@ -81,7 +81,9 @@ class DashboardRepository(private val context: Context) {
         val snapshot = hc.readSnapshot(date, zone) ?: return
         val (from, to) = zonedRangeOfDay(date, zone)
         val hcSessions = hc.readExerciseSessions(from, to)
-        val enriched = CalorieEnricher.enrich(snapshot.record, hcSessions, appSessionsForDate, ageYears)
+        // 当日に体重実測が無い日でも TDEE は出したい (体重未測の日に消費だけ消えるのは体験ロスが大きい)
+        val fallbackWeightKg = if (snapshot.record.weightKg == null) hc.readLatestWeightKgBefore(to) else null
+        val enriched = CalorieEnricher.enrich(snapshot.record, hcSessions, appSessionsForDate, ageYears, fallbackWeightKg)
         val dateStr = date.format(DateTimeFormatter.ISO_LOCAL_DATE)
         dao.upsertSnapshot(enriched.toEntity(syncedAtMs = System.currentTimeMillis()))
 

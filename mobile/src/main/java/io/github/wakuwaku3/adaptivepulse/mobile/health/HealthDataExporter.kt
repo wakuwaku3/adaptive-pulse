@@ -54,11 +54,16 @@ class HealthDataExporter(private val context: Context) {
                 Instant.ofEpochMilli(it.startTimeMs).atZone(zone).toLocalDate().toString()
             }
 
+        // 体重未測の日も TDEE を出すため「その日までで最新の既知体重」を carry forward する。
+        // raw は date 昇順 (sortedBy { it.date}) 前提。range の手前で測った値があれば初期値に使う。
+        var lastKnownWeightKg: Double? = source.readLatestWeightKgBefore(from.atStartOfDay(zone))
         val dailyMetrics = raw.map { rec ->
+            if (rec.weightKg != null) lastKnownWeightKg = rec.weightKg
             CalorieEnricher.enrich(
                 record = rec,
                 hcSessions = hcSessionsByDate[rec.date].orEmpty(),
                 appSessions = appSessionsByDate[rec.date].orEmpty(),
+                fallbackWeightKg = lastKnownWeightKg,
             )
         }
 

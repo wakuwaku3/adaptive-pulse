@@ -16,15 +16,22 @@ object CalorieEnricher {
     /** ユーザの年齢 (Mifflin-St Jeor フォールバック用)。`SessionConfig.ageYears` と揃える。 */
     private const val DEFAULT_AGE_YEARS = 39
 
+    /**
+     * @param fallbackWeightKg 当日に体重実測が無いときに TDEE の計算入力として使う「最新既知体重」。
+     *   `DailyHealthRecord.weightKg` フィールド自体はこの fallback で埋めない (当日実測の欠損は欠損
+     *   のまま表示し、体組成チャートを歪めない)。あくまで TDEE の運動 extra / NEAT 計算で必要に
+     *   なる体重をフォールバックさせ、未測定日でも TDEE が出るようにするための引数。
+     */
     fun enrich(
         record: DailyHealthRecord,
         hcSessions: List<ExerciseSessionData>,
         appSessions: List<SessionRecord>,
         ageYears: Int = DEFAULT_AGE_YEARS,
+        fallbackWeightKg: Double? = null,
     ): DailyHealthRecord {
         val br = TdeeCalc.compute(
             basalKcal = record.basalCaloriesKcal,
-            weightKg = record.weightKg,
+            weightKg = record.weightKg ?: fallbackWeightKg,
             heightCm = record.heightCm,
             ageYears = ageYears,
             steps = record.steps,

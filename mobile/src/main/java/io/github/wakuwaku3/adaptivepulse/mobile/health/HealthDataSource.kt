@@ -79,6 +79,17 @@ class HealthDataSource(private val context: Context) {
     }
 
     /**
+     * 指定時点までで HC に記録された最新の体重 (kg) を返す。当日に体重が記録されていない日でも
+     * TDEE を計算したいケース (`CalorieEnricher.enrich(fallbackWeightKg=...)`) で使う。
+     * 表示用の体重 / BMI には使わない (当日実測の欠損は欠損のまま見せる)。
+     */
+    suspend fun readLatestWeightKgBefore(end: ZonedDateTime): Double? {
+        val hc = client ?: return null
+        val granted = grantedPermissions()
+        return readLatestEver(hc, granted, end, WeightRecord::class) { it.weight.inKilograms }
+    }
+
+    /**
      * ダッシュボード用に 1 日分のスナップショットを per-source breakdown 付きで取得する。
      * [date] は今日を含めて任意の暦日を指定可。
      */
