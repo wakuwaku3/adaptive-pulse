@@ -82,6 +82,7 @@ object DashboardSyncManager {
     /**
      * ユーザ操作 (Settings の resync ボタン) からの強制 enqueue。Room 状態を見ずに必ず走る。
      * REPLACE で既存ワーカーを上書きし「押した瞬間に開始」感を出す。
+     * worker 側でデータ入りの過去日は skip されるので、実質「欠けた日だけ埋める」動作になる。
      */
     fun enqueueInitialSync(context: Context) {
         Log.i(TAG, "ユーザ要求による initial sync 強制 enqueue")

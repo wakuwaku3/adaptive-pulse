@@ -45,6 +45,17 @@ class DashboardRepository(private val context: Context) {
 
     suspend fun oldestSnapshotDate(): String? = dao.oldestSnapshotDate()
 
+    /**
+     * データ入り (= date 以外に何か値がある) 行の日付集合。遡及同期が確定済みの過去日を
+     * 再読しないためのスキップ判定に使う。空行 (遡及試行済みマーカーや null で潰れた行) は
+     * 含まれないので、再読対象として自然に拾い直される。
+     */
+    suspend fun datesWithData(): Set<String> =
+        dao.allSnapshots().asSequence()
+            .filterNot { it.toRecord().isEmpty }
+            .map { it.date }
+            .toSet()
+
     fun observeMetricBreakdown(date: LocalDate): Flow<List<MetricBySourceEntity>> =
         dao.observeMetricBreakdown(date.format(DateTimeFormatter.ISO_LOCAL_DATE))
 
@@ -79,12 +90,22 @@ class DashboardRepository(private val context: Context) {
             return
         }
         val snapshot = hc.readSnapshot(date, zone) ?: return
+        val dateStr = date.format(DateTimeFormatter.ISO_LOCAL_DATE)
+        if (snapshot.record.isEmpty) {
+            // 全項目 null は「その日にデータが無い」と「読めなかった (レート制限・一時障害)」を
+            // HC の API 上区別できない。既存行を空で REPLACE すると正しいキャッシュを破壊するので
+            // 書かない (Firestore 側 14d713b と同じ判断)。行が無い日だけ空行を残し、
+            // 「遡及試行済み」マーカーとして oldestSnapshotDate 判定を成立させる
+            if (dao.snapshot(dateStr) == null) {
+                dao.upsertSnapshot(snapshot.record.toEntity(syncedAtMs = System.currentTimeMillis()))
+            }
+            return
+        }
         val (from, to) = zonedRangeOfDay(date, zone)
         val hcSessions = hc.readExerciseSessions(from, to)
         // 当日に体重実測が無い日でも TDEE は出したい (体重未測の日に消費だけ消えるのは体験ロスが大きい)
         val fallbackWeightKg = if (snapshot.record.weightKg == null) hc.readLatestWeightKgBefore(to) else null
         val enriched = CalorieEnricher.enrich(snapshot.record, hcSessions, appSessionsForDate, ageYears, fallbackWeightKg)
-        val dateStr = date.format(DateTimeFormatter.ISO_LOCAL_DATE)
         dao.upsertSnapshot(enriched.toEntity(syncedAtMs = System.currentTimeMillis()))
 
         // breakdown は metric ごとに REPLACE して、書き込まないソースが消えたら自然に消える

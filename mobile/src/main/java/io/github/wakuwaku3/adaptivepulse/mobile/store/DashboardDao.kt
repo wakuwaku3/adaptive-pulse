@@ -25,6 +25,13 @@ interface DashboardDao {
     @Query("SELECT * FROM daily_snapshot WHERE date = :date LIMIT 1")
     fun observeSnapshot(date: String): Flow<DailySnapshotEntity?>
 
+    @Query("SELECT * FROM daily_snapshot WHERE date = :date LIMIT 1")
+    suspend fun snapshot(date: String): DailySnapshotEntity?
+
+    // backfill の「再読不要な日」判定用。5 年分でも高々 1825 行なので全件ロードで足りる
+    @Query("SELECT * FROM daily_snapshot")
+    suspend fun allSnapshots(): List<DailySnapshotEntity>
+
     @Query("SELECT * FROM daily_snapshot WHERE date BETWEEN :from AND :to ORDER BY date DESC")
     fun observeSnapshotRange(from: String, to: String): Flow<List<DailySnapshotEntity>>
 
