@@ -7,10 +7,12 @@ import com.google.android.gms.wearable.DataEventBuffer
 import com.google.android.gms.wearable.MessageEvent
 import com.google.android.gms.wearable.Wearable
 import com.google.android.gms.wearable.WearableListenerService
+import io.github.wakuwaku3.adaptivepulse.core.menu.LibraryDocument
 import io.github.wakuwaku3.adaptivepulse.core.sync.SessionLiveSnapshot
 import io.github.wakuwaku3.adaptivepulse.core.sync.SessionRecord
 import io.github.wakuwaku3.adaptivepulse.core.sync.SettingsDocument
 import io.github.wakuwaku3.adaptivepulse.core.sync.SyncPaths
+import io.github.wakuwaku3.adaptivepulse.mobile.library.PhoneLibraryRepository
 import io.github.wakuwaku3.adaptivepulse.mobile.session.LiveSessionLauncher
 import io.github.wakuwaku3.adaptivepulse.mobile.session.LiveSessionStore
 import io.github.wakuwaku3.adaptivepulse.mobile.settings.PhoneSettingsRepository
@@ -39,6 +41,7 @@ class PhoneSyncService : WearableListenerService() {
                 path.startsWith(SyncPaths.SESSIONS_PREFIX) ->
                     onSessionReceived(event.dataItem.uri, event.dataItem.data)
                 path == SyncPaths.SETTINGS -> onSettingsReceived(event.dataItem.data)
+                path == SyncPaths.LIBRARY -> onLibraryReceived(event.dataItem.data)
             }
         }
     }
@@ -78,6 +81,25 @@ class PhoneSyncService : WearableListenerService() {
             runCatching { Wearable.getDataClient(applicationContext).deleteDataItems(uri).await() }
             val remaining = PhoneSync.syncPendingSessions(applicationContext)
             Log.i(TAG, "セッション受信: ${record.id} (未同期 $remaining 件)")
+        }
+    }
+
+    private fun onLibraryReceived(payload: ByteArray?) {
+        val doc = payload?.let {
+            runCatching {
+                PhoneSync.json.decodeFromString(
+                    LibraryDocument.serializer(),
+                    it.toString(Charsets.UTF_8),
+                )
+            }.onFailure { e -> Log.w(TAG, "ライブラリ DataItem の解釈に失敗", e) }.getOrNull()
+        } ?: return
+
+        runBlocking {
+            val applied = PhoneLibraryRepository(applicationContext).replaceIfNewer(doc)
+            if (applied) {
+                Log.i(TAG, "watch からのライブラリを適用 (selection=${doc.selection})")
+                FirestoreSync.putLibrary(doc)
+            }
         }
     }
 

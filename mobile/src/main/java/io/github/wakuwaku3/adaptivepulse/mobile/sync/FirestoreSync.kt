@@ -4,6 +4,7 @@ import android.util.Log
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
+import io.github.wakuwaku3.adaptivepulse.core.menu.LibraryDocument
 import io.github.wakuwaku3.adaptivepulse.core.sync.DailyHealthRecord
 import io.github.wakuwaku3.adaptivepulse.core.sync.SessionRecord
 import io.github.wakuwaku3.adaptivepulse.core.sync.SettingsDocument
@@ -122,6 +123,35 @@ object FirestoreSync {
             ref.get().await().getString("json")
                 ?.let { json.decodeFromString(SettingsDocument.serializer(), it) }
         }.onFailure { Log.w(TAG, "サーバ設定の読み直しに失敗", it) }.getOrNull()
+    }
+
+    suspend fun getLibrary(): LibraryDocument? {
+        val uid = uid() ?: return null
+        val ref = userDoc(uid)?.collection("library")?.document("current") ?: return null
+        return runCatching {
+            ref.get().await().getString("json")
+                ?.let { json.decodeFromString(LibraryDocument.serializer(), it) }
+        }.onFailure { Log.w(TAG, "ライブラリの取得に失敗", it) }.getOrNull()
+    }
+
+    /** LWW でライブラリを書く。settings/current と同じ規約 (拒否 = 自分が古い → 読み直し) */
+    suspend fun putLibrary(doc: LibraryDocument): LibraryDocument? {
+        val uid = uid() ?: return null
+        val ref = userDoc(uid)?.collection("library")?.document("current") ?: return null
+        val putResult = runCatching {
+            ref.set(
+                mapOf(
+                    "updatedAtMs" to doc.updatedAtMs,
+                    "json" to json.encodeToString(LibraryDocument.serializer(), doc),
+                ),
+            ).await()
+        }
+        if (putResult.isSuccess) return doc
+        Log.i(TAG, "ライブラリの書き込み失敗 (LWW 拒否含む) → サーバ値を読み直す", putResult.exceptionOrNull())
+        return runCatching {
+            ref.get().await().getString("json")
+                ?.let { json.decodeFromString(LibraryDocument.serializer(), it) }
+        }.onFailure { Log.w(TAG, "サーバライブラリの読み直しに失敗", it) }.getOrNull()
     }
 
     /**

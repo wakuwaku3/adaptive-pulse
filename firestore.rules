@@ -44,6 +44,25 @@ service cloud.firestore {
         allow delete: if false;
       }
 
+      match /library/{libraryId} {
+        // メニュー/プログラムと選択状態 (LibraryDocument)。settings/current と同じ LWW 規約。
+        allow read: if isOwner();
+        allow create: if isOwner()
+          && libraryId == 'current'
+          && request.resource.data.keys().hasOnly(['updatedAtMs', 'json'])
+          && request.resource.data.updatedAtMs is number
+          && request.resource.data.json is string
+          && request.resource.data.json.size() < 50000;
+        allow update: if isOwner()
+          && libraryId == 'current'
+          && request.resource.data.keys().hasOnly(['updatedAtMs', 'json'])
+          && request.resource.data.updatedAtMs is number
+          && request.resource.data.updatedAtMs > resource.data.updatedAtMs
+          && request.resource.data.json is string
+          && request.resource.data.json.size() < 50000;
+        allow delete: if false;
+      }
+
       match /settings/{settingsId} {
         allow read: if isOwner();
         allow create: if isOwner()

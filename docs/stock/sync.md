@@ -12,6 +12,7 @@
 - **watch は Firestore と直接通信しない**。phone がブリッジになる (電池・接続安定性・認証 UI の都合)。
 - **watch → phone (履歴)**: セッション完了時に SessionRecord を DataItem (`/sessions/<id>`) として書く。phone は受信して Firestore へアップロードし、成功したら DataItem を削除する (削除が ack を兼ねる)。watch はローカルにも直近履歴を保持する。
 - **設定の双方向同期**: 設定全体を 1 つの DataItem (`/settings`) に持ち、`updatedAtMs` の**最終更新者勝ち (LWW)** で解決する。どちらの端末も「自分の変更を書く」「相手の変更を受けて updatedAtMs が新しければ適用する」だけ。phone はさらに Firestore の `users/{uid}/settings/current` を LWW で同期する (複数スマホ・機種変更に備えた正本は Firestore)。
+- **メニュー/プログラムの双方向同期**: カスタムメニュー・プログラムと選択状態 (`LibraryDocument`) も設定と同じ構造で同期する (DataItem `/library`、Firestore `users/{uid}/library/current`、文書全体 LWW)。phone での編集と watch での選択 (開始画面) がそれぞれ更新者になる。プリセットは同期対象外 (両端末がプロファイルから生成する)。
 - **認証**: phone アプリは初回に Google サインイン (Firebase Auth)。Firebase SDK が認証コンテキストを Firestore 呼び出しに自動で乗せ、Security Rules が uid 一致を検証する。
 
 ## インフラ (Spark プラン = 無料)
@@ -41,6 +42,10 @@ users/{uid}/sessions/{sessionId}     # セッション履歴 (append-only。dele
 users/{uid}/settings/current         # 設定の正本 (LWW: Rules が updatedAtMs 単調増加を強制)
   updatedAtMs: number                # LWW 判定用
   json: string                       # SettingsDocument 全体の JSON
+
+users/{uid}/library/current          # メニュー/プログラムと選択状態の正本 (settings と同じ LWW)
+  updatedAtMs: number                # LWW 判定用
+  json: string                       # LibraryDocument 全体の JSON
 ```
 
 - `sessionId` は watch が生成する (`<startedAtMs>-<乱数>`)。アップロードは set による冪等 upsert で、再送しても重複しない。
