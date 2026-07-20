@@ -136,6 +136,9 @@ object DemoSessionController {
                 // DONE は Done が押されるまで動かない (本体 watch の挙動と揃える)。
                 // デモを次セッションでリスタートしたい場合は dashboard に戻ってから「Show demo session」を押し直す
             }
+            LivePhase.TIMED -> {
+                // デモは心拍トリガー型のみを回す (時間制の見た目確認は実機/エミュレータの watch 経由)
+            }
         }
     }
 

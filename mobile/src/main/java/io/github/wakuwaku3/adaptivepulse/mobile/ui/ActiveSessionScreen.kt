@@ -80,12 +80,22 @@ fun ActiveSessionScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            PhaseBadge(snapshot.phase, phaseColor)
+            PhaseBadge(snapshot, phaseColor)
+            MenuPosition(snapshot)
             HeartRate(snapshot, phaseColor)
-            CycleAndTimers(snapshot)
+            if (snapshot.phase == LivePhase.TIMED) {
+                TimedTimers(snapshot)
+            } else {
+                CycleAndTimers(snapshot)
+            }
             Spacer(modifier = Modifier.height(2.dp))
             if (!isDone) {
-                ThresholdControl(snapshot, phaseColor, onAdjustThreshold)
+                // 時間制は帯を表示するだけ (閾値ナッジは心拍トリガー型のみ)
+                ThresholdControl(
+                    snapshot,
+                    phaseColor,
+                    onAdjustThreshold.takeIf { snapshot.phase != LivePhase.TIMED },
+                )
             }
             PaceDisplay(snapshot, phaseColor)
             snapshot.calories?.let {
@@ -142,12 +152,14 @@ private fun SuggestionBanner(suggestion: SessionSuggestion) {
 }
 
 @Composable
-private fun PhaseBadge(phase: LivePhase, color: Color) {
-    val label = when (phase) {
+private fun PhaseBadge(snapshot: SessionLiveSnapshot, color: Color) {
+    val label = when (snapshot.phase) {
         LivePhase.WARM_UP -> "WARM-UP"
         LivePhase.HIGH -> "HIGH"
         LivePhase.RECOVERY -> "RECOVER"
         LivePhase.DONE -> "DONE"
+        // 時間制は「帯に収めて過ごす」区間なのでメニュー名をそのまま出す
+        LivePhase.TIMED -> snapshot.menuName.uppercase().ifBlank { "TIMED" }
     }
     Box(
         modifier = Modifier
@@ -187,6 +199,37 @@ private fun HeartRate(snapshot: SessionLiveSnapshot, color: Color) {
     }
 }
 
+/** プログラム内の現在地 (単体メニュー実行では出さない) */
+@Composable
+private fun MenuPosition(snapshot: SessionLiveSnapshot) {
+    if (snapshot.menuCount <= 1 || snapshot.phase == LivePhase.DONE) return
+    Text(
+        text = "MENU ${snapshot.menuIndex + 1}/${snapshot.menuCount} · ${snapshot.menuName}",
+        color = MobileColors.TextDim,
+        fontSize = 16.sp,
+    )
+}
+
+/** 時間制メニューの時間 3 値 (経過・目標・残り) + セッション総経過 */
+@Composable
+private fun TimedTimers(snapshot: SessionLiveSnapshot) {
+    val target = snapshot.timedTargetSec ?: return
+    val elapsed = snapshot.timedElapsedSec ?: 0.0
+    val remaining = (target - elapsed).coerceAtLeast(0.0)
+    Text(
+        text = "LEFT ${formatSeconds(remaining)}",
+        color = MobileColors.Text,
+        fontSize = 26.sp,
+        fontWeight = FontWeight.SemiBold,
+    )
+    Text(
+        text = "${formatSeconds(elapsed)} / ${formatSeconds(target)}  ·  T ${formatSeconds(snapshot.elapsedSec)}",
+        color = MobileColors.TextDim,
+        fontSize = 16.sp,
+        textAlign = TextAlign.Center,
+    )
+}
+
 @Composable
 private fun CycleAndTimers(snapshot: SessionLiveSnapshot) {
     Text(
@@ -204,35 +247,38 @@ private fun CycleAndTimers(snapshot: SessionLiveSnapshot) {
     )
 }
 
-/** bpm 閾値: ▲upper / ▼lower 両表示 + ± を左右に配置 + 単位 "bpm" */
+/** bpm 閾値: ▲upper / ▼lower 両表示 + ± を左右に配置 + 単位 "bpm"。onAdjust = null はナッジ非対応 (時間制) */
 @Composable
 private fun ThresholdControl(
     snapshot: SessionLiveSnapshot,
     activeColor: Color,
-    onAdjust: (Int) -> Unit,
+    onAdjust: ((Int) -> Unit)?,
 ) {
+    val timed = snapshot.phase == LivePhase.TIMED
     val activeUpper = snapshot.phase == LivePhase.HIGH || snapshot.phase == LivePhase.WARM_UP
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        NudgeButton(glyph = "−", color = activeColor, onClick = { onAdjust(-1) })
+        onAdjust?.let { NudgeButton(glyph = "−", color = activeColor, onClick = { it(-1) }) }
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text(
                 text = "▲${snapshot.upperBpm}",
-                color = if (activeUpper) activeColor else MobileColors.TextDim,
+                color = if (activeUpper || timed) activeColor else MobileColors.TextDim,
                 fontSize = 22.sp,
                 fontWeight = if (activeUpper) FontWeight.Bold else FontWeight.Normal,
             )
-            Text(
-                text = "▼${snapshot.lowerBpm}",
-                color = if (!activeUpper) activeColor else MobileColors.TextDim,
-                fontSize = 22.sp,
-                fontWeight = if (!activeUpper) FontWeight.Bold else FontWeight.Normal,
-            )
+            snapshot.lowerBpm?.let { lower ->
+                Text(
+                    text = "▼$lower",
+                    color = if (!activeUpper || timed) activeColor else MobileColors.TextDim,
+                    fontSize = 22.sp,
+                    fontWeight = if (!activeUpper && !timed) FontWeight.Bold else FontWeight.Normal,
+                )
+            }
             Text(text = "bpm", color = MobileColors.TextDim, fontSize = 13.sp)
         }
-        NudgeButton(glyph = "+", color = activeColor, onClick = { onAdjust(+1) })
+        onAdjust?.let { NudgeButton(glyph = "+", color = activeColor, onClick = { it(+1) }) }
     }
 }
 
@@ -377,6 +423,8 @@ private fun colorFor(phase: LivePhase): Color = when (phase) {
     LivePhase.HIGH -> MobileColors.High
     LivePhase.RECOVERY -> MobileColors.Recover
     LivePhase.DONE -> MobileColors.Done
+    // 時間制はウォームアップと同じ「落ち着いて保つ」トーン
+    LivePhase.TIMED -> Color(0xFF54C7EC)
 }
 
 private fun formatSeconds(seconds: Double): String {
