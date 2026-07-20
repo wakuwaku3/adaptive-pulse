@@ -254,9 +254,11 @@ class IntervalEngineTest {
 
     @Test
     fun `ゾーン滞在率 - 下限〜上限の帯にいたサンプルの割合を返す`() {
-        val metrics = SessionMetrics(config)
+        val metrics = SessionMetrics()
         assertNull(metrics.zoneRatio)
-        listOf(120, 140, 150, 155, 160).forEach { metrics.onHeartRate(it, inMeasurement = true) } // 帯内は 140/150/155
+        listOf(120, 140, 150, 155, 160).forEach {
+            metrics.onHeartRate(it, inMeasurement = true, lowerBpm = config.lowerBpm, upperBpm = config.upperBpm)
+        } // 帯内は 140/150/155
         assertEquals(0.6, metrics.zoneRatio!!, 1e-9)
         assertEquals(160, metrics.maxBpm)
         assertEquals(145, metrics.avgBpm)
@@ -264,14 +266,18 @@ class IntervalEngineTest {
 
     @Test
     fun `ゾーン滞在率 - inMeasurement=false のサンプルは算入しない (ウォームアップ除外)`() {
-        val metrics = SessionMetrics(config)
+        val metrics = SessionMetrics()
         // ウォームアップ中の低心拍は捨てる
-        listOf(80, 100, 120).forEach { metrics.onHeartRate(it, inMeasurement = false) }
+        listOf(80, 100, 120).forEach {
+            metrics.onHeartRate(it, inMeasurement = false, lowerBpm = config.lowerBpm, upperBpm = config.upperBpm)
+        }
         assertNull(metrics.zoneRatio)
         assertNull(metrics.avgBpm)
         assertNull(metrics.maxBpm)
         // 計測開始後だけ算入される
-        listOf(141, 150, 156).forEach { metrics.onHeartRate(it, inMeasurement = true) }
+        listOf(141, 150, 156).forEach {
+            metrics.onHeartRate(it, inMeasurement = true, lowerBpm = config.lowerBpm, upperBpm = config.upperBpm)
+        }
         assertEquals(149, metrics.avgBpm) // (141+150+156)/3 = 149
         assertEquals(156, metrics.maxBpm)
     }

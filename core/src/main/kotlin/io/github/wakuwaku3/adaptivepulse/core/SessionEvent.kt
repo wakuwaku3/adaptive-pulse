@@ -18,4 +18,13 @@ sealed interface SessionEvent {
 
     /** 最終サイクルの回復完了。セッション終了 */
     data object SessionFinished : SessionEvent
+
+    /** 時間制メニュー: 帯の上に逸脱した (ペースを落とす合図)。1 回の逸脱につき 1 回だけ発火 */
+    data object AboveBand : SessionEvent
+
+    /** 時間制メニュー: 帯の下に逸脱した (ペースを上げる合図)。1 回の逸脱につき 1 回だけ発火 */
+    data object BelowBand : SessionEvent
+
+    /** プログラム実行中のメニュー継ぎ目 (次のメニューへ進んだ) */
+    data object EnterNextMenu : SessionEvent
 }

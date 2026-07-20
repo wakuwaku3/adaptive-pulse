@@ -3,6 +3,10 @@ package io.github.wakuwaku3.adaptivepulse.core.sync
 /** Wearable Data Layer の DataItem / MessageClient パス (watch / phone で共有する契約) */
 object SyncPaths {
     const val SETTINGS = "/settings"
+
+    /** DataClient: カスタムメニュー/プログラムと選択状態 (LibraryDocument) の LWW 同期 */
+    const val LIBRARY = "/library"
+
     const val SESSIONS_PREFIX = "/sessions/"
 
     /** DataClient: watch がセッション中のライブ状態を上書きで置く。終了時に削除 */

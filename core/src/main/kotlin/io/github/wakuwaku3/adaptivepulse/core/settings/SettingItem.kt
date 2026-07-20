@@ -6,8 +6,12 @@ import kotlin.time.Duration.Companion.seconds
 
 /**
  * 設定項目の編集メタデータ。値はすべて Int (Stepper の歩進単位) に正規化し、
- * レンジを config 依存で計算することで「上限 > 下限」等の不変条件を編集 UI の
- * 段階で構造的に守る (SessionConfig の require に到達させない)。
+ * レンジを config 依存で計算することで不変条件を編集 UI の段階で構造的に守る
+ * (SessionConfig の require に到達させない)。
+ *
+ * ここに並ぶのはメニューに属さないプロファイル/共通設定のみ。閾値・本数・目標 SPM は
+ * メニュー (core.menu.Menu) 側の属性で、phone のメニュー編集画面から変更する
+ * (docs/stock/requirements.md「メニューとプログラム」)。
  */
 enum class SettingItem(
     val title: String,
@@ -16,27 +20,6 @@ enum class SettingItem(
     val progression: (SessionConfig) -> IntProgression,
     val format: (Int) -> String,
 ) {
-    UpperBpm(
-        title = "UPPER LIMIT",
-        read = { it.upperBpm },
-        write = { c, v -> c.copy(upperBpm = v) },
-        progression = { c -> (c.lowerBpm + 1)..200 },
-        format = { "$it bpm" },
-    ),
-    LowerBpm(
-        title = "LOWER LIMIT",
-        read = { it.lowerBpm },
-        write = { c, v -> c.copy(lowerBpm = v) },
-        progression = { c -> 60..<c.upperBpm },
-        format = { "$it bpm" },
-    ),
-    TargetCycles(
-        title = "CYCLES",
-        read = { it.targetCycles },
-        write = { c, v -> c.copy(targetCycles = v) },
-        progression = { 1..12 },
-        format = { "$it" },
-    ),
     FatigueRatio(
         title = "EASE PACE HINT",
         read = { (it.fatigueRatio * 100).roundToInt() },
@@ -85,32 +68,6 @@ enum class SettingItem(
         write = { c, v -> c.copy(restingBpm = v) },
         progression = { 30..100 },
         format = { "$it bpm" },
-    ),
-    TargetCadenceHigh(
-        title = "TARGET SPM (HIGH)",
-        read = { it.targetCadenceHigh },
-        write = { c, v -> c.copy(targetCadenceHigh = v) },
-        progression = { c ->
-            IntProgression.fromClosedRange(
-                maxOf(60, c.targetCadenceRecovery + 5),
-                220,
-                5,
-            )
-        },
-        format = { "$it spm" },
-    ),
-    TargetCadenceRecovery(
-        title = "TARGET SPM (RECOVERY)",
-        read = { it.targetCadenceRecovery },
-        write = { c, v -> c.copy(targetCadenceRecovery = v) },
-        progression = { c ->
-            IntProgression.fromClosedRange(
-                30,
-                minOf(180, c.targetCadenceHigh - 5),
-                5,
-            )
-        },
-        format = { "$it spm" },
     ),
 }
 

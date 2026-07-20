@@ -37,6 +37,13 @@ object HeartRateZones {
     fun tanakaMaxHr(ageYears: Int): Int = (208 - 0.7 * ageYears).roundToInt()
 
     /**
+     * %HRmax → bpm。プリセットメニューのように文献が %HRmax で強度を定義するケース用
+     * (Karvonen の %HRR とは基準が違うことに注意)。
+     */
+    fun percentOfMax(ageYears: Int, fraction: Double): Int =
+        (fraction * tanakaMaxHr(ageYears)).roundToInt()
+
+    /**
      * Karvonen 式による目標心拍。intensity は 0.0〜1.0 (%HRR)。
      * %HRmax と違って安静時心拍を引いた予備能を基準にするため、
      * 安静時心拍の個人差を反映できる (低い人は上限が相対的に高くなる)。

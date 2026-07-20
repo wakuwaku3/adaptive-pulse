@@ -30,7 +30,7 @@ class SessionRecordTest {
     }
 
     @Test
-    fun `SessionRecord schema は 3 (実測 SPM 廃止で bump)`() {
+    fun `SessionRecord schema は 4 (プラン記録の追加で bump)`() {
         val record = SessionRecord(
             id = "x",
             startedAtMs = 0,
@@ -40,7 +40,7 @@ class SessionRecordTest {
             fatigueBrake = false,
             config = SessionConfigSnapshot.from(SessionConfig()),
         )
-        assertEquals(3, record.schema)
+        assertEquals(4, record.schema)
         // 旧クライアントが書いた schema=2 + lockedCadenceTier / 旧 final target 等を含む JSON も読める
         val configJson = Json.encodeToString(SessionConfigSnapshot.serializer(), record.config)
         val legacy = """{"id":"y","schema":2,"startedAtMs":1,"durationSec":1,"cycles":1,
@@ -49,6 +49,54 @@ class SessionRecordTest {
             "lockedCadenceTier":"STEPS_PER_MINUTE"}"""
         val decoded = lenient.decodeFromString(SessionRecord.serializer(), legacy)
         assertEquals(2, decoded.schema)
+    }
+
+    @Test
+    fun `plan 付き (schema 4) の JSON 往復と、plan 無し旧 JSON の読み込み`() {
+        val record = SessionRecord(
+            id = "p",
+            startedAtMs = 1,
+            durationSec = 1800,
+            cycles = 6,
+            plannedCycles = 6,
+            fatigueBrake = false,
+            config = SessionConfigSnapshot.from(SessionConfig()),
+            plan = SessionPlanSnapshot(
+                programId = "preset-standard",
+                name = "Standard",
+                segments = listOf(
+                    SegmentSnapshot(
+                        menuId = "preset-warmup",
+                        menuName = "Warm-up",
+                        type = "timed",
+                        upperBpm = 116,
+                        lowerBpm = null,
+                        plannedAmount = 5,
+                        elapsedSec = 300.0,
+                    ),
+                    SegmentSnapshot(
+                        menuId = "hiit",
+                        menuName = "hiit",
+                        type = "interval",
+                        upperBpm = 159,
+                        lowerBpm = 136,
+                        plannedAmount = 6,
+                        completedCycles = 6,
+                        elapsedSec = 900.0,
+                        highDurationsSec = listOf(60.0),
+                        recoveryDurationsSec = listOf(85.0),
+                    ),
+                ),
+            ),
+        )
+        val json = Json.encodeToString(SessionRecord.serializer(), record)
+        assertEquals(record, Json.decodeFromString(SessionRecord.serializer(), json))
+
+        // plan フィールドを持たない旧レコードは null で読める
+        val configJson = Json.encodeToString(SessionConfigSnapshot.serializer(), record.config)
+        val legacy = """{"id":"z","schema":3,"startedAtMs":1,"durationSec":1,"cycles":1,
+            "plannedCycles":1,"fatigueBrake":false,"config":$configJson}"""
+        assertEquals(null, lenient.decodeFromString(SessionRecord.serializer(), legacy).plan)
     }
 
     @Test

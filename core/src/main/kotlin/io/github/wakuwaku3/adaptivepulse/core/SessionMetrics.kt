@@ -7,8 +7,10 @@ package io.github.wakuwaku3.adaptivepulse.core
  * ウォームアップ区間 (= サイクル 1 開始から心拍が下限閾値を上向きに超えるまで) の低心拍
  * サンプルは zoneRatio/avgBpm/maxBpm に算入しない (`requirements.md` のウォームアップ除外を
  * 高強度所要時間以外の指標にも一貫適用するため)。
+ *
+ * 帯はサンプルごとに受け取る (プログラム実行中はセグメントごとに帯が変わるため)。
  */
-class SessionMetrics(private val config: SessionConfig) {
+class SessionMetrics {
 
     private var zoneSamples = 0
     private var totalSamples = 0
@@ -17,15 +19,15 @@ class SessionMetrics(private val config: SessionConfig) {
     var maxBpm: Int? = null
         private set
 
-    fun onHeartRate(bpm: Int, inMeasurement: Boolean) {
+    fun onHeartRate(bpm: Int, inMeasurement: Boolean, lowerBpm: Int?, upperBpm: Int) {
         if (!inMeasurement) return
         totalSamples++
         bpmSum += bpm
         if (bpm > (maxBpm ?: Int.MIN_VALUE)) maxBpm = bpm
-        if (bpm in config.lowerBpm..config.upperBpm) zoneSamples++
+        if (bpm <= upperBpm && (lowerBpm == null || bpm >= lowerBpm)) zoneSamples++
     }
 
-    /** 下限〜上限の帯にいた割合 (0.0〜1.0)。サンプルが無い間は null */
+    /** 現セグメントの帯にいた割合 (0.0〜1.0)。サンプルが無い間は null */
     val zoneRatio: Double?
         get() = if (totalSamples == 0) null else zoneSamples.toDouble() / totalSamples
 
