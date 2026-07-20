@@ -38,8 +38,13 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
 import io.github.wakuwaku3.adaptivepulse.core.SessionConfig
+import io.github.wakuwaku3.adaptivepulse.core.menu.LibraryDocument
+import io.github.wakuwaku3.adaptivepulse.core.menu.LibrarySelection
+import io.github.wakuwaku3.adaptivepulse.core.menu.Presets
+import io.github.wakuwaku3.adaptivepulse.core.menu.SelectionKind
 import io.github.wakuwaku3.adaptivepulse.mobile.BuildConfig
 import io.github.wakuwaku3.adaptivepulse.mobile.auth.AuthManager
+import io.github.wakuwaku3.adaptivepulse.mobile.library.PhoneLibraryRepository
 import io.github.wakuwaku3.adaptivepulse.mobile.health.DashboardSyncManager
 import io.github.wakuwaku3.adaptivepulse.mobile.health.HealthDataExporter
 import io.github.wakuwaku3.adaptivepulse.mobile.health.HealthDataSource
@@ -57,14 +62,36 @@ import io.github.wakuwaku3.adaptivepulse.mobile.ui.ActiveSessionScreen
 import io.github.wakuwaku3.adaptivepulse.mobile.ui.AdaptivePulseMobileTheme
 import io.github.wakuwaku3.adaptivepulse.mobile.ui.HistoryItem
 import io.github.wakuwaku3.adaptivepulse.mobile.ui.HistoryScreen
+import io.github.wakuwaku3.adaptivepulse.mobile.ui.LibraryScreen
+import io.github.wakuwaku3.adaptivepulse.mobile.ui.MenuEditScreen
 import io.github.wakuwaku3.adaptivepulse.mobile.ui.MobileColors
+import io.github.wakuwaku3.adaptivepulse.mobile.ui.ProgramEditScreen
 import io.github.wakuwaku3.adaptivepulse.mobile.ui.SettingsScreen
 import io.github.wakuwaku3.adaptivepulse.mobile.ui.appVersionName
 import io.github.wakuwaku3.adaptivepulse.mobile.ui.dashboard.computed
 import kotlinx.coroutines.launch
 import java.time.LocalDate
+import java.util.UUID
 
-private enum class Screen { History, Settings }
+private sealed interface Screen {
+    data object History : Screen
+
+    data object Settings : Screen
+
+    data object Library : Screen
+
+    /** menuId = null は新規作成 */
+    data class MenuEdit(val menuId: String?) : Screen
+
+    /** programId = null は新規作成 */
+    data class ProgramEdit(val programId: String?) : Screen
+}
+
+/** 戻る操作 (‹ / システム back) の遷移先 */
+private fun parentOf(screen: Screen): Screen = when (screen) {
+    is Screen.MenuEdit, is Screen.ProgramEdit -> Screen.Library
+    else -> Screen.History
+}
 
 class MainActivity : ComponentActivity() {
 
@@ -207,12 +234,14 @@ class MainActivity : ComponentActivity() {
     @Composable
     private fun MainScreen(onSignOut: () -> Unit) {
         val scope = rememberCoroutineScope()
-        var screen by remember { mutableStateOf(Screen.History) }
+        var screen by remember { mutableStateOf<Screen>(Screen.History) }
         var menuOpen by remember { mutableStateOf(false) }
         var history by remember { mutableStateOf<List<HistoryItem>?>(null) }
         var status by remember { mutableStateOf<String?>(null) }
         val settingsRepo = remember { PhoneSettingsRepository(applicationContext) }
         val settingsDoc by settingsRepo.document.collectAsState(initial = null)
+        val libraryRepo = remember { PhoneLibraryRepository(applicationContext) }
+        val storedLibrary by libraryRepo.stored.collectAsState(initial = null)
 
         // Health Connect の権限管理 + JSON export
         val healthSource = remember { HealthDataSource(applicationContext) }
@@ -266,6 +295,7 @@ class MainActivity : ComponentActivity() {
         suspend fun refresh() {
             val pendingLeft = PhoneSync.syncPendingSessions(applicationContext)
             PhoneSync.reconcileSettings(applicationContext)
+            PhoneSync.reconcileLibrary(applicationContext)
             val pending = PendingSessionStore(applicationContext).list()
                 .map { HistoryItem(it, pending = true) }
             val remote = FirestoreSync.listSessions()
@@ -286,7 +316,18 @@ class MainActivity : ComponentActivity() {
         LaunchedEffect(Unit) { refresh() }
 
         BackHandler(enabled = screen != Screen.History) {
-            screen = Screen.History
+            screen = parentOf(screen)
+        }
+
+        // 未保存 (移行前) は既存設定から hiit 移行した初期ライブラリを導出する
+        val library = storedLibrary ?: LibraryDocument.initialFrom(currentConfig)
+        val presetMenus = Presets.menus(currentConfig.ageYears)
+        val presetPrograms = Presets.programs()
+
+        fun saveLibrary(transform: (LibraryDocument) -> LibraryDocument) {
+            scope.launch {
+                PhoneSync.updateLibraryEverywhere(applicationContext, currentConfig, transform)
+            }
         }
 
         Scaffold(
@@ -305,7 +346,7 @@ class MainActivity : ComponentActivity() {
                     },
                     navigationIcon = {
                         if (screen != Screen.History) {
-                            IconButton(onClick = { screen = Screen.History }) {
+                            IconButton(onClick = { screen = parentOf(screen) }) {
                                 Text("‹", style = MaterialTheme.typography.headlineMedium)
                             }
                         }
@@ -324,6 +365,10 @@ class MainActivity : ComponentActivity() {
                             onDismissRequest = { menuOpen = false },
                         ) {
                             if (screen == Screen.History) {
+                                DropdownMenuItem(
+                                    text = { Text("Menus & Programs") },
+                                    onClick = { menuOpen = false; screen = Screen.Library },
+                                )
                                 DropdownMenuItem(
                                     text = { Text("Settings") },
                                     onClick = { menuOpen = false; screen = Screen.Settings },
@@ -366,7 +411,84 @@ class MainActivity : ComponentActivity() {
             },
         ) { padding ->
             Box(modifier = Modifier.padding(padding)) {
-                when (screen) {
+                when (val current = screen) {
+                    Screen.Library -> LibraryScreen(
+                        library = library,
+                        presetMenus = presetMenus,
+                        presetPrograms = presetPrograms,
+                        onEditMenu = { menu -> screen = Screen.MenuEdit(menu.id) },
+                        onDuplicateMenu = { menu ->
+                            val copy = menu.copy(id = "menu-${UUID.randomUUID().toString().take(8)}", name = "${menu.name} copy")
+                            saveLibrary { it.copy(menus = it.menus + copy) }
+                            screen = Screen.MenuEdit(copy.id)
+                        },
+                        onDeleteMenu = { menu ->
+                            saveLibrary { lib ->
+                                lib.copy(
+                                    menus = lib.menus.filterNot { it.id == menu.id },
+                                    // 削除したものが選択中なら hiit に戻す (開始画面の参照切れを防ぐ)
+                                    selection = if (lib.selection.kind == SelectionKind.MENU && lib.selection.id == menu.id) {
+                                        LibrarySelection(SelectionKind.MENU, LibraryDocument.HIIT_MENU_ID)
+                                    } else {
+                                        lib.selection
+                                    },
+                                )
+                            }
+                        },
+                        onCreateMenu = { screen = Screen.MenuEdit(null) },
+                        onEditProgram = { program -> screen = Screen.ProgramEdit(program.id) },
+                        onDeleteProgram = { program ->
+                            saveLibrary { lib ->
+                                lib.copy(
+                                    programs = lib.programs.filterNot { it.id == program.id },
+                                    selection = if (lib.selection.kind == SelectionKind.PROGRAM && lib.selection.id == program.id) {
+                                        LibrarySelection(SelectionKind.MENU, LibraryDocument.HIIT_MENU_ID)
+                                    } else {
+                                        lib.selection
+                                    },
+                                )
+                            }
+                        },
+                        onCreateProgram = { screen = Screen.ProgramEdit(null) },
+                    )
+                    is Screen.MenuEdit -> MenuEditScreen(
+                        initial = current.menuId?.let { id ->
+                            library.menu(id) ?: presetMenus.firstOrNull { it.id == id }
+                        },
+                        newId = remember(current) { "menu-${UUID.randomUUID().toString().take(8)}" },
+                        onSave = { menu ->
+                            saveLibrary { lib ->
+                                val exists = lib.menus.any { it.id == menu.id }
+                                lib.copy(
+                                    menus = if (exists) {
+                                        lib.menus.map { if (it.id == menu.id) menu else it }
+                                    } else {
+                                        lib.menus + menu
+                                    },
+                                )
+                            }
+                            screen = Screen.Library
+                        },
+                    )
+                    is Screen.ProgramEdit -> ProgramEditScreen(
+                        initial = current.programId?.let { library.program(it) },
+                        newId = remember(current) { "program-${UUID.randomUUID().toString().take(8)}" },
+                        library = library,
+                        presetMenus = presetMenus,
+                        onSave = { program ->
+                            saveLibrary { lib ->
+                                val exists = lib.programs.any { it.id == program.id }
+                                lib.copy(
+                                    programs = if (exists) {
+                                        lib.programs.map { if (it.id == program.id) program else it }
+                                    } else {
+                                        lib.programs + program
+                                    },
+                                )
+                            }
+                            screen = Screen.Library
+                        },
+                    )
                     Screen.History -> {
                         val cfg = settingsDoc?.toSessionConfig() ?: SessionConfig()
                         HistoryScreen(
@@ -420,4 +542,7 @@ class MainActivity : ComponentActivity() {
 private fun titleFor(screen: Screen): String = when (screen) {
     Screen.History -> "AdaptivePulse"
     Screen.Settings -> "Settings"
+    Screen.Library -> "Menus & Programs"
+    is Screen.MenuEdit -> if (screen.menuId == null) "New Menu" else "Edit Menu"
+    is Screen.ProgramEdit -> if (screen.programId == null) "New Program" else "Edit Program"
 }

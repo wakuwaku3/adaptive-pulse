@@ -11,7 +11,7 @@ import kotlinx.serialization.Serializable
 @Serializable
 data class SessionRecord(
     val id: String,
-    val schema: Int = 3,
+    val schema: Int = 4,
     val startedAtMs: Long,
     val durationSec: Long,
     val cycles: Int,
@@ -27,6 +27,37 @@ data class SessionRecord(
     val maxBpm: Int? = null,
     val config: SessionConfigSnapshot,
     val device: String = "watch",
+    /**
+     * 実行したプラン (メニューの並びとセグメントごとの実績)。
+     * プログラム 1 実行 = 1 セッション (schema 4)。旧レコード (schema 3 以前) は null。
+     */
+    val plan: SessionPlanSnapshot? = null,
+)
+
+/** 実行したプランの記録。programId = null はメニュー単体の実行 */
+@Serializable
+data class SessionPlanSnapshot(
+    val programId: String?,
+    val name: String,
+    val segments: List<SegmentSnapshot>,
+)
+
+/** プラン内 1 メニュー実行分の記録 (実行時点のメニュー定義と実績を自己完結で残す) */
+@Serializable
+data class SegmentSnapshot(
+    val menuId: String,
+    val menuName: String,
+    /** "interval" (心拍トリガー型) | "timed" (時間制) */
+    val type: String,
+    val upperBpm: Int,
+    val lowerBpm: Int?,
+    /** 量 (心拍トリガー型は本数 / 時間制は分数)。上書き解決済み */
+    val plannedAmount: Int,
+    /** 完了本数 (心拍トリガー型のみ) */
+    val completedCycles: Int? = null,
+    val elapsedSec: Double,
+    val highDurationsSec: List<Double> = emptyList(),
+    val recoveryDurationsSec: List<Double> = emptyList(),
 )
 
 /** セッション時点の設定スナップショット (履歴の文脈として残す) */

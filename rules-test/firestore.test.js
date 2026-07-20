@@ -164,6 +164,39 @@ describe('users/{uid}/dailyMetrics/{date} (Health Connect 取り込み)', () => 
   });
 });
 
+describe('users/{uid}/library/current (メニュー/プログラム LWW)', () => {
+  test('オーナーは初回 library を作れる', async () => {
+    const alice = env.authenticatedContext('alice').firestore();
+    await assertSucceeds(
+      setDoc(doc(alice, 'users/alice/library/current'), settings(100)),
+    );
+  });
+
+  test('LWW: より新しい updatedAtMs は通り、より古いのは拒否される', async () => {
+    await seed('users/alice/library/current', settings(100));
+    const alice = env.authenticatedContext('alice').firestore();
+    await assertSucceeds(
+      setDoc(doc(alice, 'users/alice/library/current'), settings(200)),
+    );
+    await assertFails(
+      setDoc(doc(alice, 'users/alice/library/current'), settings(150)),
+    );
+  });
+
+  test('library/current 以外の id は拒否される', async () => {
+    const alice = env.authenticatedContext('alice').firestore();
+    await assertFails(
+      setDoc(doc(alice, 'users/alice/library/other'), settings(100)),
+    );
+  });
+
+  test('他人の library は読めない', async () => {
+    await seed('users/alice/library/current', settings(100));
+    const bob = env.authenticatedContext('bob').firestore();
+    await assertFails(getDoc(doc(bob, 'users/alice/library/current')));
+  });
+});
+
 describe('users/{uid}/settings/current (設定 LWW)', () => {
   test('オーナーは初回 settings を作れる', async () => {
     const alice = env.authenticatedContext('alice').firestore();

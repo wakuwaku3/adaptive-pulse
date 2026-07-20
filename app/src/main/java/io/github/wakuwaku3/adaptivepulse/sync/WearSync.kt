@@ -7,10 +7,12 @@ import com.google.android.gms.wearable.Node
 import com.google.android.gms.wearable.PutDataRequest
 import com.google.android.gms.wearable.Wearable
 import io.github.wakuwaku3.adaptivepulse.core.SessionConfig
+import io.github.wakuwaku3.adaptivepulse.core.menu.LibraryDocument
 import io.github.wakuwaku3.adaptivepulse.core.sync.SessionLiveSnapshot
 import io.github.wakuwaku3.adaptivepulse.core.sync.SessionRecord
 import io.github.wakuwaku3.adaptivepulse.core.sync.SettingsDocument
 import io.github.wakuwaku3.adaptivepulse.core.sync.SyncPaths
+import io.github.wakuwaku3.adaptivepulse.library.LibraryRepository
 import io.github.wakuwaku3.adaptivepulse.settings.SettingsRepository
 import kotlinx.coroutines.tasks.await
 import kotlinx.serialization.json.Json
@@ -33,6 +35,11 @@ object WearSync {
     /** 設定の現在値を共有する (LWW。受け手は updatedAtMs が新しいときだけ適用) */
     suspend fun putSettings(context: Context, doc: SettingsDocument) {
         putItem(context, SyncPaths.SETTINGS, json.encodeToString(SettingsDocument.serializer(), doc))
+    }
+
+    /** メニュー/プログラムと選択状態を共有する (settings と同じ LWW) */
+    suspend fun putLibrary(context: Context, doc: LibraryDocument) {
+        putItem(context, SyncPaths.LIBRARY, json.encodeToString(LibraryDocument.serializer(), doc))
     }
 
     /** ライブセッション状態を phone へ書く (最新スナップショットの上書き保存) */
@@ -86,4 +93,14 @@ suspend fun updateSettingsAndSync(
 ) {
     val doc = SettingsRepository(context).update(transform)
     WearSync.putSettings(context, doc)
+}
+
+/** ローカル起点のライブラリ変更 (開始画面での選択など) を保存し、phone へ共有する */
+suspend fun updateLibraryAndSync(
+    context: Context,
+    transform: (LibraryDocument) -> LibraryDocument,
+) {
+    val settings = SettingsRepository(context)
+    val doc = LibraryRepository(context).update(settings.load(), transform)
+    WearSync.putLibrary(context, doc)
 }

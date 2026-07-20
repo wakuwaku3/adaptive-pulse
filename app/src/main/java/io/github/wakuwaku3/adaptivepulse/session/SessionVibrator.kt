@@ -19,6 +19,11 @@ class SessionVibrator(private val vibrator: Vibrator) {
             SessionEvent.EnterRecovery -> longArrayOf(0, 800) // 長 1: 減速しろ
             SessionEvent.EnterHighIntensity -> longArrayOf(0, 150, 100, 150, 100, 150) // 短 3: 加速しろ
             SessionEvent.SessionFinished -> longArrayOf(0, 800, 300, 800, 300, 800) // 長 3: 終了
+            // 時間制の帯逸脱。フェーズ遷移と混同しないよう長さを変える (中 1 / 短 2)
+            SessionEvent.AboveBand -> longArrayOf(0, 500) // 中 1: 落とせ
+            SessionEvent.BelowBand -> longArrayOf(0, 150, 100, 150) // 短 2: 上げろ
+            // プログラムの継ぎ目。終了 (長 3) とは長さで、加速 (短 3) とは回数で区別する
+            SessionEvent.EnterNextMenu -> longArrayOf(0, 400, 200, 400) // 中 2: 次のメニューへ
         }
         vibrator.vibrate(VibrationEffect.createWaveform(timings, -1))
     }
