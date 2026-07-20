@@ -5,8 +5,10 @@ import com.google.android.gms.wearable.DataEvent
 import com.google.android.gms.wearable.DataEventBuffer
 import com.google.android.gms.wearable.MessageEvent
 import com.google.android.gms.wearable.WearableListenerService
+import io.github.wakuwaku3.adaptivepulse.core.menu.LibraryDocument
 import io.github.wakuwaku3.adaptivepulse.core.sync.SettingsDocument
 import io.github.wakuwaku3.adaptivepulse.core.sync.SyncPaths
+import io.github.wakuwaku3.adaptivepulse.library.LibraryRepository
 import io.github.wakuwaku3.adaptivepulse.session.SessionService
 import io.github.wakuwaku3.adaptivepulse.settings.SettingsRepository
 import kotlinx.coroutines.runBlocking
@@ -23,17 +25,33 @@ class WatchSyncService : WearableListenerService() {
         for (event in events) {
             if (event.type != DataEvent.TYPE_CHANGED) continue
             val item = event.dataItem
-            if (item.uri.path != SyncPaths.SETTINGS) continue
-            val doc = runCatching {
-                WearSync.json.decodeFromString(
-                    SettingsDocument.serializer(),
-                    item.data!!.toString(Charsets.UTF_8),
-                )
-            }.onFailure { Log.w(TAG, "設定 DataItem の解釈に失敗", it) }.getOrNull()
-            if (doc == null) continue
-            // listener コールバックは binder スレッド。書き込みは小さく即時
-            val applied = runBlocking { SettingsRepository(applicationContext).replaceIfNewer(doc) }
-            if (applied) Log.i(TAG, "phone からの設定を適用: $doc")
+            when (item.uri.path) {
+                SyncPaths.SETTINGS -> {
+                    val doc = runCatching {
+                        WearSync.json.decodeFromString(
+                            SettingsDocument.serializer(),
+                            item.data!!.toString(Charsets.UTF_8),
+                        )
+                    }.onFailure { Log.w(TAG, "設定 DataItem の解釈に失敗", it) }.getOrNull()
+                    if (doc == null) continue
+                    // listener コールバックは binder スレッド。書き込みは小さく即時
+                    val applied =
+                        runBlocking { SettingsRepository(applicationContext).replaceIfNewer(doc) }
+                    if (applied) Log.i(TAG, "phone からの設定を適用: $doc")
+                }
+                SyncPaths.LIBRARY -> {
+                    val doc = runCatching {
+                        WearSync.json.decodeFromString(
+                            LibraryDocument.serializer(),
+                            item.data!!.toString(Charsets.UTF_8),
+                        )
+                    }.onFailure { Log.w(TAG, "ライブラリ DataItem の解釈に失敗", it) }.getOrNull()
+                    if (doc == null) continue
+                    val applied =
+                        runBlocking { LibraryRepository(applicationContext).replaceIfNewer(doc) }
+                    if (applied) Log.i(TAG, "phone からのライブラリを適用 (menus=${doc.menus.size})")
+                }
+            }
         }
     }
 

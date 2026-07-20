@@ -15,13 +15,18 @@ import androidx.lifecycle.lifecycleScope
 import androidx.wear.ongoing.OngoingActivity
 import io.github.wakuwaku3.adaptivepulse.MainActivity
 import io.github.wakuwaku3.adaptivepulse.R
-import io.github.wakuwaku3.adaptivepulse.core.Phase
+import io.github.wakuwaku3.adaptivepulse.core.SessionConfig
+import io.github.wakuwaku3.adaptivepulse.core.menu.LibraryDocument
+import io.github.wakuwaku3.adaptivepulse.core.menu.Presets
+import io.github.wakuwaku3.adaptivepulse.core.menu.SessionPlan
+import io.github.wakuwaku3.adaptivepulse.core.menu.SessionPlanner
 import io.github.wakuwaku3.adaptivepulse.core.sync.LivePhase
 import io.github.wakuwaku3.adaptivepulse.core.sync.SessionConfigSnapshot
 import io.github.wakuwaku3.adaptivepulse.core.sync.SessionLiveSnapshot
 import io.github.wakuwaku3.adaptivepulse.core.sync.SessionRecord
 import io.github.wakuwaku3.adaptivepulse.history.WatchHistoryStore
 import io.github.wakuwaku3.adaptivepulse.hr.AutoExerciseSource
+import io.github.wakuwaku3.adaptivepulse.library.LibraryRepository
 import io.github.wakuwaku3.adaptivepulse.settings.SettingsRepository
 import io.github.wakuwaku3.adaptivepulse.sync.WearSync
 import java.util.UUID
@@ -42,12 +47,7 @@ private fun SessionUiState.toLiveSnapshot(nowMs: Long): SessionLiveSnapshot? = w
     SessionUiState.Idle -> null
     is SessionUiState.Running -> SessionLiveSnapshot(
         updatedAtMs = nowMs,
-        phase = when {
-            isWarmingUp -> LivePhase.WARM_UP
-            phase == Phase.HIGH_INTENSITY -> LivePhase.HIGH
-            phase == Phase.RECOVERY -> LivePhase.RECOVERY
-            else -> LivePhase.DONE
-        },
+        phase = phase,
         bpm = bpm,
         currentCycle = currentCycle,
         finalCycle = finalCycle,
@@ -60,6 +60,11 @@ private fun SessionUiState.toLiveSnapshot(nowMs: Long): SessionLiveSnapshot? = w
         targetCadenceHigh = targetCadenceHigh,
         targetCadenceRecovery = targetCadenceRecovery,
         suggestion = suggestion,
+        menuName = menuName,
+        menuIndex = menuIndex,
+        menuCount = menuCount,
+        timedTargetSec = timedTarget?.let { it.inWholeMilliseconds / 1000.0 },
+        timedElapsedSec = if (timedTarget != null) phaseElapsed.inWholeMilliseconds / 1000.0 else null,
     )
     is SessionUiState.Finished -> SessionLiveSnapshot(
         updatedAtMs = nowMs,
@@ -147,11 +152,13 @@ class SessionService : LifecycleService() {
         val settings = SettingsRepository(applicationContext)
         sessionJob = lifecycleScope.launch {
             val config = settings.load()
-            Log.i(TAG, "セッション開始: $config")
+            val plan = resolvePlan(config)
+            Log.i(TAG, "セッション開始: plan=${plan.name} segments=${plan.segments.size} $config")
             val startedAtMs = System.currentTimeMillis()
             WearSync.sendStartForeground(applicationContext)
             val livePusher = LiveSnapshotPusher(applicationContext)
             val runner = SessionRunner(
+                plan = plan,
                 config = config,
                 sourceFactory = { phase ->
                     AutoExerciseSource(applicationContext, phase)
@@ -225,6 +232,20 @@ class SessionService : LifecycleService() {
         }
     }
 
+    /**
+     * 開始画面の選択 (最後に使ったメニュー/プログラム) をプランに解決する。
+     * 参照切れ (phone で削除された等) は hiit 移行の初期ライブラリにフォールバックする。
+     */
+    private suspend fun resolvePlan(config: SessionConfig): SessionPlan {
+        val library = LibraryRepository(applicationContext).load(config)
+        val presetMenus = Presets.menus(config.ageYears)
+        SessionPlanner.resolve(library.selection, library, presetMenus)?.let { return it }
+        Log.w(TAG, "選択 ${library.selection} が解決できないため hiit にフォールバック")
+        val fallback = LibraryDocument.initialFrom(config)
+        return SessionPlanner.resolve(fallback.selection, fallback, presetMenus)
+            ?: error("hiit フォールバックは常に解決できるはず")
+    }
+
     /** 完走セッションを履歴に残し、phone へ送る (失敗してもセッション完了は壊さない) */
     private suspend fun recordSession(startedAtMs: Long, result: SessionResult) {
         val record = SessionRecord(
@@ -232,7 +253,7 @@ class SessionService : LifecycleService() {
             startedAtMs = startedAtMs,
             durationSec = result.elapsed.inWholeSeconds,
             cycles = result.cycles,
-            plannedCycles = result.config.targetCycles,
+            plannedCycles = result.plannedCycles,
             fatigueBrake = result.fatigueBrake,
             calories = result.calories,
             zoneRatio = result.zoneRatio,
@@ -241,6 +262,7 @@ class SessionService : LifecycleService() {
             avgBpm = result.avgBpm,
             maxBpm = result.maxBpm,
             config = SessionConfigSnapshot.from(result.config),
+            plan = result.plan,
         )
         runCatching { WatchHistoryStore(applicationContext).save(record) }
             .onFailure { Log.w(TAG, "履歴の保存に失敗", it) }

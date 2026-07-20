@@ -34,7 +34,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.wear.compose.material.MaterialTheme
 import androidx.wear.compose.material.Text
-import io.github.wakuwaku3.adaptivepulse.core.Phase
+import io.github.wakuwaku3.adaptivepulse.core.sync.LivePhase
 import io.github.wakuwaku3.adaptivepulse.ui.IconActionButton
 import io.github.wakuwaku3.adaptivepulse.ui.KeepScreenOn
 import io.github.wakuwaku3.adaptivepulse.ui.appVersionName
@@ -44,9 +44,11 @@ import kotlin.time.Duration
 @Composable
 fun SessionScreen(
     state: SessionUiState,
+    selectionLabel: String,
     onStart: () -> Unit,
     onStop: () -> Unit,
     onDone: () -> Unit,
+    onOpenPicker: () -> Unit,
     onOpenSettings: () -> Unit,
     onAdjustThreshold: (Int) -> Unit,
 ) {
@@ -55,7 +57,12 @@ fun SessionScreen(
         contentAlignment = Alignment.Center,
     ) {
         when (state) {
-            SessionUiState.Idle -> IdleScreen(onStart = onStart, onOpenSettings = onOpenSettings)
+            SessionUiState.Idle -> IdleScreen(
+                selectionLabel = selectionLabel,
+                onStart = onStart,
+                onOpenPicker = onOpenPicker,
+                onOpenSettings = onOpenSettings,
+            )
             is SessionUiState.Running -> RunningScreen(state, onStop = onStop, onAdjustThreshold = onAdjustThreshold)
             is SessionUiState.Finished -> FinishedScreen(state, onReset = onDone)
         }
@@ -63,7 +70,12 @@ fun SessionScreen(
 }
 
 @Composable
-private fun IdleScreen(onStart: () -> Unit, onOpenSettings: () -> Unit) {
+private fun IdleScreen(
+    selectionLabel: String,
+    onStart: () -> Unit,
+    onOpenPicker: () -> Unit,
+    onOpenSettings: () -> Unit,
+) {
     CycleRing(progress = 0f, color = APColors.High)
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -85,10 +97,24 @@ private fun IdleScreen(onStart: () -> Unit, onOpenSettings: () -> Unit) {
             color = APColors.TextDim,
             style = MaterialTheme.typography.caption2,
         )
+        // ▶ で始まるのは常にこのラベルの内容 (最後に使ったメニュー/プログラム)。タップで選び替え
+        Text(
+            text = "≡ $selectionLabel",
+            color = APColors.High,
+            style = MaterialTheme.typography.caption1,
+            modifier = Modifier
+                .clip(CircleShape)
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                    onClick = onOpenPicker,
+                )
+                .padding(horizontal = 8.dp, vertical = 2.dp),
+        )
         // 操作はテキストラベルではなく記号アイコンの小円ボタンで表現 (ユーザ FB 2026-06-11)
         Row(
             horizontalArrangement = Arrangement.spacedBy(10.dp),
-            modifier = Modifier.padding(top = 8.dp),
+            modifier = Modifier.padding(top = 6.dp),
         ) {
             IconActionButton(glyph = "▶", tint = Color.Black, background = APColors.High, onClick = onStart)
             IconActionButton(glyph = "⚙", tint = APColors.TextDim, background = APColors.StopChip, onClick = onOpenSettings)
@@ -106,17 +132,23 @@ private fun RunningScreen(
     // セッション中は強制的に画面 ON を維持する (実機 FB)
     KeepScreenOn()
 
-    val (label, color) = when {
+    val timedTarget = state.timedTarget
+    if (timedTarget != null) {
+        TimedRunningScreen(state, timedTarget, onStop)
+        return
+    }
+
+    val (label, color) = when (state.phase) {
         // 下限閾値を超えるまでは計測対象外のウォームアップ区間 (画面が嘘をつかない)
-        state.isWarmingUp -> "WARM-UP" to APColors.WarmUp
-        state.phase == Phase.HIGH_INTENSITY -> "HIGH" to APColors.High
-        state.phase == Phase.RECOVERY -> "RECOVER" to APColors.Recover
+        LivePhase.WARM_UP -> "WARM-UP" to APColors.WarmUp
+        LivePhase.HIGH -> "HIGH" to APColors.High
+        LivePhase.RECOVERY -> "RECOVER" to APColors.Recover
         else -> "DONE" to APColors.Done
     }
     // ring 進捗: currentCycle = 完走 (上限到達による回復遷移) 済みのサイクル数。
     // 回復中はその cycle の前半 (高強度) が終わって後半に居ると見なし 0.5 引く
     val ringProgress =
-        (state.currentCycle - if (state.phase == Phase.RECOVERY) 0.5f else 0f) /
+        (state.currentCycle - if (state.phase == LivePhase.RECOVERY) 0.5f else 0f) /
             state.finalCycle.toFloat()
 
     CycleRing(progress = ringProgress, color = color)
@@ -125,6 +157,7 @@ private fun RunningScreen(
         verticalArrangement = Arrangement.spacedBy(0.dp),
         modifier = Modifier.rotaryThresholdAdjust(onAdjustThreshold),
     ) {
+        MenuPosition(state)
         Text(text = label, color = color, style = MaterialTheme.typography.title3)
         Row(verticalAlignment = Alignment.Bottom) {
             // ボタン行追加でラウンド枠を超えていたので display1 (40sp) → display2 (34sp) に縮小。
@@ -143,7 +176,7 @@ private fun RunningScreen(
         }
         // ▲/▼ + 残サイクルを 1 行にまとめ、両端に閾値と同色の裸グリフ ± を置く。
         // チップを外し、テキストの一部のように見える「触れる文字」として扱う
-        val activeUpper = state.phase == Phase.HIGH_INTENSITY
+        val activeUpper = state.phase != LivePhase.RECOVERY
         val thresholdColor = if (activeUpper) APColors.High else APColors.Recover
         Row(
             horizontalArrangement = Arrangement.spacedBy(2.dp),
@@ -151,7 +184,7 @@ private fun RunningScreen(
         ) {
             NudgeGlyph(glyph = "−", color = thresholdColor, onClick = { onAdjustThreshold(-1) })
             Text(
-                text = "▲${state.upperBpm} ▼${state.lowerBpm} · ${state.currentCycle}/${state.finalCycle}",
+                text = "▲${state.upperBpm} ▼${state.lowerBpm ?: "--"} · ${state.currentCycle}/${state.finalCycle}",
                 color = thresholdColor,
                 style = MaterialTheme.typography.caption2,
             )
@@ -174,6 +207,86 @@ private fun RunningScreen(
             StopButton(onClick = onStop)
         }
     }
+}
+
+/**
+ * 時間制メニューの実行画面: 「帯に収めて時間を過ごす」ための表示
+ * (要件: 時間の経過・目標・残りと、心拍の上限・現在・下限を出す)。
+ */
+@Composable
+private fun TimedRunningScreen(
+    state: SessionUiState.Running,
+    target: Duration,
+    onStop: () -> Unit,
+) {
+    val color = APColors.WarmUp
+    val elapsedInMenu = state.phaseElapsed
+    val remaining = (target - elapsedInMenu).coerceAtLeast(Duration.ZERO)
+    val progress = (elapsedInMenu.inWholeSeconds.toFloat() / target.inWholeSeconds).coerceIn(0f, 1f)
+
+    CycleRing(progress = progress, color = color)
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(0.dp),
+    ) {
+        MenuPosition(state)
+        Text(
+            text = state.menuName.uppercase(),
+            color = color,
+            style = MaterialTheme.typography.title3,
+        )
+        Row(verticalAlignment = Alignment.Bottom) {
+            Text(
+                text = state.bpm?.toString() ?: "--",
+                color = color,
+                style = MaterialTheme.typography.display2,
+            )
+            Text(
+                text = "bpm",
+                color = APColors.TextDim,
+                style = MaterialTheme.typography.caption2,
+                modifier = Modifier.padding(start = 3.dp, bottom = 6.dp),
+            )
+        }
+        Text(
+            text = listOfNotNull("▲${state.upperBpm}", state.lowerBpm?.let { "▼$it" })
+                .joinToString(" "),
+            color = color,
+            style = MaterialTheme.typography.caption2,
+        )
+        // LEFT を主役に、経過/目標を添える (時間で必ず終わるメニューなので残りが判断材料)
+        Text(
+            text = "LEFT ${format(remaining)}",
+            color = APColors.Text,
+            style = MaterialTheme.typography.title3,
+        )
+        Text(
+            text = "${format(elapsedInMenu)} / ${format(target)} · T ${format(state.elapsed)}",
+            color = APColors.TextDim,
+            style = MaterialTheme.typography.caption2,
+        )
+        state.calories?.let {
+            Text(
+                text = "${it.toInt()} kcal",
+                color = APColors.TextDim,
+                style = MaterialTheme.typography.caption2,
+            )
+        }
+        Box(modifier = Modifier.padding(top = 6.dp)) {
+            StopButton(onClick = onStop)
+        }
+    }
+}
+
+/** プログラム内の現在地 (単体メニュー実行では出さない) */
+@Composable
+private fun MenuPosition(state: SessionUiState.Running) {
+    if (state.menuCount <= 1) return
+    Text(
+        text = "${state.menuIndex + 1}/${state.menuCount} · ${state.menuName}",
+        color = APColors.TextDim,
+        style = MaterialTheme.typography.caption2,
+    )
 }
 
 /** 閾値テキストの両脇に置く、ボタン感を抑えた裸の ± グリフ */
