@@ -190,20 +190,19 @@ private fun RunningScreen(
             )
             NudgeGlyph(glyph = "+", color = thresholdColor, onClick = { onAdjustThreshold(+1) })
         }
-        // T = total / C = current cycle / P = current phase の経過時間
+        // T = total / C = current cycle / P = current phase の経過時間。kcal も同じ行に畳み、
+        // 行数を時間制画面と揃える (縦に増えた情報でラウンド枠から見切れないように)
         Text(
-            text = "T ${format(state.elapsed)} · C ${format(state.cycleElapsed)} · P ${format(state.phaseElapsed)}",
+            text = listOfNotNull(
+                "T ${format(state.elapsed)}",
+                "C ${format(state.cycleElapsed)}",
+                "P ${format(state.phaseElapsed)}",
+                state.calories?.let { "${it.toInt()} kcal" },
+            ).joinToString(" · "),
             color = APColors.TextDim,
             style = MaterialTheme.typography.caption2,
         )
-        state.calories?.let {
-            Text(
-                text = "${it.toInt()} kcal",
-                color = APColors.TextDim,
-                style = MaterialTheme.typography.caption2,
-            )
-        }
-        Box(modifier = Modifier.padding(top = 6.dp)) {
+        Box(modifier = Modifier.padding(top = 4.dp)) {
             StopButton(onClick = onStop)
         }
     }
@@ -212,6 +211,7 @@ private fun RunningScreen(
 /**
  * 時間制メニューの実行画面: 「帯に収めて時間を過ごす」ための表示
  * (要件: 時間の経過・目標・残りと、心拍の上限・現在・下限を出す)。
+ * 行構成は心拍トリガー型と同じ 6 行に揃える (ラウンド枠に収める)。
  */
 @Composable
 private fun TimedRunningScreen(
@@ -248,31 +248,33 @@ private fun TimedRunningScreen(
                 modifier = Modifier.padding(start = 3.dp, bottom = 6.dp),
             )
         }
+        // 帯と残り時間を 1 行に。残りが判断材料なので LEFT 側だけ明色で立てる
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = listOfNotNull("▲${state.upperBpm}", state.lowerBpm?.let { "▼$it" })
+                    .joinToString(" "),
+                color = color,
+                style = MaterialTheme.typography.caption2,
+            )
+            Text(
+                text = "LEFT ${format(remaining)}",
+                color = APColors.Text,
+                style = MaterialTheme.typography.caption1,
+            )
+        }
         Text(
-            text = listOfNotNull("▲${state.upperBpm}", state.lowerBpm?.let { "▼$it" })
-                .joinToString(" "),
-            color = color,
-            style = MaterialTheme.typography.caption2,
-        )
-        // LEFT を主役に、経過/目標を添える (時間で必ず終わるメニューなので残りが判断材料)
-        Text(
-            text = "LEFT ${format(remaining)}",
-            color = APColors.Text,
-            style = MaterialTheme.typography.title3,
-        )
-        Text(
-            text = "${format(elapsedInMenu)} / ${format(target)} · T ${format(state.elapsed)}",
+            text = listOfNotNull(
+                "${format(elapsedInMenu)} / ${format(target)}",
+                "T ${format(state.elapsed)}",
+                state.calories?.let { "${it.toInt()} kcal" },
+            ).joinToString(" · "),
             color = APColors.TextDim,
             style = MaterialTheme.typography.caption2,
         )
-        state.calories?.let {
-            Text(
-                text = "${it.toInt()} kcal",
-                color = APColors.TextDim,
-                style = MaterialTheme.typography.caption2,
-            )
-        }
-        Box(modifier = Modifier.padding(top = 6.dp)) {
+        Box(modifier = Modifier.padding(top = 4.dp)) {
             StopButton(onClick = onStop)
         }
     }
