@@ -59,6 +59,48 @@ class DailyHealthRecordTest {
     }
 
     @Test
+    fun `breakdown と externalSessions を含めて round-trip する`() {
+        val record = DailyHealthRecord(
+            date = "2026-07-21",
+            steps = 9000,
+            breakdown = listOf(
+                MetricSourceValue("steps", "com.google.android.apps.fitness", 8800.0),
+                MetricSourceValue("steps", "com.fitbit.FitbitMobile", 9000.0),
+            ),
+            externalSessions = listOf(
+                ExternalExerciseSession(
+                    id = "hc-1",
+                    startTimeMs = 1_750_000_000_000,
+                    endTimeMs = 1_750_001_800_000,
+                    exerciseType = 56,
+                    title = "Morning Run",
+                    sourcePackage = "com.fitbit.FitbitMobile",
+                ),
+            ),
+        )
+        val json = Json.encodeToString(DailyHealthRecord.serializer(), record)
+        assertEquals(record, Json.decodeFromString(DailyHealthRecord.serializer(), json))
+    }
+
+    @Test
+    fun `breakdown だけ入った行も isEmpty ではない`() {
+        val record = DailyHealthRecord(
+            date = "2026-07-21",
+            breakdown = listOf(MetricSourceValue("steps", "pkg", 1.0)),
+        )
+        assertFalse(record.isEmpty)
+    }
+
+    @Test
+    fun `旧版が書いた breakdown 無し JSON も読める (後方互換)`() {
+        val json = """{"date": "2026-07-20", "steps": 100}"""
+        val lenient = Json { ignoreUnknownKeys = true }
+        val decoded = lenient.decodeFromString(DailyHealthRecord.serializer(), json)
+        assertEquals(null, decoded.breakdown)
+        assertEquals(null, decoded.externalSessions)
+    }
+
+    @Test
     fun `HealthDataExport は dailyMetrics と sessions を含めて round-trip する`() {
         val export = HealthDataExport(
             exportedAtMs = 1_750_000_000_000,

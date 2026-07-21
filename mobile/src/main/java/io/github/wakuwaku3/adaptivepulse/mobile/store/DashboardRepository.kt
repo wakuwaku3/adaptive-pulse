@@ -3,6 +3,8 @@ package io.github.wakuwaku3.adaptivepulse.mobile.store
 import android.content.Context
 import android.util.Log
 import io.github.wakuwaku3.adaptivepulse.core.sync.DailyHealthRecord
+import io.github.wakuwaku3.adaptivepulse.core.sync.ExternalExerciseSession
+import io.github.wakuwaku3.adaptivepulse.core.sync.MetricSourceValue
 import io.github.wakuwaku3.adaptivepulse.core.sync.SessionRecord
 import io.github.wakuwaku3.adaptivepulse.mobile.calories.CalorieEnricher
 import io.github.wakuwaku3.adaptivepulse.mobile.health.HealthDataSource
@@ -12,6 +14,8 @@ import io.github.wakuwaku3.adaptivepulse.mobile.sync.FirestoreSync
 import io.github.wakuwaku3.adaptivepulse.mobile.sync.PendingSessionStore
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.json.Json
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -106,6 +110,26 @@ class DashboardRepository(private val context: Context) {
         // 当日に体重実測が無い日でも TDEE は出したい (体重未測の日に消費だけ消えるのは体験ロスが大きい)
         val fallbackWeightKg = if (snapshot.record.weightKg == null) hc.readLatestWeightKgBefore(to) else null
         val enriched = CalorieEnricher.enrich(snapshot.record, hcSessions, appSessionsForDate, ageYears, fallbackWeightKg)
+            // HC には端末横断でアクセスできないので、読み取り済みの内訳・他アプリセッションも
+            // レコードに同梱して Firestore まで届ける (大容量時系列は対象外)。空は null に
+            // 正規化して isEmpty 判定を保つ
+            .copy(
+                breakdown = snapshot.breakdown
+                    .map { MetricSourceValue(it.metricKey, it.sourcePackage, it.value) }
+                    .takeIf { it.isNotEmpty() },
+                externalSessions = hcSessions
+                    .map {
+                        ExternalExerciseSession(
+                            id = it.id,
+                            startTimeMs = it.startTimeMs,
+                            endTimeMs = it.endTimeMs,
+                            exerciseType = it.exerciseType,
+                            title = it.title,
+                            sourcePackage = it.sourcePackage,
+                        )
+                    }
+                    .takeIf { it.isNotEmpty() },
+            )
         dao.upsertSnapshot(enriched.toEntity(syncedAtMs = System.currentTimeMillis()))
 
         // breakdown は metric ごとに REPLACE して、書き込まないソースが消えたら自然に消える
@@ -193,6 +217,9 @@ class DashboardRepository(private val context: Context) {
         date.atStartOfDay(zone) to date.plusDays(1).atStartOfDay(zone)
 }
 
+/** entity の JSON 列 (breakdown / externalSessions) の変換用。スキーマ進化に耐えるよう unknown keys は無視 */
+private val entityJson = Json { ignoreUnknownKeys = true }
+
 private fun MetricBreakdownRow.toEntity(date: String): MetricBySourceEntity =
     MetricBySourceEntity(
         date = date,
@@ -238,6 +265,12 @@ internal fun DailyHealthRecord.toEntity(syncedAtMs: Long): DailySnapshotEntity =
     spo2MinPct = spo2MinPct,
     respiratoryRateAvg = respiratoryRateAvg,
     skinTemperatureDeltaC = skinTemperatureDeltaC,
+    breakdownJson = breakdown?.let {
+        entityJson.encodeToString(ListSerializer(MetricSourceValue.serializer()), it)
+    },
+    externalSessionsJson = externalSessions?.let {
+        entityJson.encodeToString(ListSerializer(ExternalExerciseSession.serializer()), it)
+    },
 )
 
 internal fun DailySnapshotEntity.toRecord(): DailyHealthRecord = DailyHealthRecord(
@@ -276,4 +309,14 @@ internal fun DailySnapshotEntity.toRecord(): DailyHealthRecord = DailyHealthReco
     spo2MinPct = spo2MinPct,
     respiratoryRateAvg = respiratoryRateAvg,
     skinTemperatureDeltaC = skinTemperatureDeltaC,
+    breakdown = breakdownJson?.let { s ->
+        runCatching {
+            entityJson.decodeFromString(ListSerializer(MetricSourceValue.serializer()), s)
+        }.getOrNull()
+    },
+    externalSessions = externalSessionsJson?.let { s ->
+        runCatching {
+            entityJson.decodeFromString(ListSerializer(ExternalExerciseSession.serializer()), s)
+        }.getOrNull()
+    },
 )

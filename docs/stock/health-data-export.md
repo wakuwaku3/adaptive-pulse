@@ -101,10 +101,14 @@ Worker は HC 権限が無ければ `Result.success()` で no-op に倒れる。
 
 ## Firestore 連携
 
-- `users/{uid}/dailyMetrics/{YYYY-MM-DD}` に日次集約のみ upsert (Stream A)。
+- `users/{uid}/dailyMetrics/{YYYY-MM-DD}` に日次集約を upsert (Stream A)。
 - ドキュメント本体は `DailyHealthRecord` の JSON 文字列を `json` フィールドに持ち、
   doc id を日付固定にすることで重複 ingest が単純上書きになる (冪等)。
-- 時系列・dataOrigin 別 breakdown は Firestore に上げない (端末ローカルで完結)。
+- `DailyHealthRecord` には dataOrigin 別 breakdown (`breakdown`) と他アプリの運動
+  セッション (`externalSessions`) も同梱する。HC には端末を横断してアクセスできない
+  ため、時系列を除く読み取り済みデータはすべて Firestore まで届けて分析可能にする
+  (`.claude/rules/health-connect-sync.md`)。
+- 時系列 (HR / Vital サンプル列) は容量のため Firestore に上げない (端末ローカルで完結)。
 - Spark プランの 20K writes/日 制限: 通常 sync で 7 日 × 1 ドキュメント = 7 writes/h、
   初回 5 年 sync で 1825 writes (1 回のみ) なので余裕。
 
