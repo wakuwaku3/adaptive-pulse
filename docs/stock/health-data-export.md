@@ -87,9 +87,18 @@ revoke は Android Settings → Health Connect)。
 | 初回限定 `InitialSyncWorker` | today + 過去 5 年 (1825 日) | インストール後 1 回だけ。`READ_HEALTH_DATA_HISTORY` 拒否時は HC 既定の 30 日に縮退 |
 
 初回完了判定は Room の最古日から導く (`DashboardSyncManager.enqueueInitialSyncIfNeeded`)。
-Room destructive migration で wipe されたケースは自動で再 backfill される。履歴権限が
-後から付与されたときは判定を経由せず強制 backfill する (空マーカー行を「同期済み」と
-誤認するため)。
+Room destructive migration で wipe されたケースは自動で再 backfill される。
+
+遡及は 2 モード (`InitialSyncWorker`):
+
+- **fill** (自動再 backfill): 実測データの無い日だけ埋める
+- **authoritative** (手動 Resync / 履歴権限付与後): HC を正として全日を再読し、HC 側で
+  削除されたデータも反映する。途中停止しても「要求時刻以降に再読済みの日」を skip して
+  続きから回る
+
+読み取りは例外の有無で「データが無い (クリーン読みの空 = 空で上書きしてよい)」と
+「読めなかった (既存キャッシュ温存)」を区別する (`SnapshotResult.readFailed`)。
+TDEE / exerciseExtra は本アプリがマスターで、どのモードでも `CalorieEnricher` が再計算する。
 
 HC 読み込みはローカルなので network 不要だが、Firestore upsert を伴うため
 WorkManager の constraint は `NetworkType.CONNECTED` を要求する (network 不在時は

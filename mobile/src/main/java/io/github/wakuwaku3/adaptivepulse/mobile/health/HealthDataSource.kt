@@ -74,7 +74,7 @@ class HealthDataSource(private val context: Context) {
         val yesterday = LocalDate.now(zone).minusDays(1)
         return (0 until days).map { offset ->
             val date = yesterday.minusDays(offset.toLong())
-            readDay(hc, granted, date, zone)
+            readDay(hc, granted, date, zone, ReadFailures())
         }
     }
 
@@ -86,19 +86,24 @@ class HealthDataSource(private val context: Context) {
     suspend fun readLatestWeightKgBefore(end: ZonedDateTime): Double? {
         val hc = client ?: return null
         val granted = grantedPermissions()
-        return readLatestEver(hc, granted, end, WeightRecord::class) { it.weight.inKilograms }
+        return readLatestEver(hc, granted, end, WeightRecord::class, ReadFailures()) { it.weight.inKilograms }
     }
 
     /**
      * ダッシュボード用に 1 日分のスナップショットを per-source breakdown 付きで取得する。
      * [date] は今日を含めて任意の暦日を指定可。
+     *
+     * [SnapshotResult.readFailed] は読み取り中にどれか 1 つでも例外が出たかを示す。
+     * false (クリーン読み) の空レコードは「HC にデータが無い」ことの確証になり、
+     * HC 側で削除されたデータをキャッシュへ反映 (空上書き) してよい根拠になる。
      */
     suspend fun readSnapshot(date: LocalDate, zone: ZoneId = ZoneId.systemDefault()): SnapshotResult? {
         val hc = client ?: return null
         val granted = grantedPermissions()
-        val record = readDay(hc, granted, date, zone)
-        val breakdown = readBreakdown(hc, granted, date, zone)
-        return SnapshotResult(record, breakdown)
+        val failures = ReadFailures()
+        val record = readDay(hc, granted, date, zone, failures)
+        val breakdown = readBreakdown(hc, granted, date, zone, failures)
+        return SnapshotResult(record, breakdown, readFailed = failures.any)
     }
 
     /** [from] (inclusive) 〜 [to] (exclusive) の HR サンプルをデータソース付きで返す */
@@ -234,6 +239,7 @@ class HealthDataSource(private val context: Context) {
         granted: Set<String>,
         date: LocalDate,
         zone: ZoneId,
+        failures: ReadFailures,
     ): DailyHealthRecord {
         val start = date.atStartOfDay(zone)
         val end = date.plusDays(1).atStartOfDay(zone)
@@ -274,26 +280,29 @@ class HealthDataSource(private val context: Context) {
         val agg = if (aggregateMetrics.isNotEmpty()) {
             runCatching {
                 hc.aggregate(AggregateRequest(metrics = aggregateMetrics, timeRangeFilter = range))
-            }.onFailure { Log.w(TAG, "HC aggregate 失敗: $date", it) }.getOrNull()
+            }.onFailure {
+                failures.any = true
+                Log.w(TAG, "HC aggregate 失敗: $date", it)
+            }.getOrNull()
         } else null
 
-        val hrStats = readHrStats(hc, granted, range)
-        val spo2 = readSpo2Stats(hc, granted, range)
-        val respiratoryRate = readRespiratoryAvg(hc, granted, range)
-        val skinTempDelta = readSkinTempLatest(hc, granted, range)
+        val hrStats = readHrStats(hc, granted, range, failures)
+        val spo2 = readSpo2Stats(hc, granted, range, failures)
+        val respiratoryRate = readRespiratoryAvg(hc, granted, range, failures)
+        val skinTempDelta = readSkinTempLatest(hc, granted, range, failures)
 
         return DailyHealthRecord(
             date = date.toString(),
-            restingHeartRateBpm = readRestingHeartRate(hc, granted, range),
-            hrvRmssdMs = readHrv(hc, granted, range),
+            restingHeartRateBpm = readRestingHeartRate(hc, granted, range, failures),
+            hrvRmssdMs = readHrv(hc, granted, range, failures),
             avgHeartRateBpm = hrStats?.avg,
             minHeartRateBpm = hrStats?.min,
             maxHeartRateBpm = hrStats?.max,
-            sleepDurationMin = readSleepDuration(hc, granted, date, zone),
-            sleepDeepMin = readSleepStage(hc, granted, date, zone, SleepSessionRecord.STAGE_TYPE_DEEP),
-            sleepRemMin = readSleepStage(hc, granted, date, zone, SleepSessionRecord.STAGE_TYPE_REM),
-            sleepLightMin = readSleepStage(hc, granted, date, zone, SleepSessionRecord.STAGE_TYPE_LIGHT),
-            sleepAwakeMin = readSleepStage(hc, granted, date, zone, SleepSessionRecord.STAGE_TYPE_AWAKE),
+            sleepDurationMin = readSleepDuration(hc, granted, date, zone, failures),
+            sleepDeepMin = readSleepStage(hc, granted, date, zone, SleepSessionRecord.STAGE_TYPE_DEEP, failures),
+            sleepRemMin = readSleepStage(hc, granted, date, zone, SleepSessionRecord.STAGE_TYPE_REM, failures),
+            sleepLightMin = readSleepStage(hc, granted, date, zone, SleepSessionRecord.STAGE_TYPE_LIGHT, failures),
+            sleepAwakeMin = readSleepStage(hc, granted, date, zone, SleepSessionRecord.STAGE_TYPE_AWAKE, failures),
             steps = agg?.get(StepsRecord.COUNT_TOTAL),
             distanceMeters = agg?.get(DistanceRecord.DISTANCE_TOTAL)?.inMeters,
             floorsClimbed = agg?.get(FloorsClimbedRecord.FLOORS_CLIMBED_TOTAL),
@@ -301,10 +310,10 @@ class HealthDataSource(private val context: Context) {
             activeCaloriesKcal = agg?.get(ActiveCaloriesBurnedRecord.ACTIVE_CALORIES_TOTAL)?.inKilocalories,
             totalCaloriesKcal = agg?.get(TotalCaloriesBurnedRecord.ENERGY_TOTAL)?.inKilocalories,
             basalCaloriesKcal = agg?.get(BasalMetabolicRateRecord.BASAL_CALORIES_TOTAL)?.inKilocalories,
-            weightKg = readLatest(hc, granted, range, WeightRecord::class) { it.weight.inKilograms },
-            bodyFatPct = readLatest(hc, granted, range, BodyFatRecord::class) { it.percentage.value },
-            leanBodyMassKg = readLatest(hc, granted, range, LeanBodyMassRecord::class) { it.mass.inKilograms },
-            heightCm = readLatestEver(hc, granted, end, HeightRecord::class) { it.height.inMeters * 100.0 },
+            weightKg = readLatest(hc, granted, range, WeightRecord::class, failures) { it.weight.inKilograms },
+            bodyFatPct = readLatest(hc, granted, range, BodyFatRecord::class, failures) { it.percentage.value },
+            leanBodyMassKg = readLatest(hc, granted, range, LeanBodyMassRecord::class, failures) { it.mass.inKilograms },
+            heightCm = readLatestEver(hc, granted, end, HeightRecord::class, failures) { it.height.inMeters * 100.0 },
             intakeKcal = agg?.get(NutritionRecord.ENERGY_TOTAL)?.inKilocalories,
             proteinG = agg?.get(NutritionRecord.PROTEIN_TOTAL)?.inGrams,
             fatG = agg?.get(NutritionRecord.TOTAL_FAT_TOTAL)?.inGrams,
@@ -328,6 +337,7 @@ class HealthDataSource(private val context: Context) {
         granted: Set<String>,
         date: LocalDate,
         zone: ZoneId,
+        failures: ReadFailures,
     ): List<MetricBreakdownRow> {
         val start = date.atStartOfDay(zone)
         val end = date.plusDays(1).atStartOfDay(zone)
@@ -347,7 +357,10 @@ class HealthDataSource(private val context: Context) {
                         val sum = list.sumOf(extract)
                         if (sum > 0.0) out += MetricBreakdownRow(metricKey, origin, sum)
                     }
-            }.onFailure { Log.w(TAG, "HC breakdown 失敗: $metricKey", it) }
+            }.onFailure {
+                failures.any = true
+                Log.w(TAG, "HC breakdown 失敗: $metricKey", it)
+            }
         }
 
         collect(StepsRecord::class, METRIC_STEPS) { it.count.toDouble() }
@@ -368,6 +381,7 @@ class HealthDataSource(private val context: Context) {
         hc: HealthConnectClient,
         granted: Set<String>,
         range: TimeRangeFilter,
+        failures: ReadFailures,
     ): HrStats? {
         if (HealthPermission.getReadPermission(HeartRateRecord::class) !in granted) return null
         return runCatching {
@@ -378,39 +392,51 @@ class HealthDataSource(private val context: Context) {
                 min = bpms.min(),
                 max = bpms.max(),
             )
-        }.onFailure { Log.w(TAG, "HC HR 読み込み失敗", it) }.getOrNull()
+        }.onFailure {
+            failures.any = true
+            Log.w(TAG, "HC HR 読み込み失敗", it)
+        }.getOrNull()
     }
 
     private suspend fun readSpo2Stats(
         hc: HealthConnectClient,
         granted: Set<String>,
         range: TimeRangeFilter,
+        failures: ReadFailures,
     ): Pair<Double, Double>? {
         if (HealthPermission.getReadPermission(OxygenSaturationRecord::class) !in granted) return null
         return runCatching {
             val values = hc.readRecords(ReadRecordsRequest(OxygenSaturationRecord::class, range))
                 .records.map { it.percentage.value }
             if (values.isEmpty()) null else (values.average() to values.min())
-        }.onFailure { Log.w(TAG, "HC SpO2 読み込み失敗", it) }.getOrNull()
+        }.onFailure {
+            failures.any = true
+            Log.w(TAG, "HC SpO2 読み込み失敗", it)
+        }.getOrNull()
     }
 
     private suspend fun readRespiratoryAvg(
         hc: HealthConnectClient,
         granted: Set<String>,
         range: TimeRangeFilter,
+        failures: ReadFailures,
     ): Double? {
         if (HealthPermission.getReadPermission(RespiratoryRateRecord::class) !in granted) return null
         return runCatching {
             val values = hc.readRecords(ReadRecordsRequest(RespiratoryRateRecord::class, range))
                 .records.map { it.rate }
             if (values.isEmpty()) null else values.average()
-        }.onFailure { Log.w(TAG, "HC RespiratoryRate 読み込み失敗", it) }.getOrNull()
+        }.onFailure {
+            failures.any = true
+            Log.w(TAG, "HC RespiratoryRate 読み込み失敗", it)
+        }.getOrNull()
     }
 
     private suspend fun readSkinTempLatest(
         hc: HealthConnectClient,
         granted: Set<String>,
         range: TimeRangeFilter,
+        failures: ReadFailures,
     ): Double? {
         if (HealthPermission.getReadPermission(SkinTemperatureRecord::class) !in granted) return null
         return runCatching {
@@ -418,32 +444,43 @@ class HealthDataSource(private val context: Context) {
             val deltas = hc.readRecords(ReadRecordsRequest(SkinTemperatureRecord::class, range))
                 .records.flatMap { it.deltas }.map { it.delta.inCelsius }
             if (deltas.isEmpty()) null else deltas.sorted()[deltas.size / 2]
-        }.onFailure { Log.w(TAG, "HC SkinTemperature 読み込み失敗", it) }.getOrNull()
+        }.onFailure {
+            failures.any = true
+            Log.w(TAG, "HC SkinTemperature 読み込み失敗", it)
+        }.getOrNull()
     }
 
     private suspend fun readRestingHeartRate(
         hc: HealthConnectClient,
         granted: Set<String>,
         range: TimeRangeFilter,
+        failures: ReadFailures,
     ): Int? {
         if (HealthPermission.getReadPermission(RestingHeartRateRecord::class) !in granted) return null
         return runCatching {
             hc.readRecords(ReadRecordsRequest(RestingHeartRateRecord::class, range))
                 .records.lastOrNull()?.beatsPerMinute?.toInt()
-        }.onFailure { Log.w(TAG, "HC RHR 読み込み失敗", it) }.getOrNull()
+        }.onFailure {
+            failures.any = true
+            Log.w(TAG, "HC RHR 読み込み失敗", it)
+        }.getOrNull()
     }
 
     private suspend fun readHrv(
         hc: HealthConnectClient,
         granted: Set<String>,
         range: TimeRangeFilter,
+        failures: ReadFailures,
     ): Double? {
         if (HealthPermission.getReadPermission(HeartRateVariabilityRmssdRecord::class) !in granted) return null
         return runCatching {
             val list = hc.readRecords(ReadRecordsRequest(HeartRateVariabilityRmssdRecord::class, range))
                 .records.map { it.heartRateVariabilityMillis }
             if (list.isEmpty()) null else list.average()
-        }.onFailure { Log.w(TAG, "HC HRV 読み込み失敗", it) }.getOrNull()
+        }.onFailure {
+            failures.any = true
+            Log.w(TAG, "HC HRV 読み込み失敗", it)
+        }.getOrNull()
     }
 
     private suspend fun readSleepDuration(
@@ -451,6 +488,7 @@ class HealthDataSource(private val context: Context) {
         granted: Set<String>,
         date: LocalDate,
         zone: ZoneId,
+        failures: ReadFailures,
     ): Long? {
         if (HealthPermission.getReadPermission(SleepSessionRecord::class) !in granted) return null
         val window = sleepWindow(date, zone)
@@ -459,7 +497,10 @@ class HealthDataSource(private val context: Context) {
                 .records
                 .sumOf { (it.endTime.toEpochMilli() - it.startTime.toEpochMilli()) / 60_000.0 }
             if (total <= 0.0) null else total.roundToLong()
-        }.onFailure { Log.w(TAG, "HC sleep 読み込み失敗", it) }.getOrNull()
+        }.onFailure {
+            failures.any = true
+            Log.w(TAG, "HC sleep 読み込み失敗", it)
+        }.getOrNull()
     }
 
     private suspend fun readSleepStage(
@@ -468,6 +509,7 @@ class HealthDataSource(private val context: Context) {
         date: LocalDate,
         zone: ZoneId,
         stage: Int,
+        failures: ReadFailures,
     ): Long? {
         if (HealthPermission.getReadPermission(SleepSessionRecord::class) !in granted) return null
         val window = sleepWindow(date, zone)
@@ -478,7 +520,10 @@ class HealthDataSource(private val context: Context) {
                 .filter { it.stage == stage }
                 .sumOf { (it.endTime.toEpochMilli() - it.startTime.toEpochMilli()) / 60_000.0 }
             if (total <= 0.0) null else total.roundToLong()
-        }.onFailure { Log.w(TAG, "HC sleep stage 読み込み失敗", it) }.getOrNull()
+        }.onFailure {
+            failures.any = true
+            Log.w(TAG, "HC sleep stage 読み込み失敗", it)
+        }.getOrNull()
     }
 
     private fun sleepWindow(date: LocalDate, zone: ZoneId): TimeRangeFilter =
@@ -492,12 +537,16 @@ class HealthDataSource(private val context: Context) {
         granted: Set<String>,
         range: TimeRangeFilter,
         type: kotlin.reflect.KClass<T>,
+        failures: ReadFailures,
         extract: (T) -> Double,
     ): Double? {
         if (HealthPermission.getReadPermission(type) !in granted) return null
         return runCatching {
             hc.readRecords(ReadRecordsRequest(type, range)).records.lastOrNull()?.let(extract)
-        }.onFailure { Log.w(TAG, "HC ${type.simpleName} 読み込み失敗", it) }.getOrNull()
+        }.onFailure {
+            failures.any = true
+            Log.w(TAG, "HC ${type.simpleName} 読み込み失敗", it)
+        }.getOrNull()
     }
 
     /** 身長のように「過去の任意時点で最後に記録された値」を取りたいとき用 */
@@ -506,13 +555,17 @@ class HealthDataSource(private val context: Context) {
         granted: Set<String>,
         before: ZonedDateTime,
         type: kotlin.reflect.KClass<T>,
+        failures: ReadFailures,
         extract: (T) -> Double,
     ): Double? {
         if (HealthPermission.getReadPermission(type) !in granted) return null
         return runCatching {
             hc.readRecords(ReadRecordsRequest(type, TimeRangeFilter.before(before.toInstant())))
                 .records.lastOrNull()?.let(extract)
-        }.onFailure { Log.w(TAG, "HC ${type.simpleName} 読み込み失敗", it) }.getOrNull()
+        }.onFailure {
+            failures.any = true
+            Log.w(TAG, "HC ${type.simpleName} 読み込み失敗", it)
+        }.getOrNull()
     }
 
     companion object {
@@ -569,7 +622,18 @@ private data class HrStats(val avg: Int, val min: Int, val max: Int)
 data class SnapshotResult(
     val record: DailyHealthRecord,
     val breakdown: List<MetricBreakdownRow>,
+    /**
+     * 読み取り中にどれか 1 つでも例外が出たか。true の空レコードは「読めなかった」可能性が
+     * あり既存キャッシュを温存すべき。false の空レコードは「HC にデータが無い」確証で、
+     * 削除の反映として空上書きしてよい。
+     */
+    val readFailed: Boolean = false,
 )
+
+/** 1 スナップショット分の読み取りで例外が出たかを集める (HealthDataSource 内部用) */
+internal class ReadFailures {
+    var any = false
+}
 
 data class MetricBreakdownRow(
     val metricKey: String,

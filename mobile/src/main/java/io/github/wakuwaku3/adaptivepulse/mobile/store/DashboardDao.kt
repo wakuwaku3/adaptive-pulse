@@ -51,6 +51,10 @@ interface DashboardDao {
     @Query("UPDATE daily_snapshot SET uploadedAtMs = :uploadedAtMs WHERE date IN (:dates)")
     suspend fun markUploaded(dates: List<String>, uploadedAtMs: Long)
 
+    // Resync (HC を正とする全再読) の再開判定用: この時刻以降にクリーン読みで確定した日
+    @Query("SELECT date FROM daily_snapshot WHERE verifiedAtMs >= :sinceMs")
+    suspend fun datesVerifiedSince(sinceMs: Long): List<String>
+
     // -- per-source breakdown --
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
