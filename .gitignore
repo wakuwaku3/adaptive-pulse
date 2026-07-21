@@ -33,3 +33,6 @@ ui-debug.log
 
 # analyze skill の出力 (個人健康データを含むため絶対にコミットしない)
 tmp/
+
+# Claude Code の個人ローカル設定
+.claude/settings.local.json
