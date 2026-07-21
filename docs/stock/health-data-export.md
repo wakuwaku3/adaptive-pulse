@@ -51,6 +51,11 @@ runtime grant は HC の `PermissionController.createRequestPermissionResultCont
 - SpO2 / 呼吸数 / 皮膚温 / 基礎代謝
 - `READ_HEALTH_DATA_HISTORY` (Android 14+): 過去 30 日より前のデータ取得に必要。
   許可されれば初回 5 年同期が回る。拒否時は HC が 30 日で打ち切る。
+  runtime 要求は `HealthDataSource.REQUEST_PERMISSIONS` に含めて行うが、接続判定
+  (`PERMISSIONS` の containsAll) には含めない: 拒否されても直近 30 日の通常同期は
+  成立させる。未付与のまま接続済みの端末には起動時に権限 sheet を再提示し、付与された
+  瞬間に強制 backfill (`enqueueInitialSync`) を仕掛けて 30 日制限時代の空マーカー日を
+  埋め直す。
 
 取得 UI / revoke 経路の運用は従来通り (Settings 画面のトグルで一括 grant、個別
 revoke は Android Settings → Health Connect)。
@@ -81,8 +86,10 @@ revoke は Android Settings → Health Connect)。
 | pull-to-refresh / HC 連携初回 | today + 過去 7 日 | ユーザ操作 |
 | 初回限定 `InitialSyncWorker` | today + 過去 5 年 (1825 日) | インストール後 1 回だけ。`READ_HEALTH_DATA_HISTORY` 拒否時は HC 既定の 30 日に縮退 |
 
-初回完了マークは DataStore の `initial_sync_completed_at_ms` に永続化し、2 回目以降は
-スキップする。
+初回完了判定は Room の最古日から導く (`DashboardSyncManager.enqueueInitialSyncIfNeeded`)。
+Room destructive migration で wipe されたケースは自動で再 backfill される。履歴権限が
+後から付与されたときは判定を経由せず強制 backfill する (空マーカー行を「同期済み」と
+誤認するため)。
 
 HC 読み込みはローカルなので network 不要だが、Firestore upsert を伴うため
 WorkManager の constraint は `NetworkType.CONNECTED` を要求する (network 不在時は

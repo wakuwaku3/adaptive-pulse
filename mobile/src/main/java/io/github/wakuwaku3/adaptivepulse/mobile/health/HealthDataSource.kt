@@ -553,6 +553,12 @@ class HealthDataSource(private val context: Context) {
         /** Android 14+ で過去 30 日より前を読むのに必要。許可されれば 5 年同期が回る */
         const val PERMISSION_HISTORY = "android.permission.health.READ_HEALTH_DATA_HISTORY"
 
+        /**
+         * 権限リクエスト時はこちらを使う。履歴権限は接続判定 ([PERMISSIONS] の containsAll)
+         * には含めない: 拒否されても直近 30 日の通常同期は成立させたいため。
+         */
+        val REQUEST_PERMISSIONS: Set<String> = PERMISSIONS + PERMISSION_HISTORY
+
         fun permissionRequestContract() =
             PermissionController.createRequestPermissionResultContract()
     }

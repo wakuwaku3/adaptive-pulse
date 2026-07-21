@@ -246,28 +246,44 @@ class MainActivity : ComponentActivity() {
         // Health Connect の権限管理 + JSON export
         val healthSource = remember { HealthDataSource(applicationContext) }
         var hcConnected by remember { mutableStateOf(false) }
-        LaunchedEffect(Unit) {
-            hcConnected = healthSource.available &&
-                healthSource.grantedPermissions().containsAll(HealthDataSource.PERMISSIONS)
-            if (hcConnected) {
-                DashboardSyncManager.enqueuePeriodic(applicationContext)
-                DashboardSyncManager.enqueueInitialSyncIfNeeded(applicationContext)
-            }
-        }
+        var hcHistoryGranted by remember { mutableStateOf(false) }
         val hcLauncher = rememberLauncherForActivityResult(
             contract = HealthDataSource.permissionRequestContract(),
         ) { granted ->
             hcConnected = granted.containsAll(HealthDataSource.PERMISSIONS)
+            // 履歴権限が「今回はじめて」付与されたときだけ強制 backfill を仕掛ける。
+            // enqueueInitialSyncIfNeeded は 30 日制限時代に書かれた空マーカー行を
+            // 「同期済み」と誤認して skip するため、ここは REPLACE の強制実行が必要
+            val historyNewlyGranted =
+                !hcHistoryGranted && HealthDataSource.PERMISSION_HISTORY in granted
+            hcHistoryGranted = HealthDataSource.PERMISSION_HISTORY in granted
             if (!hcConnected && granted.isNotEmpty()) {
                 status = "Health Connect: some permissions denied"
             }
             if (hcConnected) {
                 DashboardSyncManager.enqueuePeriodic(applicationContext)
                 scope.launch {
-                    DashboardSyncManager.enqueueInitialSyncIfNeeded(applicationContext)
+                    if (historyNewlyGranted) {
+                        DashboardSyncManager.enqueueInitialSync(applicationContext)
+                    } else {
+                        DashboardSyncManager.enqueueInitialSyncIfNeeded(applicationContext)
+                    }
                     DashboardSyncManager.enqueueForeground(applicationContext)
                 }
                 status = "Health Connect connected · back-filling last 5 years in background"
+            }
+        }
+        LaunchedEffect(Unit) {
+            if (!healthSource.available) return@LaunchedEffect
+            val granted = healthSource.grantedPermissions()
+            hcConnected = granted.containsAll(HealthDataSource.PERMISSIONS)
+            hcHistoryGranted = HealthDataSource.PERMISSION_HISTORY in granted
+            if (hcConnected) {
+                DashboardSyncManager.enqueuePeriodic(applicationContext)
+                DashboardSyncManager.enqueueInitialSyncIfNeeded(applicationContext)
+                // 既存インストールへの履歴権限の後付け要求。付与されるまで起動ごとに出すが、
+                // 2 回拒否すると OS 側が sheet を出さなくなるので無限に煩わせることはない
+                if (!hcHistoryGranted) hcLauncher.launch(HealthDataSource.REQUEST_PERMISSIONS)
             }
         }
 
@@ -521,7 +537,7 @@ class MainActivity : ComponentActivity() {
                         healthConnectAvailable = healthSource.available,
                         onHealthConnectToggle = { wantConnect ->
                             if (wantConnect) {
-                                hcLauncher.launch(HealthDataSource.PERMISSIONS)
+                                hcLauncher.launch(HealthDataSource.REQUEST_PERMISSIONS)
                             } else {
                                 DashboardSyncManager.cancelAll(applicationContext)
                                 status = "Revoke in Settings → Health Connect"
