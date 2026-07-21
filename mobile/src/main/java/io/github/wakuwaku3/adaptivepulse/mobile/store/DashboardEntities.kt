@@ -6,7 +6,8 @@ import androidx.room.PrimaryKey
 /**
  * Health Connect から取り込んだダッシュボード表示用データのローカルキャッシュ。
  *
- * 設計方針: Firestore に上がるのは日次集約のみ。時系列は HC が原本なので Room に閉じる
+ * 設計方針: Firestore には日次集約 (per-source 内訳・他アプリ運動セッション同梱) を上げる。
+ * 大容量の時系列 (HR / Vital) は HC が原本なので Room に閉じる
  * (機種変時はローカルキャッシュが消えても HC から再同期で復元可能)。
  * 詳細は `docs/notes/20260620__dashboard-redesign/index.md`。
  */
@@ -57,6 +58,10 @@ data class DailySnapshotEntity(
     val spo2MinPct: Double? = null,
     val respiratoryRateAvg: Double? = null,
     val skinTemperatureDeltaC: Double? = null,
+    /** [io.github.wakuwaku3.adaptivepulse.core.sync.MetricSourceValue] のリストを JSON 化した列 */
+    val breakdownJson: String? = null,
+    /** [io.github.wakuwaku3.adaptivepulse.core.sync.ExternalExerciseSession] のリストを JSON 化した列 */
+    val externalSessionsJson: String? = null,
 )
 
 /**

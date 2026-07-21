@@ -66,6 +66,14 @@ data class DailyHealthRecord(
     val spo2MinPct: Double? = null,
     val respiratoryRateAvg: Double? = null,
     val skinTemperatureDeltaC: Double? = null,
+    /**
+     * 主要指標のデータソース別内訳。HC には端末を横断してアクセスできないため、
+     * 分析に使いうる読み取り済みデータは (大容量の時系列を除き) すべてここに同梱して
+     * Firestore まで届ける。空リストは null に正規化する ([isEmpty] 判定を保つため)。
+     */
+    val breakdown: List<MetricSourceValue>? = null,
+    /** 他アプリ (Strava / Fit 等) が HC に書いた、その日に重なる運動セッション */
+    val externalSessions: List<ExternalExerciseSession>? = null,
 ) {
     /**
      * `date` 以外のすべてのフィールドが null。HC が一時的に応答を返さない / その日にデータが
@@ -75,6 +83,29 @@ data class DailyHealthRecord(
     val isEmpty: Boolean
         get() = this == DailyHealthRecord(date = date)
 }
+
+/**
+ * 指標 1 種 × データソース 1 件の値。同じ指標 (例: totalCalories) を watch / phone / Fit が
+ * 別々に HC へ書いているのを保持し、端末間乖離の分析に使う。
+ * metricKey は mobile 側 `HealthDataSource.METRIC_*` の文字列。
+ */
+@Serializable
+data class MetricSourceValue(
+    val metricKey: String,
+    val sourcePackage: String,
+    val value: Double,
+)
+
+/** 他アプリが HC に書いた運動セッション。exerciseType は HC の ExerciseSessionRecord 定数 */
+@Serializable
+data class ExternalExerciseSession(
+    val id: String,
+    val startTimeMs: Long,
+    val endTimeMs: Long,
+    val exerciseType: Int,
+    val title: String? = null,
+    val sourcePackage: String,
+)
 
 /** エクスポート 1 ファイルの top-level シェイプ */
 @Serializable
