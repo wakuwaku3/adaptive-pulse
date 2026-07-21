@@ -109,6 +109,9 @@ Worker は HC 権限が無ければ `Result.success()` で no-op に倒れる。
   ため、時系列を除く読み取り済みデータはすべて Firestore まで届けて分析可能にする
   (`.claude/rules/health-connect-sync.md`)。
 - 時系列 (HR / Vital サンプル列) は容量のため Firestore に上げない (端末ローカルで完結)。
+  例外はセッション中の HR: watch が 1 秒グリッド (`SessionRecord.hrBpmBySecond`) で
+  同梱し、`users/{uid}/sessions/*` 経由で残る。フェーズ応答・回復速度の分析は
+  この生値を使う (1 セッションあたり数 KB〜十数 KB で容量影響は無視できる)。
 - Spark プランの 20K writes/日 制限: 通常 sync で 7 日 × 1 ドキュメント = 7 writes/h、
   初回 5 年 sync で 1825 writes (1 回のみ) なので余裕。
 

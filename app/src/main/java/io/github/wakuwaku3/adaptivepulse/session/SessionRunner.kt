@@ -1,5 +1,6 @@
 package io.github.wakuwaku3.adaptivepulse.session
 
+import io.github.wakuwaku3.adaptivepulse.core.HrSampleSeries
 import io.github.wakuwaku3.adaptivepulse.core.Phase
 import io.github.wakuwaku3.adaptivepulse.core.PlanEngine
 import io.github.wakuwaku3.adaptivepulse.core.SessionConfig
@@ -32,6 +33,8 @@ data class SessionResult(
     val fatigueBrake: Boolean,
     val avgBpm: Int?,
     val maxBpm: Int?,
+    /** セッション中 HR の 1 秒グリッド (index = 経過秒、欠落秒は null)。分析用の生値 */
+    val hrBpmBySecond: List<Int?>,
     val config: SessionConfig,
     /** 実行したプランとセグメントごとの実績 (プログラム 1 実行 = 1 セッション) */
     val plan: SessionPlanSnapshot,
@@ -50,6 +53,7 @@ class SessionRunner(
 ) {
     private val engine = PlanEngine(plan, config)
     private val metrics = SessionMetrics()
+    private val hrSeries = HrSampleSeries()
     private val mark = timeSource.markNow()
     private var lastBpm: Int? = null
     private var calories: Double? = null
@@ -73,6 +77,7 @@ class SessionRunner(
 
         sourceFactory { engine.sourcePhase }.samples().first { sample ->
             lastBpm = sample.bpm
+            hrSeries.record(mark.elapsedNow(), sample.bpm)
             sample.totalCalories?.let { calories = it }
             // engine を先に進めてから metrics に渡すことで、下限上向き超過の「境界サンプル」も
             // (= isWarmingUp が false に倒れた直後の状態で) 算入する
@@ -104,6 +109,7 @@ class SessionRunner(
             fatigueBrake = engine.fatigueBrakeFired,
             avgBpm = metrics.avgBpm,
             maxBpm = metrics.maxBpm,
+            hrBpmBySecond = hrSeries.toBpmBySecond(),
             config = config,
             plan = planSnapshot(elapsed),
         )

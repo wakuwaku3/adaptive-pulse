@@ -11,7 +11,7 @@ import kotlinx.serialization.Serializable
 @Serializable
 data class SessionRecord(
     val id: String,
-    val schema: Int = 4,
+    val schema: Int = 5,
     val startedAtMs: Long,
     val durationSec: Long,
     val cycles: Int,
@@ -32,6 +32,13 @@ data class SessionRecord(
      * プログラム 1 実行 = 1 セッション (schema 4)。旧レコード (schema 3 以前) は null。
      */
     val plan: SessionPlanSnapshot? = null,
+    /**
+     * セッション中の心拍の 1 秒グリッド列 (schema 5)。index = 開始からの経過秒、
+     * サンプルの無い秒は null。HC の全量 HR 時系列は容量のため保存しないので、
+     * フェーズ応答・回復速度の分析にはこのセッション中生値を使う (`core.HrSampleSeries`)。
+     * 旧レコード (schema 4 以前) は null。
+     */
+    val hrBpmBySecond: List<Int?>? = null,
 )
 
 /** 実行したプランの記録。programId = null はメニュー単体の実行 */

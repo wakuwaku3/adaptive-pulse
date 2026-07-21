@@ -30,7 +30,7 @@ class SessionRecordTest {
     }
 
     @Test
-    fun `SessionRecord schema は 4 (プラン記録の追加で bump)`() {
+    fun `SessionRecord schema は 5 (セッション中 HR 列の追加で bump)`() {
         val record = SessionRecord(
             id = "x",
             startedAtMs = 0,
@@ -40,7 +40,7 @@ class SessionRecordTest {
             fatigueBrake = false,
             config = SessionConfigSnapshot.from(SessionConfig()),
         )
-        assertEquals(4, record.schema)
+        assertEquals(5, record.schema)
         // 旧クライアントが書いた schema=2 + lockedCadenceTier / 旧 final target 等を含む JSON も読める
         val configJson = Json.encodeToString(SessionConfigSnapshot.serializer(), record.config)
         val legacy = """{"id":"y","schema":2,"startedAtMs":1,"durationSec":1,"cycles":1,
@@ -97,6 +97,28 @@ class SessionRecordTest {
         val legacy = """{"id":"z","schema":3,"startedAtMs":1,"durationSec":1,"cycles":1,
             "plannedCycles":1,"fatigueBrake":false,"config":$configJson}"""
         assertEquals(null, lenient.decodeFromString(SessionRecord.serializer(), legacy).plan)
+    }
+
+    @Test
+    fun `hrBpmBySecond 付き (schema 5) の JSON 往復と、HR 列無し旧 JSON の読み込み`() {
+        // 合成データ: warm-up 中の欠落 (null) を含む 1 秒グリッド
+        val record = SessionRecord(
+            id = "h",
+            startedAtMs = 1,
+            durationSec = 6,
+            cycles = 1,
+            plannedCycles = 1,
+            fatigueBrake = false,
+            hrBpmBySecond = listOf(null, null, 95, 102, 110, 118, 125),
+            config = SessionConfigSnapshot.from(SessionConfig()),
+        )
+        val json = Json.encodeToString(SessionRecord.serializer(), record)
+        assertEquals(record, Json.decodeFromString(SessionRecord.serializer(), json))
+
+        val configJson = Json.encodeToString(SessionConfigSnapshot.serializer(), record.config)
+        val legacy = """{"id":"z","schema":4,"startedAtMs":1,"durationSec":1,"cycles":1,
+            "plannedCycles":1,"fatigueBrake":false,"config":$configJson}"""
+        assertEquals(null, lenient.decodeFromString(SessionRecord.serializer(), legacy).hrBpmBySecond)
     }
 
     @Test
