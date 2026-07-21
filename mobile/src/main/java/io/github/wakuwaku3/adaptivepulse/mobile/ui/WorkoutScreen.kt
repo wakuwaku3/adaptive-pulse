@@ -178,10 +178,10 @@ fun WorkoutScreen(actions: WorkoutActions) {
     }
 
     editSetTarget?.let { (training, index) ->
+        // 対象セットが消えていたら (削除直後の stale index) 何も出さない。
+        // コンポジション中の state 書き戻しを避けるため null 化はここでしない
         val set = workout?.entries?.firstOrNull { it.trainingId == training.id }?.sets?.getOrNull(index)
-        if (set == null) {
-            editSetTarget = null
-        } else {
+        if (set != null) {
             SetDialog(
                 title = "${training.name} · set ${index + 1}",
                 prefill = Prefill(weightKg = set.weightKg, reps = set.reps),
