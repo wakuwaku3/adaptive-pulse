@@ -55,6 +55,7 @@ import io.github.wakuwaku3.adaptivepulse.mobile.session.LiveSessionStore
 import io.github.wakuwaku3.adaptivepulse.mobile.settings.PhoneSettingsRepository
 import io.github.wakuwaku3.adaptivepulse.mobile.store.DashboardRepository
 import io.github.wakuwaku3.adaptivepulse.mobile.store.DemoSeed
+import io.github.wakuwaku3.adaptivepulse.mobile.strength.WorkoutActions
 import io.github.wakuwaku3.adaptivepulse.mobile.sync.FirestoreSync
 import io.github.wakuwaku3.adaptivepulse.mobile.sync.PendingSessionStore
 import io.github.wakuwaku3.adaptivepulse.mobile.sync.PhoneSync
@@ -67,6 +68,7 @@ import io.github.wakuwaku3.adaptivepulse.mobile.ui.MenuEditScreen
 import io.github.wakuwaku3.adaptivepulse.mobile.ui.MobileColors
 import io.github.wakuwaku3.adaptivepulse.mobile.ui.ProgramEditScreen
 import io.github.wakuwaku3.adaptivepulse.mobile.ui.SettingsScreen
+import io.github.wakuwaku3.adaptivepulse.mobile.ui.WorkoutScreen
 import io.github.wakuwaku3.adaptivepulse.mobile.ui.appVersionName
 import io.github.wakuwaku3.adaptivepulse.mobile.ui.dashboard.computed
 import kotlinx.coroutines.launch
@@ -79,6 +81,8 @@ private sealed interface Screen {
     data object Settings : Screen
 
     data object Library : Screen
+
+    data object Workout : Screen
 
     /** menuId = null は新規作成 */
     data class MenuEdit(val menuId: String?) : Screen
@@ -382,6 +386,10 @@ class MainActivity : ComponentActivity() {
                         ) {
                             if (screen == Screen.History) {
                                 DropdownMenuItem(
+                                    text = { Text("Workout") },
+                                    onClick = { menuOpen = false; screen = Screen.Workout },
+                                )
+                                DropdownMenuItem(
                                     text = { Text("Menus & Programs") },
                                     onClick = { menuOpen = false; screen = Screen.Library },
                                 )
@@ -519,6 +527,10 @@ class MainActivity : ComponentActivity() {
                             onPeriodChange = { period = it },
                         )
                     }
+                    Screen.Workout -> {
+                        val workoutActions = remember { WorkoutActions(applicationContext) }
+                        WorkoutScreen(workoutActions)
+                    }
                     Screen.Settings -> SettingsScreen(
                         config = settingsDoc?.toSessionConfig() ?: SessionConfig(),
                         onChange = { item, newValue ->
@@ -559,6 +571,7 @@ private fun titleFor(screen: Screen): String = when (screen) {
     Screen.History -> "AdaptivePulse"
     Screen.Settings -> "Settings"
     Screen.Library -> "Menus & Programs"
+    Screen.Workout -> "Workout"
     is Screen.MenuEdit -> if (screen.menuId == null) "New Menu" else "Edit Menu"
     is Screen.ProgramEdit -> if (screen.programId == null) "New Program" else "Edit Program"
 }
