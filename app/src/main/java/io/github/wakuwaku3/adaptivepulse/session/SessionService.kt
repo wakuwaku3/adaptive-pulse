@@ -261,6 +261,7 @@ class SessionService : LifecycleService() {
             recoveryDurationsSec = result.recoveryDurations.map { it.inWholeMilliseconds / 1000.0 },
             avgBpm = result.avgBpm,
             maxBpm = result.maxBpm,
+            hrBpmBySecond = result.hrBpmBySecond.takeIf { it.isNotEmpty() },
             config = SessionConfigSnapshot.from(result.config),
             plan = result.plan,
         )
