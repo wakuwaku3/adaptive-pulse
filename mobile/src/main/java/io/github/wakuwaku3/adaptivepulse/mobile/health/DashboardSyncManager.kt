@@ -80,18 +80,32 @@ object DashboardSyncManager {
     }
 
     /**
-     * ユーザ操作 (Settings の resync ボタン) からの強制 enqueue。Room 状態を見ずに必ず走る。
-     * REPLACE で既存ワーカーを上書きし「押した瞬間に開始」感を出す。
-     * worker 側でデータ入りの過去日は skip されるので、実質「欠けた日だけ埋める」動作になる。
+     * ユーザ操作 (Settings の resync ボタン) / 履歴権限付与後の強制 enqueue。Room 状態を
+     * 見ずに必ず走り、HC を正として確定済みの日も含め全日を再読する (削除の反映。
+     * FB 2026-07-21)。REPLACE で既存ワーカーを上書きし「押した瞬間に開始」感を出す。
+     * 途中停止後の再実行は「要求時刻以降に再読済みの日」を skip して続きから回る
+     * (epoch は inputData に固定されるので WorkManager の retry でも引き継がれる)。
      */
     fun enqueueInitialSync(context: Context) {
-        Log.i(TAG, "ユーザ要求による initial sync 強制 enqueue")
-        enqueueInitialSyncWork(context, ExistingWorkPolicy.REPLACE)
+        Log.i(TAG, "ユーザ要求による initial sync 強制 enqueue (HC を正とする全再読)")
+        enqueueInitialSyncWork(
+            context,
+            ExistingWorkPolicy.REPLACE,
+            workDataOf(
+                InitialSyncWorker.KEY_MODE to InitialSyncWorker.MODE_AUTHORITATIVE,
+                InitialSyncWorker.KEY_EPOCH_MS to System.currentTimeMillis(),
+            ),
+        )
     }
 
-    private fun enqueueInitialSyncWork(context: Context, policy: ExistingWorkPolicy) {
+    private fun enqueueInitialSyncWork(
+        context: Context,
+        policy: ExistingWorkPolicy,
+        inputData: androidx.work.Data = androidx.work.Data.EMPTY,
+    ) {
         val request = OneTimeWorkRequestBuilder<InitialSyncWorker>()
             .setConstraints(networkOptional())
+            .setInputData(inputData)
             .build()
         WorkManager.getInstance(context).enqueueUniqueWork(
             WORK_INITIAL,

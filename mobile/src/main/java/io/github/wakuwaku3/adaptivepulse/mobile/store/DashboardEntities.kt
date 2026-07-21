@@ -23,6 +23,12 @@ data class DailySnapshotEntity(
      * が未反映行を拾って続きから上げられるようにするための再開マーク。
      */
     val uploadedAtMs: Long? = null,
+    /**
+     * 例外ゼロのクリーン読みで書かれた時刻。null = 読み取り失敗時の空マーカー行。
+     * クリーン読みの行は「HC の現状そのもの」なので、空でも Firestore へ反映してよい
+     * (HC 側で削除されたデータの伝播)。Resync (HC を正とする全再読) の再開判定にも使う。
+     */
+    val verifiedAtMs: Long? = null,
     // 心拍
     val restingHeartRateBpm: Int? = null,
     val hrvRmssdMs: Double? = null,

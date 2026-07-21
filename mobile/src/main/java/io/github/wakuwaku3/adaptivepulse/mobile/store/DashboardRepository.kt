@@ -32,6 +32,19 @@ class DashboardRepository(private val context: Context) {
     private val dao = DashboardDatabase.get(context).dashboardDao()
     private val hc = HealthDataSource(context)
 
+    companion object {
+        /** per-source breakdown を保持する指標。空 REPLACE で消すときも同じ集合を回す */
+        private val METRIC_KEYS = listOf(
+            HealthDataSource.METRIC_STEPS,
+            HealthDataSource.METRIC_DISTANCE,
+            HealthDataSource.METRIC_FLOORS,
+            HealthDataSource.METRIC_ACTIVE_KCAL,
+            HealthDataSource.METRIC_TOTAL_KCAL,
+            HealthDataSource.METRIC_BASAL_KCAL,
+            HealthDataSource.METRIC_INTAKE_KCAL,
+        )
+    }
+
     fun observeSnapshot(date: LocalDate): Flow<DailySnapshotEntity?> =
         dao.observeSnapshot(date.format(DateTimeFormatter.ISO_LOCAL_DATE))
 
@@ -48,6 +61,10 @@ class DashboardRepository(private val context: Context) {
     }
 
     suspend fun oldestSnapshotDate(): String? = dao.oldestSnapshotDate()
+
+    /** [sinceMs] 以降にクリーン読みで確定した日付集合 (Resync の再開スキップ判定用) */
+    suspend fun datesVerifiedSince(sinceMs: Long): Set<String> =
+        dao.datesVerifiedSince(sinceMs).toSet()
 
     /**
      * 実測データ入りの行の日付集合。遡及同期が確定済みの過去日を再読しないための
@@ -80,8 +97,12 @@ class DashboardRepository(private val context: Context) {
      * 1 日分を HC から読み直して Room に書き込む。集約と per-source breakdown も更新する。
      * 時系列 (HR / Vital) は [includeTimeSeries] = true のときだけ書き込み (容量制御)。
      * TDEE は HC の生 total を信頼せず、`CalorieEnricher` が BMR + 歩数 + 運動 extra で
-     * 再計算する。[appSessionsForDate] にはその日の自社 HIIT セッションを渡す
-     * (二重計上回避と HIIT extra の MET 加算のため)。
+     * 再計算する (本アプリがマスター)。[appSessionsForDate] にはその日の自社 HIIT
+     * セッションを渡す (二重計上回避と HIIT extra の MET 加算のため)。
+     *
+     * 上書きポリシー: 例外ゼロのクリーン読みは HC の現状そのものなので、空でも上書きして
+     * HC 側で削除されたデータをキャッシュへ伝播させる (FB 2026-07-21)。例外が出た読みは
+     * 「読めなかった」可能性があるため既存行を温存する。
      */
     suspend fun syncDay(
         date: LocalDate,
@@ -96,14 +117,24 @@ class DashboardRepository(private val context: Context) {
         }
         val snapshot = hc.readSnapshot(date, zone) ?: return
         val dateStr = date.format(DateTimeFormatter.ISO_LOCAL_DATE)
-        if (snapshot.record.isEmpty) {
-            // 全項目 null は「その日にデータが無い」と「読めなかった (レート制限・一時障害)」を
-            // HC の API 上区別できない。既存行を空で REPLACE すると正しいキャッシュを破壊するので
-            // 書かない (Firestore 側 14d713b と同じ判断)。行が無い日だけ空行を残し、
-            // 「遡及試行済み」マーカーとして oldestSnapshotDate 判定を成立させる
-            if (dao.snapshot(dateStr) == null) {
+        if (snapshot.readFailed) {
+            // レート制限・一時障害の巻き添えで正しいキャッシュを潰さない。行が無い日だけ
+            // 空マーカー (verifiedAtMs = null) を残して oldestSnapshotDate 判定を成立させる
+            if (dao.snapshot(dateStr) == null && snapshot.record.isEmpty) {
                 dao.upsertSnapshot(snapshot.record.toEntity(syncedAtMs = System.currentTimeMillis()))
+            } else if (!snapshot.record.isEmpty) {
+                Log.i(TAG, "HC 読み取りに失敗を含むため $dateStr は部分データで上書きしない")
             }
+            return
+        }
+        val verifiedAtMs = System.currentTimeMillis()
+        if (snapshot.record.isEmpty) {
+            // クリーン読みの空 = HC にデータが無い確証 (削除済み含む)。既存行ごと空で上書きし、
+            // 内訳も消して HC の現状に合わせる
+            dao.upsertSnapshot(
+                snapshot.record.toEntity(syncedAtMs = verifiedAtMs, verifiedAtMs = verifiedAtMs),
+            )
+            METRIC_KEYS.forEach { dao.replaceMetricBySource(dateStr, it, emptyList()) }
             return
         }
         val (from, to) = zonedRangeOfDay(date, zone)
@@ -131,19 +162,11 @@ class DashboardRepository(private val context: Context) {
                     }
                     .takeIf { it.isNotEmpty() },
             )
-        dao.upsertSnapshot(enriched.toEntity(syncedAtMs = System.currentTimeMillis()))
+        dao.upsertSnapshot(enriched.toEntity(syncedAtMs = verifiedAtMs, verifiedAtMs = verifiedAtMs))
 
         // breakdown は metric ごとに REPLACE して、書き込まないソースが消えたら自然に消える
         val byMetric = snapshot.breakdown.groupBy { it.metricKey }
-        listOf(
-            HealthDataSource.METRIC_STEPS,
-            HealthDataSource.METRIC_DISTANCE,
-            HealthDataSource.METRIC_FLOORS,
-            HealthDataSource.METRIC_ACTIVE_KCAL,
-            HealthDataSource.METRIC_TOTAL_KCAL,
-            HealthDataSource.METRIC_BASAL_KCAL,
-            HealthDataSource.METRIC_INTAKE_KCAL,
-        ).forEach { metricKey ->
+        METRIC_KEYS.forEach { metricKey ->
             val rows = (byMetric[metricKey] ?: emptyList()).map { it.toEntity(dateStr) }
             dao.replaceMetricBySource(dateStr, metricKey, rows)
         }
@@ -224,7 +247,14 @@ class DashboardRepository(private val context: Context) {
         val succeeded = mutableListOf<String>()
         var failed = 0
         pending.forEach { entity ->
-            if (FirestoreSync.upsertDailyHealth(entity.toRecord())) succeeded += entity.date else failed++
+            // クリーン読みで検証済み (verifiedAtMs 有り) の行は空でも上書きする:
+            // HC 側で削除されたデータを Firestore にも伝播させるため。検証なしの空
+            // (読み取り失敗時のマーカー) は従来通り skip される
+            val ok = FirestoreSync.upsertDailyHealth(
+                entity.toRecord(),
+                allowEmpty = entity.verifiedAtMs != null,
+            )
+            if (ok) succeeded += entity.date else failed++
         }
         // SQLite の IN 句変数上限 (999) を超えないよう分割して UPDATE する
         succeeded.chunked(500).forEach { dao.markUploaded(it, nowMs) }
@@ -253,9 +283,10 @@ private fun MetricBreakdownRow.toEntity(date: String): MetricBySourceEntity =
         value = value,
     )
 
-internal fun DailyHealthRecord.toEntity(syncedAtMs: Long): DailySnapshotEntity = DailySnapshotEntity(
+internal fun DailyHealthRecord.toEntity(syncedAtMs: Long, verifiedAtMs: Long? = null): DailySnapshotEntity = DailySnapshotEntity(
     date = date,
     syncedAtMs = syncedAtMs,
+    verifiedAtMs = verifiedAtMs,
     restingHeartRateBpm = restingHeartRateBpm,
     hrvRmssdMs = hrvRmssdMs,
     avgHeartRateBpm = avgHeartRateBpm,
