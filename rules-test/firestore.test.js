@@ -164,6 +164,86 @@ describe('users/{uid}/dailyMetrics/{date} (Health Connect 取り込み)', () => 
   });
 });
 
+describe('users/{uid}/workouts/{id} (筋トレ記録)', () => {
+  const workout = { startedAtMs: 100, json: '{}' };
+
+  test('オーナーは自分の workout を書ける', async () => {
+    const alice = env.authenticatedContext('alice').firestore();
+    await assertSucceeds(setDoc(doc(alice, 'users/alice/workouts/w1'), workout));
+  });
+
+  test('進行中の上書き (同一 doc の upsert) は許される', async () => {
+    await seed('users/alice/workouts/w1', workout);
+    const alice = env.authenticatedContext('alice').firestore();
+    await assertSucceeds(
+      setDoc(doc(alice, 'users/alice/workouts/w1'), { startedAtMs: 100, json: '{"a":1}' }),
+    );
+  });
+
+  test('他人の workout は書けない', async () => {
+    const bob = env.authenticatedContext('bob').firestore();
+    await assertFails(setDoc(doc(bob, 'users/alice/workouts/w1'), workout));
+  });
+
+  test('他人の workout は読めない', async () => {
+    await seed('users/alice/workouts/w1', workout);
+    const bob = env.authenticatedContext('bob').firestore();
+    await assertFails(getDoc(doc(bob, 'users/alice/workouts/w1')));
+  });
+
+  test('workout は削除できない', async () => {
+    await seed('users/alice/workouts/w1', workout);
+    const alice = env.authenticatedContext('alice').firestore();
+    await assertFails(deleteDoc(doc(alice, 'users/alice/workouts/w1')));
+  });
+
+  test('未知フィールドは拒否される', async () => {
+    const alice = env.authenticatedContext('alice').firestore();
+    await assertFails(
+      setDoc(doc(alice, 'users/alice/workouts/w1'), { ...workout, extra: 'x' }),
+    );
+  });
+});
+
+describe('users/{uid}/strengthCatalog/current (ジム/トレーニング台帳 LWW)', () => {
+  test('オーナーは初回カタログを作れる', async () => {
+    const alice = env.authenticatedContext('alice').firestore();
+    await assertSucceeds(
+      setDoc(doc(alice, 'users/alice/strengthCatalog/current'), settings(100)),
+    );
+  });
+
+  test('LWW: より新しい updatedAtMs は通り、より古いのは拒否される', async () => {
+    await seed('users/alice/strengthCatalog/current', settings(100));
+    const alice = env.authenticatedContext('alice').firestore();
+    await assertSucceeds(
+      setDoc(doc(alice, 'users/alice/strengthCatalog/current'), settings(200)),
+    );
+    await assertFails(
+      setDoc(doc(alice, 'users/alice/strengthCatalog/current'), settings(150)),
+    );
+  });
+
+  test('strengthCatalog/current 以外の id は拒否される', async () => {
+    const alice = env.authenticatedContext('alice').firestore();
+    await assertFails(
+      setDoc(doc(alice, 'users/alice/strengthCatalog/other'), settings(100)),
+    );
+  });
+
+  test('他人のカタログは読めない', async () => {
+    await seed('users/alice/strengthCatalog/current', settings(100));
+    const bob = env.authenticatedContext('bob').firestore();
+    await assertFails(getDoc(doc(bob, 'users/alice/strengthCatalog/current')));
+  });
+
+  test('カタログは削除できない', async () => {
+    await seed('users/alice/strengthCatalog/current', settings(100));
+    const alice = env.authenticatedContext('alice').firestore();
+    await assertFails(deleteDoc(doc(alice, 'users/alice/strengthCatalog/current')));
+  });
+});
+
 describe('users/{uid}/library/current (メニュー/プログラム LWW)', () => {
   test('オーナーは初回 library を作れる', async () => {
     const alice = env.authenticatedContext('alice').firestore();
