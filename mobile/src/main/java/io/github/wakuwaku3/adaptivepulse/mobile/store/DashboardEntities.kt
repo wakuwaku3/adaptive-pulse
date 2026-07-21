@@ -17,6 +17,12 @@ import androidx.room.PrimaryKey
 data class DailySnapshotEntity(
     @PrimaryKey val date: String,
     val syncedAtMs: Long,
+    /**
+     * この行を Firestore へ upsert した時刻。null = 未反映。行を書き直すと null に戻り
+     * 再アップロード対象になる。同期 worker が途中停止しても、次の実行 (通常/遡及どちらでも)
+     * が未反映行を拾って続きから上げられるようにするための再開マーク。
+     */
+    val uploadedAtMs: Long? = null,
     // 心拍
     val restingHeartRateBpm: Int? = null,
     val hrvRmssdMs: Double? = null,

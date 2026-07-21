@@ -82,6 +82,22 @@ data class DailyHealthRecord(
      */
     val isEmpty: Boolean
         get() = this == DailyHealthRecord(date = date)
+
+    /**
+     * 実測データを 1 つでも含むか。HC は実レコードが無い日でも BMR 由来のカロリー
+     * (total/basal) を合成して返すため、それだけの行 (とそこから派生する自前 TDEE・内訳) を
+     * 「読めた日」と数えると、履歴権限が無い等で本当は読めていない日が遡及スキップの
+     * 対象に化けて二度と再読されなくなる (2026-07-21 に体重欠落として顕在化)。
+     * 遡及の「確定済み日」判定はこちらを使い、[isEmpty] は書き込みガード専用にする。
+     */
+    val hasMeasuredData: Boolean
+        get() = this.copy(
+            totalCaloriesKcal = null,
+            basalCaloriesKcal = null,
+            tdeeKcal = null,
+            exerciseExtraKcal = null,
+            breakdown = null,
+        ) != DailyHealthRecord(date = date)
 }
 
 /**

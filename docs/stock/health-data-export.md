@@ -104,6 +104,10 @@ Worker は HC 権限が無ければ `Result.success()` で no-op に倒れる。
 - `users/{uid}/dailyMetrics/{YYYY-MM-DD}` に日次集約を upsert (Stream A)。
 - ドキュメント本体は `DailyHealthRecord` の JSON 文字列を `json` フィールドに持ち、
   doc id を日付固定にすることで重複 ingest が単純上書きになる (冪等)。
+- 反映は Room の行単位の `uploadedAtMs` マークで管理する: どの worker (通常/遡及) も
+  未反映行を flush し (`DashboardRepository.flushUnuploaded`)、成功分にマークを付ける。
+  worker が途中停止しても次の実行が続きから上げ、反映済みの日を再アップロードして
+  writes 枠を浪費することもない。行を書き直すとマークが外れ再反映対象に戻る。
 - `DailyHealthRecord` には dataOrigin 別 breakdown (`breakdown`) と他アプリの運動
   セッション (`externalSessions`) も同梱する。HC には端末を横断してアクセスできない
   ため、時系列を除く読み取り済みデータはすべて Firestore まで届けて分析可能にする
