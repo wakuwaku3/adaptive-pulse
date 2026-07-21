@@ -43,6 +43,14 @@ interface DashboardDao {
     @Query("SELECT MIN(date) FROM daily_snapshot")
     suspend fun oldestSnapshotDate(): String?
 
+    // Firestore 未反映の行 (新しい日から順に。直近データの反映を優先する)
+    @Query("SELECT * FROM daily_snapshot WHERE uploadedAtMs IS NULL ORDER BY date DESC")
+    suspend fun unuploadedSnapshots(): List<DailySnapshotEntity>
+
+    // IN 句は SQLite の変数上限 (999) があるので呼び出し側で chunk する
+    @Query("UPDATE daily_snapshot SET uploadedAtMs = :uploadedAtMs WHERE date IN (:dates)")
+    suspend fun markUploaded(dates: List<String>, uploadedAtMs: Long)
+
     // -- per-source breakdown --
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)

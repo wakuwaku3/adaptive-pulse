@@ -50,13 +50,14 @@ class DashboardRepository(private val context: Context) {
     suspend fun oldestSnapshotDate(): String? = dao.oldestSnapshotDate()
 
     /**
-     * データ入り (= date 以外に何か値がある) 行の日付集合。遡及同期が確定済みの過去日を
-     * 再読しないためのスキップ判定に使う。空行 (遡及試行済みマーカーや null で潰れた行) は
-     * 含まれないので、再読対象として自然に拾い直される。
+     * 実測データ入りの行の日付集合。遡及同期が確定済みの過去日を再読しないための
+     * スキップ判定に使う。空行 (遡及試行済みマーカーや null で潰れた行) と、HC の
+     * BMR 由来合成カロリーしか無い行 (履歴権限なし等で実際は読めていない日) は
+     * 含まれないので、再読対象として自然に拾い直される (`DailyHealthRecord.hasMeasuredData`)。
      */
     suspend fun datesWithData(): Set<String> =
         dao.allSnapshots().asSequence()
-            .filterNot { it.toRecord().isEmpty }
+            .filter { it.toRecord().hasMeasuredData }
             .map { it.date }
             .toSet()
 
@@ -205,6 +206,30 @@ class DashboardRepository(private val context: Context) {
     /** Room 上の指定日 snapshot を `DailyHealthRecord` に変換 (Firestore upload 用) */
     suspend fun snapshotsAsRecords(days: Int, today: LocalDate = LocalDate.now()): List<DailyHealthRecord> {
         return recentSnapshots(days, today).map { it.toRecord() }
+    }
+
+    /**
+     * Firestore 未反映の行をすべて upsert し、成功分に uploadedAtMs を付ける。
+     * 行単位のマークなので、worker が途中停止しても次の実行 (通常/遡及どちらでも) が
+     * 続きから上げられる。「1 回の実行で読んだ日」のような実行内メモリに依存しない。
+     * 戻り値は失敗数 (0 なら全反映済み)。
+     *
+     * 空行 (遡及試行済みマーカー) は `upsertDailyHealth` が isEmpty ガードで skip して
+     * true を返すため、アップロード済み扱いでマークされる。データが入って行が
+     * 書き直されれば uploadedAtMs が null に戻り、再び対象になる。
+     */
+    suspend fun flushUnuploaded(nowMs: Long = System.currentTimeMillis()): Int {
+        val pending = dao.unuploadedSnapshots()
+        if (pending.isEmpty()) return 0
+        val succeeded = mutableListOf<String>()
+        var failed = 0
+        pending.forEach { entity ->
+            if (FirestoreSync.upsertDailyHealth(entity.toRecord())) succeeded += entity.date else failed++
+        }
+        // SQLite の IN 句変数上限 (999) を超えないよう分割して UPDATE する
+        succeeded.chunked(500).forEach { dao.markUploaded(it, nowMs) }
+        Log.i(TAG, "Firestore flush: ${succeeded.size}/${pending.size} 反映 (失敗 $failed)")
+        return failed
     }
 
     private fun rangeOfDay(date: LocalDate, zone: ZoneId): Pair<Long, Long> {

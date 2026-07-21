@@ -5,7 +5,6 @@ import android.util.Log
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import io.github.wakuwaku3.adaptivepulse.mobile.store.DashboardRepository
-import io.github.wakuwaku3.adaptivepulse.mobile.sync.FirestoreSync
 import java.time.LocalDate
 
 private const val TAG = "AdaptivePulse"
@@ -15,9 +14,12 @@ private const val TAG = "AdaptivePulse"
  * HC 側に該当データが無ければ null まみれの行になるが、それは正しい挙動 (推定で埋めない)。
  * 時系列レコード (HR/Vital) は対象外 (容量爆発を避ける)。
  *
- * 既にデータ入りで確定した過去日は再読しない (過去日は修正されない前提。2026-07-05)。
+ * 既に実測データ入りで確定した過去日は再読しない (過去日は修正されない前提。2026-07-05)。
+ * HC が実レコード無しでも合成する BMR 由来カロリーだけの行は「読めた日」と見なさず
+ * 再読対象に残す (`DailyHealthRecord.hasMeasuredData`)。
  * HC のレート制限や WorkManager の約 10 分制限で途中停止しても、再実行が
- * 「欠けた日だけ埋める」動作になり冪等・再開可能になる。
+ * 「欠けた日だけ埋める」動作になり冪等・再開可能になる。Firestore への反映も
+ * 行単位の uploadedAtMs マークで再開可能 (`DashboardRepository.flushUnuploaded`)。
  *
  * 起動判定 (= 再 backfill が必要か) は Room の最古日で行うので、本 worker 側に
  * 完了マークを残す必要はない (`DashboardSyncManager.enqueueInitialSyncIfNeeded` 参照)。
@@ -42,7 +44,6 @@ class InitialSyncWorker(
         var ok = 0
         var failed = 0
         var skipped = 0
-        val syncedDates = mutableSetOf<String>()
         (0 until DashboardSyncManager.INITIAL_WINDOW_DAYS).forEach { offset ->
             val day = today.minusDays(offset.toLong())
             val dayStr = day.toString()
@@ -54,10 +55,7 @@ class InitialSyncWorker(
             runCatching {
                 repo.syncDay(day, includeTimeSeries = false, appSessionsForDate = daySessions)
             }
-                .onSuccess {
-                    ok++
-                    syncedDates += dayStr
-                }
+                .onSuccess { ok++ }
                 .onFailure {
                     failed++
                     Log.w(TAG, "initial syncDay 失敗: $day", it)
@@ -65,16 +63,11 @@ class InitialSyncWorker(
         }
         Log.i(TAG, "initial sync 完了 ok=$ok failed=$failed skipped=$skipped")
 
-        // Firestore に過去日次集約も上げておく (端末横断の正本を作るため)。skip した日は
-        // アップロード済みの正本がそのまま有効なので、今回読み直した日だけに絞る
-        // (Spark 20K writes/日の枠を遡及のたびに 1825 消費しない)
-        val records = repo.snapshotsAsRecords(DashboardSyncManager.INITIAL_WINDOW_DAYS, today)
-            .filter { it.date in syncedDates }
-        var fsFailed = 0
-        records.forEach { rec ->
-            if (!FirestoreSync.upsertDailyHealth(rec)) fsFailed++
-        }
-        Log.i(TAG, "initial Firestore upload: ${records.size - fsFailed}/${records.size}")
+        // Firestore へは「未反映行の flush」で上げる (端末横断の正本を作るため)。
+        // 行単位の uploadedAtMs マークなので、本 worker が途中停止しても取りこぼさず、
+        // 反映済みの日を再アップロードして Spark 20K writes/日の枠を浪費することもない
+        val fsFailed = repo.flushUnuploaded()
+        if (fsFailed > 0) Log.w(TAG, "initial Firestore flush 失敗 $fsFailed 件 (次回 sync で再試行)")
 
         return Result.success()
     }

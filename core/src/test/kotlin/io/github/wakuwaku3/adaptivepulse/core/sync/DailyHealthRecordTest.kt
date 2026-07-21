@@ -101,6 +101,35 @@ class DailyHealthRecordTest {
     }
 
     @Test
+    fun `hasMeasuredData は HC 合成カロリーと派生値だけの行を実測なしと判定する`() {
+        // 履歴権限なしの時代に HC が BMR 由来で合成した行 (2026-07-21 の体重欠落の原因形)
+        val syntheticOnly = DailyHealthRecord(
+            date = "2025-08-15",
+            totalCaloriesKcal = 1607.4,
+            basalCaloriesKcal = 1607.4,
+            tdeeKcal = 1607.4,
+            exerciseExtraKcal = 0.0,
+            breakdown = listOf(MetricSourceValue("basalKcal", "pkg", 1607.4)),
+        )
+        assertFalse(syntheticOnly.hasMeasuredData)
+        assertFalse(syntheticOnly.isEmpty) // 書き込みガードとしては空扱いしない (既存挙動を保つ)
+
+        // 実測が 1 つでもあれば確定済み
+        assertTrue(DailyHealthRecord(date = "2025-08-15", weightKg = 88.0).hasMeasuredData)
+        assertTrue(DailyHealthRecord(date = "2025-08-15", steps = 100).hasMeasuredData)
+        assertTrue(
+            DailyHealthRecord(
+                date = "2025-08-15",
+                totalCaloriesKcal = 2000.0,
+                sleepDurationMin = 400,
+            ).hasMeasuredData,
+        )
+
+        // 完全な空行は当然 false
+        assertFalse(DailyHealthRecord(date = "2025-08-15").hasMeasuredData)
+    }
+
+    @Test
     fun `HealthDataExport は dailyMetrics と sessions を含めて round-trip する`() {
         val export = HealthDataExport(
             exportedAtMs = 1_750_000_000_000,

@@ -6,7 +6,6 @@ import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import io.github.wakuwaku3.adaptivepulse.mobile.settings.PhoneSettingsRepository
 import io.github.wakuwaku3.adaptivepulse.mobile.store.DashboardRepository
-import io.github.wakuwaku3.adaptivepulse.mobile.sync.FirestoreSync
 import io.github.wakuwaku3.adaptivepulse.mobile.sync.PhoneSync
 import java.time.LocalDate
 
@@ -43,12 +42,14 @@ class HealthSyncWorker(
                 return Result.retry()
             }
 
-        // Firestore は日次集約のみ。Room から派生して upload する (HC 二重読み込みを避ける)
+        // Firestore は日次集約のみ。Room から派生して upload する (HC 二重読み込みを避ける)。
+        // 「今回書いた分」ではなく未反映行の全 flush にすることで、遡及 worker が途中停止した
+        // 分の取りこぼしもここ (1h 周期 + 前景化) が拾って回復する
         val repo = DashboardRepository(applicationContext)
+        val fsFailed = repo.flushUnuploaded()
+
         val records = repo.snapshotsAsRecords(DashboardSyncManager.NORMAL_WINDOW_DAYS, today)
-        var anyFailed = false
         records.forEach { record ->
-            if (!FirestoreSync.upsertDailyHealth(record)) anyFailed = true
             // 自前 TDEE を HC に master として書き戻す (docs/stock/health-data-export.md)。
             // clientRecordId で冪等 upsert なので 8 日窓を毎回回しても積み上がらない
             record.tdeeKcal?.let { tdee ->
@@ -58,8 +59,8 @@ class HealthSyncWorker(
         // 直近の RHR を SessionConfig.restingBpm に反映 (Karvonen 入力として日々変動を吸収)
         syncRestingBpm(records.firstNotNullOfOrNull { it.restingHeartRateBpm })
 
-        Log.i(TAG, "sync 完了 (${records.size} days, firestore failed=$anyFailed)")
-        return if (anyFailed) Result.retry() else Result.success()
+        Log.i(TAG, "sync 完了 (${records.size} days, firestore failed=$fsFailed)")
+        return if (fsFailed > 0) Result.retry() else Result.success()
     }
 
     private suspend fun syncRestingBpm(latestRhr: Int?) {
