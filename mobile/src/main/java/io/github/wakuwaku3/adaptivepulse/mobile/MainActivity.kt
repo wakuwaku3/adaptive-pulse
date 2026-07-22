@@ -9,17 +9,22 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -354,7 +359,7 @@ class MainActivity : ComponentActivity() {
                 TopAppBar(
                     title = {
                         Column {
-                            Text(titleFor(screen))
+                            BreadcrumbTitle(screen, onNavigate = { screen = it })
                             // sideload 後にどの release が入っているか TopAppBar で常時確認できる
                             Text(
                                 text = "v${appVersionName()}",
@@ -363,26 +368,23 @@ class MainActivity : ComponentActivity() {
                             )
                         }
                     },
-                    navigationIcon = {
-                        if (screen != Screen.History) {
-                            IconButton(onClick = { screen = parentOf(screen) }) {
-                                Text("‹", style = MaterialTheme.typography.headlineMedium)
-                            }
-                        }
-                    },
                     actions = {
                         if (screen == Screen.History) {
                             IconButton(onClick = { scope.launch { refresh() } }) {
                                 Text("↻", style = MaterialTheme.typography.headlineMedium)
                             }
                             // 毎朝ジムで最初に開く主機能なので overflow に埋めず直置きする
-                            IconButton(onClick = { screen = Screen.Workout }) {
-                                Text("🏋", style = MaterialTheme.typography.headlineMedium)
+                            TextButton(onClick = { screen = Screen.Workout }) {
+                                Text("Workout")
                             }
                         }
                         OverflowMenu(
                             exportEnabled = hcConnected,
-                            onOpenSettings = { screen = Screen.Settings },
+                            onOpenSettings = if (screen == Screen.Settings) {
+                                null
+                            } else {
+                                { screen = Screen.Settings }
+                            },
                             onExport = {
                                 scope.launch {
                                     status = "Exporting…"
@@ -545,4 +547,39 @@ private fun titleFor(screen: Screen): String = when (screen) {
     Screen.Workout -> "Workout"
     is Screen.MenuEdit -> if (screen.menuId == null) "New Menu" else "Edit Menu"
     is Screen.ProgramEdit -> if (screen.programId == null) "New Program" else "Edit Program"
+}
+
+/**
+ * 祖先タップでそのまま戻れるパンくずタイトル (FB 2026-07-23)。
+ * 戻り導線をここに集約するので ‹ navigationIcon は置かない。
+ */
+@Composable
+private fun BreadcrumbTitle(screen: Screen, onNavigate: (Screen) -> Unit) {
+    val chain = generateSequence(screen) { current ->
+        current.takeIf { it != Screen.History }?.let(::parentOf)
+    }.toList().asReversed()
+    // 深い階層 (Settings › Menus & Programs › Edit Menu) でも全祖先に触れるよう横スクロール可にする
+    Row(
+        modifier = Modifier.horizontalScroll(rememberScrollState()),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        chain.forEachIndexed { index, item ->
+            if (index > 0) {
+                Text(
+                    text = "›",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 6.dp),
+                )
+            }
+            if (index < chain.lastIndex) {
+                Text(
+                    text = titleFor(item),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.clickable { onNavigate(item) },
+                )
+            } else {
+                Text(titleFor(item))
+            }
+        }
+    }
 }

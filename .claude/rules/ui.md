@@ -34,8 +34,8 @@ paths:
 ## :mobile (Android phone) 特有
 
 - **`TopAppBar` の `actions` は「画面の primary action だけ icon で直置き、それ以外は overflow menu (`⋮ IconButton + DropdownMenu`) に畳む」** (Android 標準の慣習)。e.g., HISTORY 画面の `Refresh` (↻) は visible icon、`Settings` / `Sign out` などは overflow へ。`TextButton` を並べる UI は使わない。
-- **主機能への導線は overflow に埋めない** (FB 2026-07-23)。日常運用で毎回開く画面 (e.g., Workout = 🏋) は TopAppBar に icon で直置きする。overflow は「たまに使う操作」専用。
-- **overflow menu は全画面で同一項目にする** (FB 2026-07-23)。`OverflowMenu` コンポーザブル (`mobile/ui/OverflowMenu.kt`) に一本化し、画面種別による項目の出し分けをしない。「この画面では Settings に行けない」のような穴を作らないため。
+- **主機能への導線は overflow に埋めない** (FB 2026-07-23)。日常運用で毎回開く画面 (e.g., Workout) は TopAppBar に直置きする。ラベルは絵文字グリフ (🏋 等) にしない — ダサいというユーザ FB (2026-07-23)。グリフ 1 文字で意味が伝わらないドメイン語彙はテキストラベル (例: `Workout`)。
+- **overflow menu は全画面で同一項目にする** (FB 2026-07-23)。`OverflowMenu` コンポーザブル (`mobile/ui/OverflowMenu.kt`) に一本化し、画面種別による項目の出し分けをしない。「この画面では Settings に行けない」のような穴を作らないため。例外は**現在画面への自己リンク** (Settings 画面での Settings) のみで、これは出さない (nullable コールバックで消す。FB 2026-07-23)。
 - **定義・コンテンツ管理系のサブ画面 (e.g., Menus & Programs) は Settings 配下に置く** (FB 2026-07-23)。トップレベルの遷移先は増やさず、Settings 内の navigation card から遷移させる (back は Settings に戻る)。
+- **副画面のタイトルはパンくず表示** (FB 2026-07-23)。`AdaptivePulse › Settings › Menus & Programs` のように祖先チェーンを表示し、祖先セグメントのタップでその画面へ戻す。戻り導線はパンくずに集約し、`navigationIcon` (`‹`) は置かない。システム back は `BackHandler` で parentOf に戻す (併存)。
 - **タブで主画面を切り替えない**。主画面 1 枚 (`HISTORY`) + overflow から `Settings` などサブ画面へ遷移、戻りは `BackHandler` でシステム back に乗せる。タブは「同等な並列ビュー」のときだけ使う (本アプリは該当しない)。
-- 副画面の `TopAppBar` には `navigationIcon` (`‹`) で back を明示。

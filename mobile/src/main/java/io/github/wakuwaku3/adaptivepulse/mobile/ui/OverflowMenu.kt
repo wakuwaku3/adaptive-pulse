@@ -13,12 +13,13 @@ import androidx.compose.runtime.setValue
 
 /**
  * TopAppBar の overflow menu (⋮)。どの画面からでも同じ項目に届くよう、
- * 項目は画面種別で出し分けず 1 箇所に固定する。
+ * 項目は画面種別で出し分けず 1 箇所に固定する。例外は現在画面への
+ * 自己リンクのみで、呼び出し側が null を渡して消す (FB 2026-07-23)。
  */
 @Composable
 fun OverflowMenu(
     exportEnabled: Boolean,
-    onOpenSettings: () -> Unit,
+    onOpenSettings: (() -> Unit)?,
     onExport: () -> Unit,
     onReseedDemo: (() -> Unit)?,
     onSignOut: () -> Unit,
@@ -31,10 +32,12 @@ fun OverflowMenu(
         expanded = open,
         onDismissRequest = { open = false },
     ) {
-        DropdownMenuItem(
-            text = { Text("Settings") },
-            onClick = { open = false; onOpenSettings() },
-        )
+        onOpenSettings?.let { openSettings ->
+            DropdownMenuItem(
+                text = { Text("Settings") },
+                onClick = { open = false; openSettings() },
+            )
+        }
         DropdownMenuItem(
             text = { Text("Export 30 days") },
             enabled = exportEnabled,
