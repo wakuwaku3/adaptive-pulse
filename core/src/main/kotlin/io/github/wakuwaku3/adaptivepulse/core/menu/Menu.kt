@@ -35,6 +35,11 @@ sealed interface MenuKind {
         val cycles: Int,
         val targetCadenceHigh: Int = 130,
         val targetCadenceRecovery: Int = 90,
+        // 基準ガード・タイムアウトは閾値ギャップから逆算する値 (requirements「タイムアウトによる
+        // セーフティ停止」) なので、閾値を持つメニュー側の属性にする (FB 2026-07-23)
+        val minBaselineSecs: Int = 45,
+        val highTimeoutSecs: Int = 240,
+        val recoveryTimeoutSecs: Int = 240,
     ) : MenuKind {
         init {
             require(upperBpm > lowerBpm) { "上限閾値 ($upperBpm) は下限閾値 ($lowerBpm) より大きいこと" }
@@ -45,6 +50,11 @@ sealed interface MenuKind {
             }
             require(targetCadenceHigh in 60..220) { "高強度 cadence は 60〜220 SPM の範囲" }
             require(targetCadenceRecovery in 30..180) { "回復 cadence は 30〜180 SPM の範囲" }
+            // 上限 120 秒は SessionConfig.maxBaseline (150 秒) との「max > min」不変条件を
+            // 編集レンジの段階で構造的に守るため
+            require(minBaselineSecs in 0..120) { "最低基準時間は 0〜120 秒の範囲" }
+            require(highTimeoutSecs in 60..600) { "高強度タイムアウトは 60〜600 秒の範囲" }
+            require(recoveryTimeoutSecs in 60..600) { "回復タイムアウトは 60〜600 秒の範囲" }
         }
     }
 

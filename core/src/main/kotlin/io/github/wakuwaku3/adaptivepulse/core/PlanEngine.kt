@@ -4,6 +4,7 @@ import io.github.wakuwaku3.adaptivepulse.core.menu.MenuKind
 import io.github.wakuwaku3.adaptivepulse.core.menu.PlannedSegment
 import io.github.wakuwaku3.adaptivepulse.core.menu.SessionPlan
 import kotlin.time.Duration
+import kotlin.time.Duration.Companion.seconds
 
 /** 1 セグメント (= プラン内の 1 メニュー実行分) の実績。履歴 SessionRecord の材料 */
 data class SegmentResult(
@@ -186,6 +187,9 @@ class PlanEngine(
                         targetCycles = segment.amount,
                         targetCadenceHigh = kind.targetCadenceHigh,
                         targetCadenceRecovery = kind.targetCadenceRecovery,
+                        minBaseline = kind.minBaselineSecs.seconds,
+                        highPhaseTimeout = kind.highTimeoutSecs.seconds,
+                        recoveryTimeout = kind.recoveryTimeoutSecs.seconds,
                     ),
                 )
                 timedEngine = null

@@ -168,6 +168,9 @@ fun MenuEditScreen(
     var cadenceHigh by remember { mutableStateOf(initialInterval?.targetCadenceHigh ?: 130) }
     var cadenceRecovery by remember { mutableStateOf(initialInterval?.targetCadenceRecovery ?: 90) }
     var cadence by remember { mutableStateOf(initialTimed?.targetCadence ?: 100) }
+    var minBaselineSecs by remember { mutableStateOf(initialInterval?.minBaselineSecs ?: 45) }
+    var highTimeoutSecs by remember { mutableStateOf(initialInterval?.highTimeoutSecs ?: 240) }
+    var recoveryTimeoutSecs by remember { mutableStateOf(initialInterval?.recoveryTimeoutSecs ?: 240) }
 
     fun buildMenu(): Menu? = runCatching {
         Menu(
@@ -187,6 +190,9 @@ fun MenuEditScreen(
                     cycles = cycles,
                     targetCadenceHigh = cadenceHigh,
                     targetCadenceRecovery = cadenceRecovery,
+                    minBaselineSecs = minBaselineSecs,
+                    highTimeoutSecs = highTimeoutSecs,
+                    recoveryTimeoutSecs = recoveryTimeoutSecs,
                 )
             },
         )
@@ -233,6 +239,9 @@ fun MenuEditScreen(
             item { StepperRow("CYCLES", "$cycles", onDec = { cycles = (cycles - 1).coerceAtLeast(1) }, onInc = { cycles = (cycles + 1).coerceAtMost(12) }) }
             item { StepperRow("TARGET SPM (HIGH)", "$cadenceHigh spm", onDec = { cadenceHigh = (cadenceHigh - 5).coerceAtLeast(cadenceRecovery + 5) }, onInc = { cadenceHigh = (cadenceHigh + 5).coerceAtMost(220) }) }
             item { StepperRow("TARGET SPM (RECOVERY)", "$cadenceRecovery spm", onDec = { cadenceRecovery = (cadenceRecovery - 5).coerceAtLeast(30) }, onInc = { cadenceRecovery = (cadenceRecovery + 5).coerceAtMost(cadenceHigh - 5) }) }
+            item { StepperRow("MIN BASELINE", "$minBaselineSecs s", onDec = { minBaselineSecs = (minBaselineSecs - 5).coerceAtLeast(0) }, onInc = { minBaselineSecs = (minBaselineSecs + 5).coerceAtMost(120) }) }
+            item { StepperRow("HIGH TIMEOUT", formatMinSec(highTimeoutSecs), onDec = { highTimeoutSecs = (highTimeoutSecs - 30).coerceAtLeast(60) }, onInc = { highTimeoutSecs = (highTimeoutSecs + 30).coerceAtMost(600) }) }
+            item { StepperRow("RECOVERY TIMEOUT", formatMinSec(recoveryTimeoutSecs), onDec = { recoveryTimeoutSecs = (recoveryTimeoutSecs - 30).coerceAtLeast(60) }, onInc = { recoveryTimeoutSecs = (recoveryTimeoutSecs + 30).coerceAtMost(600) }) }
         }
         item {
             val menu = buildMenu()
@@ -407,6 +416,8 @@ private fun Program.summary(library: LibraryDocument, presetMenus: List<Menu>): 
 }
 
 private fun Duration.formatMin(): String = "${inWholeMinutes} min"
+
+private fun formatMinSec(totalSecs: Int): String = "%d:%02d".format(totalSecs / 60, totalSecs % 60)
 
 private fun List<ProgramEntry>.replaceAt(index: Int, entry: ProgramEntry): List<ProgramEntry> =
     mapIndexed { i, e -> if (i == index) entry else e }
