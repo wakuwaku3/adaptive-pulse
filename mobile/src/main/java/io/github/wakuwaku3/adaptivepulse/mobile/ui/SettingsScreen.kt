@@ -1,5 +1,6 @@
 package io.github.wakuwaku3.adaptivepulse.mobile.ui
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -38,6 +39,7 @@ fun SettingsScreen(
     config: SessionConfig,
     onChange: (SettingItem, Int) -> Unit,
     onHeightChange: (Int?) -> Unit,
+    onOpenLibrary: () -> Unit,
     healthConnectConnected: Boolean,
     healthConnectAvailable: Boolean,
     onHealthConnectToggle: (Boolean) -> Unit,
@@ -48,6 +50,9 @@ fun SettingsScreen(
         verticalArrangement = Arrangement.spacedBy(8.dp),
         contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
     ) {
+        item {
+            LibraryLinkCard(onOpenLibrary)
+        }
         items(SettingItem.entries) { item ->
             val progression = item.progression(config)
             val value = item.read(config)
@@ -93,6 +98,30 @@ fun SettingsScreen(
                 onToggle = onHealthConnectToggle,
                 onResync = onHealthConnectResync,
             )
+        }
+    }
+}
+
+/** 定義編集 (Menus & Programs) は設定の一部として Settings 配下から遷移させる */
+@Composable
+private fun LibraryLinkCard(onOpen: () -> Unit) {
+    Card(modifier = Modifier.fillMaxWidth().clickable(onClick = onOpen)) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 10.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column {
+                Text("Menus & Programs", style = MaterialTheme.typography.titleSmall)
+                Text(
+                    text = "Edit interval menus and programs",
+                    color = MobileColors.TextDim,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+            Text("›", style = MaterialTheme.typography.headlineMedium, color = MobileColors.TextDim)
         }
     }
 }

@@ -15,8 +15,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -66,6 +64,7 @@ import io.github.wakuwaku3.adaptivepulse.mobile.ui.HistoryScreen
 import io.github.wakuwaku3.adaptivepulse.mobile.ui.LibraryScreen
 import io.github.wakuwaku3.adaptivepulse.mobile.ui.MenuEditScreen
 import io.github.wakuwaku3.adaptivepulse.mobile.ui.MobileColors
+import io.github.wakuwaku3.adaptivepulse.mobile.ui.OverflowMenu
 import io.github.wakuwaku3.adaptivepulse.mobile.ui.ProgramEditScreen
 import io.github.wakuwaku3.adaptivepulse.mobile.ui.SettingsScreen
 import io.github.wakuwaku3.adaptivepulse.mobile.ui.WorkoutScreen
@@ -93,6 +92,7 @@ private sealed interface Screen {
 
 /** 戻る操作 (‹ / システム back) の遷移先 */
 private fun parentOf(screen: Screen): Screen = when (screen) {
+    Screen.Library -> Screen.Settings
     is Screen.MenuEdit, is Screen.ProgramEdit -> Screen.Library
     else -> Screen.History
 }
@@ -239,7 +239,6 @@ class MainActivity : ComponentActivity() {
     private fun MainScreen(onSignOut: () -> Unit) {
         val scope = rememberCoroutineScope()
         var screen by remember { mutableStateOf<Screen>(Screen.History) }
-        var menuOpen by remember { mutableStateOf(false) }
         var history by remember { mutableStateOf<List<HistoryItem>?>(null) }
         var status by remember { mutableStateOf<String?>(null) }
         val settingsRepo = remember { PhoneSettingsRepository(applicationContext) }
@@ -376,60 +375,31 @@ class MainActivity : ComponentActivity() {
                             IconButton(onClick = { scope.launch { refresh() } }) {
                                 Text("↻", style = MaterialTheme.typography.headlineMedium)
                             }
-                        }
-                        IconButton(onClick = { menuOpen = true }) {
-                            Text("⋮", style = MaterialTheme.typography.headlineMedium)
-                        }
-                        DropdownMenu(
-                            expanded = menuOpen,
-                            onDismissRequest = { menuOpen = false },
-                        ) {
-                            if (screen == Screen.History) {
-                                DropdownMenuItem(
-                                    text = { Text("Workout") },
-                                    onClick = { menuOpen = false; screen = Screen.Workout },
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("Menus & Programs") },
-                                    onClick = { menuOpen = false; screen = Screen.Library },
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("Settings") },
-                                    onClick = { menuOpen = false; screen = Screen.Settings },
-                                )
+                            // 毎朝ジムで最初に開く主機能なので overflow に埋めず直置きする
+                            IconButton(onClick = { screen = Screen.Workout }) {
+                                Text("🏋", style = MaterialTheme.typography.headlineMedium)
                             }
-                            DropdownMenuItem(
-                                text = { Text("Export 30 days") },
-                                enabled = hcConnected,
-                                onClick = {
-                                    menuOpen = false
-                                    scope.launch {
-                                        status = "Exporting…"
-                                        val export = HealthDataExporter(applicationContext).build(30)
-                                        val intent = HealthDataExporter(applicationContext).shareIntent(export)
-                                        status =
-                                            "Exported ${export.dailyMetrics.size} days + ${export.sessions.size} sessions"
-                                        startActivity(intent)
-                                    }
-                                },
-                            )
-                            if (BuildConfig.DEBUG) {
-                                DropdownMenuItem(
-                                    text = { Text("Re-seed demo data") },
-                                    onClick = {
-                                        menuOpen = false
-                                        scope.launch { DemoSeed.seed(applicationContext) }
-                                    },
-                                )
-                            }
-                            DropdownMenuItem(
-                                text = { Text("Sign out") },
-                                onClick = {
-                                    menuOpen = false
-                                    onSignOut()
-                                },
-                            )
                         }
+                        OverflowMenu(
+                            exportEnabled = hcConnected,
+                            onOpenSettings = { screen = Screen.Settings },
+                            onExport = {
+                                scope.launch {
+                                    status = "Exporting…"
+                                    val export = HealthDataExporter(applicationContext).build(30)
+                                    val intent = HealthDataExporter(applicationContext).shareIntent(export)
+                                    status =
+                                        "Exported ${export.dailyMetrics.size} days + ${export.sessions.size} sessions"
+                                    startActivity(intent)
+                                }
+                            },
+                            onReseedDemo = if (BuildConfig.DEBUG) {
+                                { scope.launch { DemoSeed.seed(applicationContext) } }
+                            } else {
+                                null
+                            },
+                            onSignOut = onSignOut,
+                        )
                     },
                 )
             },
@@ -533,6 +503,7 @@ class MainActivity : ComponentActivity() {
                     }
                     Screen.Settings -> SettingsScreen(
                         config = settingsDoc?.toSessionConfig() ?: SessionConfig(),
+                        onOpenLibrary = { screen = Screen.Library },
                         onChange = { item, newValue ->
                             scope.launch {
                                 PhoneSync.updateSettingsEverywhere(applicationContext) { config ->
