@@ -5,6 +5,8 @@ import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
 import io.github.wakuwaku3.adaptivepulse.core.menu.LibraryDocument
+import io.github.wakuwaku3.adaptivepulse.core.strength.StrengthCatalog
+import io.github.wakuwaku3.adaptivepulse.core.strength.WorkoutRecord
 import io.github.wakuwaku3.adaptivepulse.core.sync.DailyHealthRecord
 import io.github.wakuwaku3.adaptivepulse.core.sync.SessionRecord
 import io.github.wakuwaku3.adaptivepulse.core.sync.SettingsDocument
@@ -90,6 +92,41 @@ object FirestoreSync {
                     }
                 }
         }.onFailure { Log.w(TAG, "履歴の取得に失敗", it) }.getOrNull()
+    }
+
+    /** 筋トレ記録の upsert。進行中も同一 doc を上書きする (セット入力毎の永続化) */
+    suspend fun uploadWorkout(record: WorkoutRecord): Boolean {
+        val uid = uid() ?: return false
+        val ref = userDoc(uid)?.collection("workouts")?.document(record.id) ?: return false
+        return runCatching {
+            ref.set(
+                mapOf(
+                    "startedAtMs" to record.startedAtMs,
+                    "json" to json.encodeToString(WorkoutRecord.serializer(), record),
+                ),
+            ).await()
+            true
+        }.onFailure { Log.w(TAG, "workout のアップロードに失敗: ${record.id}", it) }
+            .getOrDefault(false)
+    }
+
+    /**
+     * ジム/トレーニング台帳のバックアップ。分析専用でアプリは読み戻さないため、
+     * LWW 拒否 (古い updatedAtMs) もログだけ残して読み直しはしない。
+     */
+    suspend fun putStrengthCatalog(doc: StrengthCatalog): Boolean {
+        val uid = uid() ?: return false
+        val ref = userDoc(uid)?.collection("strengthCatalog")?.document("current") ?: return false
+        return runCatching {
+            ref.set(
+                mapOf(
+                    "updatedAtMs" to doc.updatedAtMs,
+                    "json" to json.encodeToString(StrengthCatalog.serializer(), doc),
+                ),
+            ).await()
+            true
+        }.onFailure { Log.w(TAG, "strengthCatalog の書き込みに失敗 (LWW 拒否含む)", it) }
+            .getOrDefault(false)
     }
 
     suspend fun getSettings(): SettingsDocument? {

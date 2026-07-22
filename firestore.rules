@@ -44,6 +44,37 @@ service cloud.firestore {
         allow delete: if false;
       }
 
+      match /workouts/{workoutId} {
+        // 筋トレ 1 回分 (WorkoutRecord)。進行中もセット入力のたびに同一 doc を
+        // upsert するため update を許す (LWW 条件なし)。削除は禁止。
+        allow read: if isOwner();
+        allow create, update: if isOwner()
+          && request.resource.data.keys().hasOnly(['startedAtMs', 'json'])
+          && request.resource.data.startedAtMs is number
+          && request.resource.data.json is string
+          && request.resource.data.json.size() < 50000;
+        allow delete: if false;
+      }
+
+      match /strengthCatalog/{catalogId} {
+        // ジム/トレーニング台帳 (StrengthCatalog)。library/current と同じ LWW 規約。
+        allow read: if isOwner();
+        allow create: if isOwner()
+          && catalogId == 'current'
+          && request.resource.data.keys().hasOnly(['updatedAtMs', 'json'])
+          && request.resource.data.updatedAtMs is number
+          && request.resource.data.json is string
+          && request.resource.data.json.size() < 50000;
+        allow update: if isOwner()
+          && catalogId == 'current'
+          && request.resource.data.keys().hasOnly(['updatedAtMs', 'json'])
+          && request.resource.data.updatedAtMs is number
+          && request.resource.data.updatedAtMs > resource.data.updatedAtMs
+          && request.resource.data.json is string
+          && request.resource.data.json.size() < 50000;
+        allow delete: if false;
+      }
+
       match /library/{libraryId} {
         // メニュー/プログラムと選択状態 (LibraryDocument)。settings/current と同じ LWW 規約。
         allow read: if isOwner();

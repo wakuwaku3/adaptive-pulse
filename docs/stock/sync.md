@@ -46,18 +46,27 @@ users/{uid}/settings/current         # 設定の正本 (LWW: Rules が updatedAt
 users/{uid}/library/current          # メニュー/プログラムと選択状態の正本 (settings と同じ LWW)
   updatedAtMs: number                # LWW 判定用
   json: string                       # LibraryDocument 全体の JSON
+
+users/{uid}/workouts/{workoutId}     # 筋トレ記録 (分析用バックアップ。delete は Rules で禁止)
+  startedAtMs: number                # 並べ替え用
+  json: string                       # WorkoutRecord 全体の JSON。進行中もセット入力毎に upsert
+
+users/{uid}/strengthCatalog/current  # ジム/トレーニング台帳のバックアップ (library と同じ LWW 形)
+  updatedAtMs: number                # LWW 判定用
+  json: string                       # StrengthCatalog 全体の JSON
 ```
 
 - `sessionId` は watch が生成する (`<startedAtMs>-<乱数>`)。アップロードは set による冪等 upsert で、再送しても重複しない。
+- `workoutId` は phone が生成する (同じ `<startedAtMs>-<乱数>` 形式)。workout と strengthCatalog は phone ローカルが正本で、Firestore は分析用バックアップとして書き込み専用 (アプリは読み戻さない)。
 - `json` 文字列の中身の妥当性は Rules では検証しない (本人だけが書ける領域なので、破損しても自分の履歴/設定が壊れるだけ)。サイズ上限だけ Rules で持つ。
 
 ## Firestore Security Rules (`firestore.rules`)
 
 - `users/{uid}/**` は `request.auth.uid == uid` のときだけ read/write 可。他人のデータには到達できない。
-- `sessions/{id}` は create/update のみ許可、delete は禁止 (append-only 履歴)。
+- `sessions/{id}` / `workouts/{id}` は create/update のみ許可、delete は禁止 (append-only 履歴)。
 - `settings/current` の update は `request.resource.data.updatedAtMs > resource.data.updatedAtMs` のときだけ許可 (LWW を Rules で強制)。古い更新は PermissionDenied になり、クライアントはサーバ値を読み直して反映する。
 - Rules の deploy は `firebase deploy --only firestore:rules` (`deploy-firestore-rules` workflow が main push で自動実行する)。
-- Rules の挙動は `rules-test/` の Firebase Emulator 自動テストで CI 上検証してから deploy する (uid 一致 / append-only / LWW / 未認証拒否を 14 ケースでカバー)。
+- Rules の挙動は `rules-test/` の Firebase Emulator 自動テストで CI 上検証してから deploy する (uid 一致 / append-only / LWW / 未認証拒否をコレクションごとにカバー)。
 
 ## モジュール構成
 

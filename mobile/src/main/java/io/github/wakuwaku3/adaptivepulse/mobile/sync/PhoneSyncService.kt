@@ -16,6 +16,7 @@ import io.github.wakuwaku3.adaptivepulse.mobile.library.PhoneLibraryRepository
 import io.github.wakuwaku3.adaptivepulse.mobile.session.LiveSessionLauncher
 import io.github.wakuwaku3.adaptivepulse.mobile.session.LiveSessionStore
 import io.github.wakuwaku3.adaptivepulse.mobile.settings.PhoneSettingsRepository
+import io.github.wakuwaku3.adaptivepulse.mobile.strength.StrengthAutoEnder
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.tasks.await
 
@@ -62,7 +63,15 @@ class PhoneSyncService : WearableListenerService() {
                 )
             }.onFailure { e -> Log.w(TAG, "live DataItem の解釈に失敗", e) }.getOrNull()
         } ?: return
+        // snapshot は ~1Hz で届くため、セッション出現 (無→有) のときだけ
+        // 進行中 workout の自動終了を評価する (毎 tick のファイル読みを避ける)
+        val sessionAppeared = LiveSessionStore.snapshot.value == null
         LiveSessionStore.update(snapshot)
+        if (sessionAppeared) {
+            // snapshot に開始時刻フィールドはないので経過秒から導出する
+            val startedAtMs = snapshot.updatedAtMs - (snapshot.elapsedSec * 1000).toLong()
+            runBlocking { StrengthAutoEnder.onCardioStarted(applicationContext, startedAtMs) }
+        }
     }
 
     private fun onSessionReceived(uri: Uri, payload: ByteArray?) {
@@ -81,6 +90,8 @@ class PhoneSyncService : WearableListenerService() {
             runCatching { Wearable.getDataClient(applicationContext).deleteDataItems(uri).await() }
             val remaining = PhoneSync.syncPendingSessions(applicationContext)
             Log.i(TAG, "セッション受信: ${record.id} (未同期 $remaining 件)")
+            // live イベントを取り逃した場合の安全網 (完了レコードでも workout を自動終了)
+            StrengthAutoEnder.onCardioStarted(applicationContext, record.startedAtMs)
         }
     }
 
