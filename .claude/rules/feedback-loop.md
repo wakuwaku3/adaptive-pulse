@@ -23,6 +23,11 @@ flame の 3 層モデル (AI ターン内 hook / CI / 監視) のうち、本 re
     - phone: 公開 surface spec は未導入のため patch 固定。
   - 各 form 初版 1.0.0 (`scripts/next_version.sh`)。Release Notes は form 別前回 tag → HEAD の commit 一覧 (`scripts/release_notes.sh`)。署名済み AAB/APK を添付 (Secrets `ADAPTIVE_PULSE_*`)。versionCode は semver から決定的に導出。`workflow_dispatch` の dry_run で release を作らず経路検証できる。
 
+## push 後の CI 確認の作法 (FB 2026-07-23)
+
+- CI の完了待ちは「sleep して 1 回見る」の間欠ポーリングにしない。`gh run watch <run-id> --exit-status` で完了までストリームで待つ (固定 sleep は実際の完了から報告までのラグになり、ユーザを無意味に待たせる)。
+- push 時点で成果物は完成している。CI 確認だけが残っている状態では、先に完了報告を出し「CI 確認中」と明示する。CI 確認をユーザへの報告のブロッカーにしない。
+
 ## 方針
 
 - git 側の lifecycle hook (pre-commit / pre-push) は使わない。検査結果を AI ターン内に返すため hook は Claude Code 側に置く (flame 思想に準拠)。
