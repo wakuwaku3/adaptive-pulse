@@ -73,6 +73,8 @@ dependencies {
     implementation(project(":core"))
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.material3)
+    // TopAppBar 直置きアイコン (FitnessCenter) 用。release では R8 が未使用分を落とす
+    implementation(libs.compose.material.icons.extended)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.core.ktx)
 

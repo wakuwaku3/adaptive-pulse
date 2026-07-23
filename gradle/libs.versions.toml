@@ -43,6 +43,7 @@ play-services-wearable = { group = "com.google.android.gms", name = "play-servic
 androidx-fragment = { group = "androidx.fragment", name = "fragment", version = "1.8.5" }
 compose-bom = { group = "androidx.compose", name = "compose-bom", version.ref = "composeBom" }
 compose-material3 = { group = "androidx.compose.material3", name = "material3" }
+compose-material-icons-extended = { group = "androidx.compose.material", name = "material-icons-extended" }
 firebase-auth = { group = "com.google.firebase", name = "firebase-auth", version.ref = "firebaseAuth" }
 firebase-firestore = { group = "com.google.firebase", name = "firebase-firestore", version.ref = "firebaseFirestore" }
 androidx-credentials = { group = "androidx.credentials", name = "credentials", version.ref = "credentials" }
