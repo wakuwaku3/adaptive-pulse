@@ -77,6 +77,7 @@ fun WorkoutScreen(actions: WorkoutActions) {
     var newGymOpen by remember { mutableStateOf(false) }
     var renameGymOpen by remember { mutableStateOf(false) }
     var hiddenExpanded by remember { mutableStateOf(false) }
+    var finishConfirmOpen by remember { mutableStateOf(false) }
 
     val visibleTrainings = gym.trainings.filterNot { it.hidden }
     val hiddenTrainings = gym.trainings.filter { it.hidden }
@@ -159,7 +160,7 @@ fun WorkoutScreen(actions: WorkoutActions) {
                 )
                 Button(
                     enabled = workout != null,
-                    onClick = { scope.launch { actions.finish() } },
+                    onClick = { finishConfirmOpen = true },
                 ) { Text("Finish") }
             }
         }
@@ -243,6 +244,21 @@ fun WorkoutScreen(actions: WorkoutActions) {
             onSave = { name, onDuplicate ->
                 scope.launch { if (actions.renameGym(gym.id, name)) renameGymOpen = false else onDuplicate() }
             },
+        )
+    }
+
+    // 誤タップ防止 (FB 2026-07-23): Finish は破棄不可な完了操作なので確認を挟む
+    if (finishConfirmOpen) {
+        AlertDialog(
+            onDismissRequest = { finishConfirmOpen = false },
+            title = { Text("Finish workout?") },
+            confirmButton = {
+                TextButton(onClick = {
+                    finishConfirmOpen = false
+                    scope.launch { actions.finish() }
+                }) { Text("Finish") }
+            },
+            dismissButton = { TextButton(onClick = { finishConfirmOpen = false }) { Text("Cancel") } },
         )
     }
 }
