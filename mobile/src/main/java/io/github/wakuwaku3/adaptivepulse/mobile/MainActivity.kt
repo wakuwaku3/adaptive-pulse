@@ -370,12 +370,12 @@ class MainActivity : ComponentActivity() {
                     },
                     actions = {
                         if (screen == Screen.History) {
-                            IconButton(onClick = { scope.launch { refresh() } }) {
-                                Text("↻", style = MaterialTheme.typography.headlineMedium)
-                            }
                             // 毎朝ジムで最初に開く主機能なので overflow に埋めず直置きする
                             TextButton(onClick = { screen = Screen.Workout }) {
                                 Text("Workout")
+                            }
+                            IconButton(onClick = { scope.launch { refresh() } }) {
+                                Text("↻", style = MaterialTheme.typography.headlineMedium)
                             }
                         }
                         OverflowMenu(
