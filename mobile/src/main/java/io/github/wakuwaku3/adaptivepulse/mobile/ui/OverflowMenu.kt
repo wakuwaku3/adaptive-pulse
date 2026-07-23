@@ -20,7 +20,6 @@ import androidx.compose.runtime.setValue
 fun OverflowMenu(
     exportEnabled: Boolean,
     onOpenSettings: (() -> Unit)?,
-    onOpenWorkoutProgress: (() -> Unit)?,
     onExport: () -> Unit,
     onReseedDemo: (() -> Unit)?,
     onSignOut: () -> Unit,
@@ -33,12 +32,6 @@ fun OverflowMenu(
         expanded = open,
         onDismissRequest = { open = false },
     ) {
-        onOpenWorkoutProgress?.let { openProgress ->
-            DropdownMenuItem(
-                text = { Text("Workout Progress") },
-                onClick = { open = false; openProgress() },
-            )
-        }
         onOpenSettings?.let { openSettings ->
             DropdownMenuItem(
                 text = { Text("Settings") },

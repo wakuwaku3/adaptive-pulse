@@ -14,7 +14,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
@@ -46,6 +46,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
+import io.github.wakuwaku3.adaptivepulse.core.strength.Gym
 import io.github.wakuwaku3.adaptivepulse.core.strength.ProgressMetric
 import io.github.wakuwaku3.adaptivepulse.core.strength.ProgressPoint
 import io.github.wakuwaku3.adaptivepulse.core.strength.TrainingProgress
@@ -57,14 +58,17 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import kotlin.math.roundToInt
 
-/**
- * 種目別の成長ダッシュボード (Workout Progress)。1 種目 = 1 行のスモールマルチプルにし、
- * y 軸は行ごとに独立させる (種目間で負荷スケールが違いすぎるため 1 枚の共有グラフにしない)。
- * 表示はジム単一選択に束縛し、行は LazyColumn で遅延コンポーズするので
- * 種目数が増えても描画コストはビューポート分で頭打ちになる。
- */
+/** [workoutProgressSection] が必要とする、事前に解決済みの状態 (LazyListScope 内は非 @Composable のため外で hoist する) */
+class WorkoutProgressState internal constructor(
+    val gym: Gym?,
+    val otherGyms: List<Pair<String, String>>,
+    val progress: List<TrainingProgress>,
+    val loaded: Boolean,
+    val onSelectGym: (String) -> Unit,
+)
+
 @Composable
-fun WorkoutProgressScreen(actions: WorkoutActions) {
+fun rememberWorkoutProgressState(actions: WorkoutActions): WorkoutProgressState {
     val catalog by actions.catalog.collectAsState(initial = null)
     var workouts by remember { mutableStateOf<List<WorkoutRecord>?>(null) }
     LaunchedEffect(Unit) { workouts = actions.history() }
@@ -73,30 +77,36 @@ fun WorkoutProgressScreen(actions: WorkoutActions) {
     var selectedGymId by remember { mutableStateOf<String?>(null) }
     val gym = gyms.firstOrNull { it.id == (selectedGymId ?: catalog?.lastGymId) }
         ?: gyms.firstOrNull()
+    val progress = remember(gym, workouts) { gym?.let { trainingProgress(it, workouts.orEmpty()) }.orEmpty() }
 
+    return WorkoutProgressState(
+        gym = gym,
+        otherGyms = gym?.let { g -> gyms.filterNot { it.id == g.id }.map { it.id to it.name } }.orEmpty(),
+        progress = progress,
+        loaded = workouts != null,
+        onSelectGym = { selectedGymId = it },
+    )
+}
+
+/**
+ * 種目別の成長ダッシュボード (Workout Progress)。Top 画面 (HistoryScreen) の
+ * 1 セクションとして組み込む (別画面への遷移にしない)。1 種目 = 1 行のスモールマルチプルにし、
+ * y 軸は行ごとに独立させる (種目間で負荷スケールが違いすぎるため 1 枚の共有グラフにしない)。
+ * 表示はジム単一選択に束縛する。
+ */
+fun LazyListScope.workoutProgressSection(state: WorkoutProgressState) {
+    val gym = state.gym
     if (gym == null) {
-        CenteredNote("No gym registered yet — log a workout first.")
+        item { CenteredNote("No gym registered yet — log a workout first.") }
         return
     }
-    val loaded = workouts
-    val progress = remember(gym, loaded) { trainingProgress(gym, loaded.orEmpty()) }
-
-    LazyColumn(
-        modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        item {
-            ProgressHeader(
-                gymName = gym.name,
-                otherGyms = gyms.filterNot { it.id == gym.id }.map { it.id to it.name },
-                onSelectGym = { selectedGymId = it },
-            )
-        }
-        if (loaded != null && progress.isEmpty()) {
-            item { CenteredNote("No sets logged at this gym yet.") }
-        }
-        items(progress, key = { it.trainingId }) { ProgressRow(it) }
+    item {
+        ProgressHeader(gymName = gym.name, otherGyms = state.otherGyms, onSelectGym = state.onSelectGym)
     }
+    if (state.loaded && state.progress.isEmpty()) {
+        item { CenteredNote("No sets logged at this gym yet.") }
+    }
+    items(state.progress, key = { it.trainingId }) { ProgressRow(it) }
 }
 
 @Composable
@@ -125,13 +135,17 @@ private fun ProgressHeader(
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
-        Box {
-            TextButton(onClick = { menuOpen = true }, enabled = otherGyms.isNotEmpty()) {
-                Text("⌄", style = MaterialTheme.typography.titleLarge, color = MobileColors.TextDim)
-            }
-            DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                otherGyms.forEach { (id, name) ->
-                    DropdownMenuItem(text = { Text(name) }, onClick = { menuOpen = false; onSelectGym(id) })
+        // ジムが 1 件しかない = 切替不可なので、押せない `v` を disabled 表示するのではなく
+        // 要素自体を出さない (disabled グリフは「なぜ押せないか」が伝わらない)
+        if (otherGyms.isNotEmpty()) {
+            Box {
+                TextButton(onClick = { menuOpen = true }) {
+                    Text("⌄", style = MaterialTheme.typography.titleLarge, color = MobileColors.TextDim)
+                }
+                DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                    otherGyms.forEach { (id, name) ->
+                        DropdownMenuItem(text = { Text(name) }, onClick = { menuOpen = false; onSelectGym(id) })
+                    }
                 }
             }
         }

@@ -17,6 +17,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import io.github.wakuwaku3.adaptivepulse.core.sync.SessionRecord
 import io.github.wakuwaku3.adaptivepulse.mobile.store.HeartRateSampleEntity
+import io.github.wakuwaku3.adaptivepulse.mobile.strength.WorkoutActions
 import io.github.wakuwaku3.adaptivepulse.mobile.ui.dashboard.BmiChart
 import io.github.wakuwaku3.adaptivepulse.mobile.ui.dashboard.CarbsChart
 import io.github.wakuwaku3.adaptivepulse.mobile.ui.dashboard.DashboardComputed
@@ -57,7 +58,9 @@ fun HistoryScreen(
     lowerBpm: Int,
     period: Period,
     onPeriodChange: (Period) -> Unit,
+    workoutActions: WorkoutActions,
 ) {
+    val workoutProgress = rememberWorkoutProgressState(workoutActions)
     if (items == null) {
         Column(
             modifier = Modifier.fillMaxSize(),
@@ -87,6 +90,9 @@ fun HistoryScreen(
             items.map { it.record }.filter { it.startedAtMs >= sinceMs }
         }
         chartGrid(recentDays, hrSamples, sessions, upperBpm, lowerBpm)
+
+        item { SectionHeader("STRENGTH") }
+        workoutProgressSection(workoutProgress)
     }
 }
 
