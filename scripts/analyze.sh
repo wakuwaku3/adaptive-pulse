@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Firestore から HIIT セッション/日次健康指標/現行設定を取得し、直近 N 日の現状評価
-# (per-day 表 + sessions 表 + 現行 settings) を Markdown で stdout に出す。
+# Firestore から HIIT セッション/筋トレ記録/日次健康指標/現行設定を取得し、直近 N 日の現状評価
+# (per-day 表 + sessions 表 + workouts 表 + 現行 settings) を Markdown で stdout に出す。
 #
 # 出力先 (raw JSON + summary md) は tmp/analyze/{YYYY-MM-DD}/。
 # 個人健康データなので tmp/ は .gitignore + .gitleaks.toml allowlist 済の前提。
@@ -46,6 +46,20 @@ SESS_QUERY=$(jq -nc --arg s "$START_MS" --arg e "$END_MS" '{
 }')
 curl -fsS -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
   -X POST "$BASE/users/$U:runQuery" -d "$SESS_QUERY" > "$OUT_DIR/sessions.json"
+
+# workouts (筋トレ記録)
+WORKOUT_QUERY=$(jq -nc --arg s "$START_MS" --arg e "$END_MS" '{
+  structuredQuery: {
+    from: [{collectionId: "workouts"}],
+    where: { compositeFilter: { op: "AND", filters: [
+      { fieldFilter: { field: {fieldPath: "startedAtMs"}, op: "GREATER_THAN_OR_EQUAL", value: {integerValue: $s}}},
+      { fieldFilter: { field: {fieldPath: "startedAtMs"}, op: "LESS_THAN_OR_EQUAL",    value: {integerValue: $e}}}
+    ]}},
+    orderBy: [{field: {fieldPath: "startedAtMs"}, direction: "ASCENDING"}]
+  }
+}')
+curl -fsS -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -X POST "$BASE/users/$U:runQuery" -d "$WORKOUT_QUERY" > "$OUT_DIR/workouts.json"
 
 # dailyMetrics
 METR_QUERY=$(jq -nc --arg from "$FROM_DATE" --arg to "$TODAY" '{
@@ -164,6 +178,35 @@ SUMMARY_PATH="$OUT_DIR/summary__${NOW_HM}__${SLUG}.md"
   fi
 
   echo
+  echo "## workouts (筋トレ記録)"
+  echo
+  WORKOUT_COUNT=$(jq '[.[] | select(.document)] | length' "$OUT_DIR/workouts.json")
+  if [ "$WORKOUT_COUNT" = "0" ]; then
+    echo "(該当期間に筋トレ記録なし)"
+  else
+    echo "| 日時 (JST) | gym | 種目 (セット数) | 総トレーニング量 (kg×回) | 状態 |"
+    echo "|---|---|---|---|---|"
+    jq -r '
+      [.[] | select(.document) | .document.fields.json.stringValue | fromjson]
+      | sort_by(.startedAtMs)
+      | .[]
+      | (((.startedAtMs/1000) + 9*3600) | strftime("%Y-%m-%d %H:%M")) as $when
+      | ((.entries // []) | map(select(.skipped != true))) as $active
+      | ($active | map(
+          (.sets // []) as $s
+          | (.trainingName) + " (" + ($s|length|tostring) + "set)"
+        ) | join(", ")) as $exSummary
+      | ($active | map((.sets // []) | map((.weightKg // 0) * .reps)) | flatten | (add // 0)) as $volume
+      | "| " + $when
+        + " | " + .gymName
+        + " | " + (if $exSummary == "" then "—" else $exSummary end)
+        + " | " + ($volume | round | tostring)
+        + " | " + (if .endedAtMs == null then "進行中" else (.endReason // "—") end)
+        + " |"
+    ' "$OUT_DIR/workouts.json"
+  fi
+
+  echo
   echo "## 現行 settings"
   echo
   jq -r '
@@ -179,6 +222,6 @@ SUMMARY_PATH="$OUT_DIR/summary__${NOW_HM}__${SLUG}.md"
 
   echo
   echo "---"
-  echo "raw: $OUT_DIR/{sessions,metrics,settings}.json"
+  echo "raw: $OUT_DIR/{sessions,workouts,metrics,settings}.json"
   echo "this summary: $SUMMARY_PATH"
 } | tee "$SUMMARY_PATH"
