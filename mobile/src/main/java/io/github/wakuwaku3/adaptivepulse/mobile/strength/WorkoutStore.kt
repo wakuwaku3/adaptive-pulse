@@ -35,6 +35,9 @@ class WorkoutStore(context: Context) {
         dir.listFiles { f -> f.extension == "json" }.orEmpty()
             .maxByOrNull { it.name }?.let(::read)
 
+    fun all(): List<WorkoutRecord> =
+        dir.listFiles { f -> f.extension == "json" }.orEmpty().mapNotNull(::read)
+
     fun dirty(): List<WorkoutRecord> =
         dirtyDir.listFiles().orEmpty().mapNotNull { marker ->
             File(dir, "${marker.name}.json").takeIf { it.exists() }?.let(::read)

@@ -203,6 +203,14 @@ phone 専用の記録機能。毎朝の「筋トレ → 有酸素」のうち筋
 - ローカル (phone) が正本: ジム/トレーニング台帳 (`StrengthCatalog`) は DataStore、workout はファイル per レコード。
 - Firestore へは分析用バックアップとして送るのみで読み戻さない: `workouts/{id}` (upsert)、`strengthCatalog/current` (LWW)。スキーマは `docs/stock/sync.md`。
 
+### 成長の可視化 (Workout Progress)
+
+種目ごとの筋力の伸びを時系列で確認する phone 画面。overflow menu から遷移する (`AdaptivePulse › Workout Progress`)。設計経緯は `docs/notes/20260723__workout-progress/`。
+
+- **指標**: 負荷あり種目は**推定 1RM (e1RM)** のセッション内最高値。Epley 式 (Epley 1985): `weight × (1 + reps/30)`。推定式の妥当性が検証されているのは概ね 10 reps 以下 (LeSuer et al. 1997) なので、10 reps 以下のセットを優先し、無い日は全セットから参考値 (`~` 表示) として算出する。負荷なし種目 (自重・ストレッチ) はセッション内最高 reps。
+- **表示**: 1 種目 = 1 行のスモールマルチプル (スパークライン + 最新値 + 前回比)。y 軸は種目ごとに独立させる (種目間の負荷スケール差を 1 軸に押し込まない)。x は workout 開始時刻、1 workout = 1 点。
+- **スコープ**: ジム単一選択 (初期値は前回使用ジム)。表示種目は選択ジムの表示中トレーニングを登録順で並べ、実績のない種目は出さない。行は LazyColumn で遅延コンポーズし、種目数の増加に対して描画コストを一定に保つ。
+
 ## 振動パターン
 
 イベントごとに体感で区別できる別パターンにする: 高強度→回復 / 回復→高強度 / セッション終了。具体パターンは実機で調整する (タイムアウトでの強制終了は単発の「セッション終了」振動として通知され、終了画面で `fatigueBrake=true` がわかる)。engine 提案 (`EASE_PACE` / `CONSIDER_STOP`) は振動を持たず phone 画面に banner として出すだけにする — 振動でせかすとユーザの判断材料として使いづらいため。

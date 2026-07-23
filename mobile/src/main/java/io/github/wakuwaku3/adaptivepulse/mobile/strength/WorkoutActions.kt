@@ -23,9 +23,11 @@ import io.github.wakuwaku3.adaptivepulse.core.strength.startWorkout
 import io.github.wakuwaku3.adaptivepulse.core.strength.updateSet
 import io.github.wakuwaku3.adaptivepulse.mobile.sync.FirestoreSync
 import java.util.UUID
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.withContext
 
 private const val TAG = "AdaptivePulse"
 
@@ -64,6 +66,10 @@ class WorkoutActions(private val context: Context) {
         // カタログは 1 doc だけなので毎回 put し直す (オフライン中の変更の再送を兼ねる)
         catalogRepo.load().takeIf { it.updatedAtMs > 0 }?.let { FirestoreSync.putStrengthCatalog(it) }
     }
+
+    /** Progress 画面用の全履歴 (最大 500 件のファイル読み) なので IO で読む */
+    suspend fun history(): List<WorkoutRecord> =
+        withContext(Dispatchers.IO) { store.all() }
 
     suspend fun addGym(name: String): Boolean =
         updateCatalog { it.addGym(newId("gym"), name) }
