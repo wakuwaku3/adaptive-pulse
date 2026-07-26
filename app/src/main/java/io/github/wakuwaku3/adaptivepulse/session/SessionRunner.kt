@@ -6,6 +6,7 @@ import io.github.wakuwaku3.adaptivepulse.core.PlanEngine
 import io.github.wakuwaku3.adaptivepulse.core.SessionConfig
 import io.github.wakuwaku3.adaptivepulse.core.SessionEvent
 import io.github.wakuwaku3.adaptivepulse.core.SessionMetrics
+import io.github.wakuwaku3.adaptivepulse.core.calories.HrCalorieIntegrator
 import io.github.wakuwaku3.adaptivepulse.core.menu.MenuKind
 import io.github.wakuwaku3.adaptivepulse.core.menu.SessionPlan
 import io.github.wakuwaku3.adaptivepulse.core.sync.LivePhase
@@ -56,7 +57,14 @@ class SessionRunner(
     private val hrSeries = HrSampleSeries()
     private val mark = timeSource.markNow()
     private var lastBpm: Int? = null
-    private var calories: Double? = null
+
+    // 自前推定 (Keytel 2005) を優先し、体重未設定時のみ Health Services の
+    // CALORIES_TOTAL (更新間隔が OS 依存で分単位に粗い) にフォールバックする
+    private val calorieIntegrator =
+        config.weightKg?.let { HrCalorieIntegrator(weightKg = it, ageYears = config.ageYears) }
+    private var sourceCalories: Double? = null
+    private val calories: Double?
+        get() = calorieIntegrator?.totalKcal ?: sourceCalories
 
     /** 現フェーズの閾値を delta だけ動かす (UI のクラウン回転から呼ぶ)。時間制中は no-op */
     fun adjustActiveThreshold(delta: Int) {
@@ -78,7 +86,8 @@ class SessionRunner(
         sourceFactory { engine.sourcePhase }.samples().first { sample ->
             lastBpm = sample.bpm
             hrSeries.record(mark.elapsedNow(), sample.bpm)
-            sample.totalCalories?.let { calories = it }
+            sample.totalCalories?.let { sourceCalories = it }
+            calorieIntegrator?.onSample(mark.elapsedNow(), sample.bpm)
             // engine を先に進めてから metrics に渡すことで、下限上向き超過の「境界サンプル」も
             // (= isWarmingUp が false に倒れた直後の状態で) 算入する
             val event = engine.onHeartRate(sample.bpm, mark.elapsedNow())

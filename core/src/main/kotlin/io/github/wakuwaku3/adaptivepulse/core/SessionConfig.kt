@@ -21,6 +21,13 @@ data class SessionConfig(
      * デフォルト値はハードコードしない (身長は個人値なので source に embed しない)。
      */
     val heightCm: Int? = null,
+    /**
+     * 体重 (kg)。セッション中の心拍ベース消費カロリー推定 ([calories.HrCalorieIntegrator])
+     * の入力。ユーザ編集項目ではなく、phone が Health Connect の最新実測体重を
+     * restingBpm と同じ経路で自動反映する (HealthSyncWorker)。null = 実測が届く前
+     * → 推定は行わず Health Services の CALORIES_TOTAL にフォールバックする。
+     */
+    val weightKg: Double? = null,
     val upperBpm: Int = HeartRateZones.defaultUpperBpm(ageYears, restingBpm),
     val lowerBpm: Int = HeartRateZones.defaultLowerBpm(ageYears, restingBpm),
     val targetCycles: Int = 5,
@@ -67,6 +74,7 @@ data class SessionConfig(
         require(ageYears in 10..120) { "年齢は 10〜120 の範囲" }
         require(restingBpm in 30..120) { "安静時心拍は 30〜120 の範囲" }
         require(heightCm == null || heightCm in 100..230) { "身長は 100〜230 cm の範囲" }
+        require(weightKg == null || weightKg in 30.0..250.0) { "体重は 30〜250 kg の範囲" }
         require(targetCadenceHigh > targetCadenceRecovery) {
             "高強度 cadence ($targetCadenceHigh) は回復 cadence ($targetCadenceRecovery) より速いこと"
         }

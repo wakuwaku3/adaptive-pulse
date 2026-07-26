@@ -114,7 +114,10 @@
 
 ## 計測メトリクス
 
-- **消費カロリー**: Health Services の CALORIES_TOTAL をセッション中・終了画面に表示する (減量目的の直接的なフィードバック)。取得には ACTIVITY_RECOGNITION 許可が必要で、拒否時はカロリー無しで計測を継続する。
+- **消費カロリー**: セッション中の心拍サンプル (約 1Hz) から自前で毎秒積算し、セッション中・終了画面に表示する (減量目的の直接的なフィードバック)。表示は心拍と同じ頻度で更新され、心拍の上下に即応する。
+  - 推定式は Keytel et al. 2005 (J Sports Sci 23(3)) の心拍-エネルギー消費回帰 (VO2max 無しモデル・男性): `EE (kJ/min) = -55.0969 + 0.6309×HR + 0.1988×体重kg + 0.2017×年齢` (`core.calories.HrCalorieIntegrator`)。回帰の適用域を下回る低心拍は 0 kcal/min として扱う。
+  - 体重入力は Health Connect の最新実測体重を phone の `HealthSyncWorker` が `SessionConfig.weightKg` に自動反映したもの (安静時心拍の日次自動更新と同じ LWW 経路)。体重は日々変化するため、設定 UI の手入力項目にはせず実測値を使う。
+  - 体重が一度も届いていない端末では Health Services の CALORIES_TOTAL を表示する (更新間隔は OS 依存で分単位)。CALORIES_TOTAL の取得には ACTIVITY_RECOGNITION 許可が必要で、拒否時はカロリー無しで計測を継続する。
 - **ゾーン滞在率**: 下限〜上限の帯にいた時間の割合を終了画面に表示する (トレーニング品質の指標)。
 
 ## ペース表示 (目標 SPM)

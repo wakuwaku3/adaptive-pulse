@@ -83,6 +83,7 @@ data class SessionConfigSnapshot(
     val targetCadenceHigh: Int = 130,
     val targetCadenceRecovery: Int = 90,
     val heightCm: Int? = null,
+    val weightKg: Double? = null,
 ) {
     companion object {
         fun from(config: SessionConfig) = SessionConfigSnapshot(
@@ -99,6 +100,7 @@ data class SessionConfigSnapshot(
             targetCadenceHigh = config.targetCadenceHigh,
             targetCadenceRecovery = config.targetCadenceRecovery,
             heightCm = config.heightCm,
+            weightKg = config.weightKg,
         )
     }
 }
@@ -124,6 +126,7 @@ data class SettingsDocument(
     val targetCadenceHigh: Int = 130,
     val targetCadenceRecovery: Int = 90,
     val heightCm: Int? = null,
+    val weightKg: Double? = null,
 ) {
     fun toSessionConfig() = SessionConfig(
         ageYears = ageYears,
@@ -139,6 +142,7 @@ data class SettingsDocument(
         targetCadenceHigh = targetCadenceHigh,
         targetCadenceRecovery = targetCadenceRecovery,
         heightCm = heightCm,
+        weightKg = weightKg,
     )
 
     companion object {
@@ -158,6 +162,7 @@ data class SettingsDocument(
             targetCadenceHigh = config.targetCadenceHigh,
             targetCadenceRecovery = config.targetCadenceRecovery,
             heightCm = config.heightCm,
+            weightKg = config.weightKg,
         )
     }
 }

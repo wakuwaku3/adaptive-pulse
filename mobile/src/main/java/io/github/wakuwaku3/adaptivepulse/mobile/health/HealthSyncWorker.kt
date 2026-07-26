@@ -8,6 +8,7 @@ import io.github.wakuwaku3.adaptivepulse.mobile.settings.PhoneSettingsRepository
 import io.github.wakuwaku3.adaptivepulse.mobile.store.DashboardRepository
 import io.github.wakuwaku3.adaptivepulse.mobile.sync.PhoneSync
 import java.time.LocalDate
+import java.time.ZonedDateTime
 
 private const val TAG = "AdaptivePulse"
 
@@ -58,9 +59,28 @@ class HealthSyncWorker(
         }
         // 直近の RHR を SessionConfig.restingBpm に反映 (Karvonen 入力として日々変動を吸収)
         syncRestingBpm(records.firstNotNullOfOrNull { it.restingHeartRateBpm })
+        // 最新実測体重を SessionConfig.weightKg に反映 (watch のカロリー推定入力。
+        // 通常窓に実測が無ければ HC の「最新既知値」まで遡る)
+        syncWeightKg(
+            records.firstNotNullOfOrNull { it.weightKg }
+                ?: source.readLatestWeightKgBefore(ZonedDateTime.now()),
+        )
 
         Log.i(TAG, "sync 完了 (${records.size} days, firestore failed=$fsFailed)")
         return if (fsFailed > 0) Result.retry() else Result.success()
+    }
+
+    private suspend fun syncWeightKg(latestWeightKg: Double?) {
+        if (latestWeightKg == null) return
+        // SessionConfig の require レンジ (30..250) を外れる値は無視。HC 側の異常値ガード
+        if (latestWeightKg !in 30.0..250.0) {
+            Log.w(TAG, "HC 体重が想定レンジ外: $latestWeightKg → 反映スキップ")
+            return
+        }
+        val current = PhoneSettingsRepository(applicationContext).loadDocument().toSessionConfig()
+        if (current.weightKg == latestWeightKg) return
+        PhoneSync.updateSettingsEverywhere(applicationContext) { it.copy(weightKg = latestWeightKg) }
+        Log.i(TAG, "weightKg を HC 値で更新: ${current.weightKg} → $latestWeightKg")
     }
 
     private suspend fun syncRestingBpm(latestRhr: Int?) {
