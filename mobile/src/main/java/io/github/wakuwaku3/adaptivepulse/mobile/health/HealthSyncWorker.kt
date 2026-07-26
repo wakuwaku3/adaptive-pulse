@@ -66,6 +66,11 @@ class HealthSyncWorker(
                 ?: source.readLatestWeightKgBefore(ZonedDateTime.now()),
         )
 
+        // スマホの AI に食わせる取り出しファイルを最新化する (Room から組むので安価)。
+        // 失敗しても同期本体は成功扱いにする (取り出し口は本質機能でない)
+        runCatching { HealthDataExporter(applicationContext).exportToConfiguredLocation() }
+            .onFailure { Log.w(TAG, "export ファイル更新失敗", it) }
+
         Log.i(TAG, "sync 完了 (${records.size} days, firestore failed=$fsFailed)")
         return if (fsFailed > 0) Result.retry() else Result.success()
     }

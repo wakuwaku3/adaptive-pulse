@@ -57,6 +57,8 @@ import io.github.wakuwaku3.adaptivepulse.mobile.session.DemoSessionController
 import io.github.wakuwaku3.adaptivepulse.mobile.session.LiveSessionCommander
 import io.github.wakuwaku3.adaptivepulse.mobile.session.LiveSessionLauncher
 import io.github.wakuwaku3.adaptivepulse.mobile.session.LiveSessionStore
+import io.github.wakuwaku3.adaptivepulse.mobile.settings.ExportLocation
+import io.github.wakuwaku3.adaptivepulse.mobile.settings.ExportSettingsRepository
 import io.github.wakuwaku3.adaptivepulse.mobile.settings.PhoneSettingsRepository
 import io.github.wakuwaku3.adaptivepulse.mobile.store.DashboardRepository
 import io.github.wakuwaku3.adaptivepulse.mobile.store.DemoSeed
@@ -250,6 +252,8 @@ class MainActivity : ComponentActivity() {
         var status by remember { mutableStateOf<String?>(null) }
         val settingsRepo = remember { PhoneSettingsRepository(applicationContext) }
         val settingsDoc by settingsRepo.document.collectAsState(initial = null)
+        val exportRepo = remember { ExportSettingsRepository(applicationContext) }
+        val exportLocation by exportRepo.location.collectAsState(initial = ExportLocation.DEFAULT)
         val libraryRepo = remember { PhoneLibraryRepository(applicationContext) }
         val storedLibrary by libraryRepo.stored.collectAsState(initial = null)
 
@@ -393,12 +397,10 @@ class MainActivity : ComponentActivity() {
                             },
                             onExport = {
                                 scope.launch {
-                                    status = "Exporting…"
-                                    val export = HealthDataExporter(applicationContext).build(30)
-                                    val intent = HealthDataExporter(applicationContext).shareIntent(export)
-                                    status =
-                                        "Exported ${export.dailyMetrics.size} days + ${export.sessions.size} sessions"
-                                    startActivity(intent)
+                                    status = "Refreshing data file…"
+                                    val path = HealthDataExporter(applicationContext)
+                                        .exportToConfiguredLocation()
+                                    status = "Data file updated: $path"
                                 }
                             },
                             onReseedDemo = if (BuildConfig.DEBUG) {
@@ -527,6 +529,9 @@ class MainActivity : ComponentActivity() {
                                 PhoneSync.updateSettingsEverywhere(applicationContext) { it.copy(targetWeightKg = kg) }
                             }
                         },
+                        exportLocation = exportLocation,
+                        onExportPathChange = { path -> scope.launch { exportRepo.setRelativePath(path) } },
+                        onExportFileNameChange = { name -> scope.launch { exportRepo.setFileName(name) } },
                         healthConnectConnected = hcConnected,
                         healthConnectAvailable = healthSource.available,
                         onHealthConnectToggle = { wantConnect ->

@@ -122,17 +122,3 @@ data class ExternalExerciseSession(
     val title: String? = null,
     val sourcePackage: String,
 )
-
-/** エクスポート 1 ファイルの top-level シェイプ */
-@Serializable
-data class HealthDataExport(
-    val schema: Int = 1,
-    /** UNIX epoch millis でのエクスポート時刻 */
-    val exportedAtMs: Long,
-    /** 含まれる日付の範囲 (inclusive) */
-    val fromDate: String,
-    val toDate: String,
-    val dailyMetrics: List<DailyHealthRecord>,
-    /** 既存 SessionRecord (本アプリのワークアウト履歴) を同梱する */
-    val sessions: List<SessionRecord>,
-)

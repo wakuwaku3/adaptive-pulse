@@ -2,8 +2,9 @@
 
 phone アプリ (`:mobile`) が Health Connect から日次の健康指標と時系列を取り込み、
 端末ローカル Room キャッシュとアプリ内ダッシュボードに反映する。同時に日次集約は
-Firestore に upsert して機種変対応の正本を保つ。手動の JSON エクスポートは
-external (Claude 等) への取り出し口として残す。
+Firestore に upsert して機種変対応の正本を保つ。同じデータを端末の共有ストレージへ
+JSON 1 枚として自動で書き出し、スマホの Claude / ChatGPT アプリに添付して分析する
+取り出し口にする。
 
 ## 入手するデータ
 
@@ -178,23 +179,32 @@ HC には「他アプリの書き込みを禁止する」primitive が無い。`
 revoke する必要がある。`dataOrigin` で filter する読み手 (Google Fit 等) は
 本アプリ値だけが見える。
 
-## エクスポート経路 (Claude 等への手動取り出し)
+## エクスポートファイル (スマホの Claude / ChatGPT への取り出し口)
 
-phone overflow メニューの「Export 30 days」から実行する。
+`HealthDataExporter` が共有ストレージへ JSON 1 枚 (`HealthDataExport`, schema 2) を
+書き出す。「ファイルを添付して『分析して』だけで /analyze 相当の評価が返る」ことを
+狙い、自己完結にする。
 
-1. `HealthDataExporter` が直近 30 日の `DailyHealthRecord` を HC から組み立てる
-2. 同じ期間の `SessionRecord` を Firestore + ローカル pending から集める
-3. 両者を `HealthDataExport` の 1 オブジェクトに包んで JSON 化
-4. アプリの `cacheDir/exports/adaptivepulse-YYYY-MM-DD_YYYY-MM-DD.json` に書き出し
-5. `FileProvider` で URI 化して `ACTION_SEND` (chooser 経由) で他アプリに渡す
-
-書き出した JSON は端末ローカルのキャッシュなので、ユーザが選んだ送信先アプリ
-(Gmail / Drive / Slack / Keep / clipboard manager 等) に乗せて初めて永続化される。
+- **保存先**: 既定は端末の `Download/adaptive-pulse.json`。Settings 画面でフォルダ名と
+  ファイル名を変更できる (端末ローカルの物理パスなので同期 `SettingsDocument` には載せず、
+  phone ローカルの DataStore `export` に持つ)。
+- **ミュータブル運用**: 常に最新 1 枚を同名で上書きする (履歴は Firestore が持つ)。
+  MediaStore の同名エントリを更新して増殖させない。Android 10 未満は共有ストレージに
+  権限が要るため app 専用領域 (`getExternalFilesDir`) に退避する。
+- **更新契機**: `HealthSyncWorker` (1 時間ごと + 前景化) の末尾で毎回書き直すので常に最新。
+  overflow メニューの「Refresh data file」で任意のタイミングでも即時更新できる。
+- **中身**: 生データ (`raw`: dailyMetrics / sessions / workouts / settings / strengthCatalog)
+  と analyze 相当の集計 (`analysis`) の両方を持ち、先頭の `documentation` に「ファイルの
+  説明・各データの意味・誤読を防ぐ解釈ルール」を同梱する。日次指標は HC を再読せず Room
+  から組む (安価)。セッション中 1 秒 HR 列は容量のため落とす。
+- **集計の定義**: `core.analysis.analyzeHealthData` が `scripts/analyze.sh` の派生集計
+  (体組成変化 / 食事収支と栄養素下限 / 回復基準値 / HIIT 集計 / 筋トレ種目別推移) を
+  JVM 単体で再現する。analyze.sh と定義を揃える (ずれると /analyze とスマホ添付で数値が
+  食い違う)。
 
 ## 将来の拡張
 
-- **Claude MCP connector**: Firestore 配下の `dailyMetrics` + `sessions` をそのまま
-  読ませる MCP server を立てる。手動 JSON エクスポートは「困った時の救命ボート」
-  として残す。
+- **Claude MCP connector**: Firestore 配下を直接読ませる MCP server を立て、ファイル添付を
+  不要にする常時接続の取り出し口にする。
 - **watch tile**: その日の deficit を watch face から直接見られるようにする。
 - **deload 自動判定**: HRV / RHR / 睡眠から HIIT 強度の自動調整。

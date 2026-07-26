@@ -1,6 +1,7 @@
 package io.github.wakuwaku3.adaptivepulse.core.sync
 
 import io.github.wakuwaku3.adaptivepulse.core.SessionConfig
+import io.github.wakuwaku3.adaptivepulse.core.analysis.analyzeHealthData
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -130,46 +131,50 @@ class DailyHealthRecordTest {
     }
 
     @Test
-    fun `HealthDataExport は dailyMetrics と sessions を含めて round-trip する`() {
+    fun `HealthDataExport は生データと集計を含めて round-trip する`() {
+        val dailyMetrics = listOf(
+            DailyHealthRecord(date = "2026-06-17", restingHeartRateBpm = 60),
+            DailyHealthRecord(date = "2026-06-18", restingHeartRateBpm = 58),
+        )
+        val sessions = listOf(
+            SessionRecord(
+                id = "1718064000000-abc",
+                startedAtMs = 1_718_064_000_000,
+                durationSec = 780,
+                cycles = 7,
+                plannedCycles = 7,
+                fatigueBrake = false,
+                calories = 95.0,
+                config = SessionConfigSnapshot.from(SessionConfig()),
+            ),
+        )
         val export = HealthDataExport(
             exportedAtMs = 1_750_000_000_000,
             fromDate = "2026-05-20",
             toDate = "2026-06-18",
-            dailyMetrics = listOf(
-                DailyHealthRecord(date = "2026-06-17", restingHeartRateBpm = 60),
-                DailyHealthRecord(date = "2026-06-18", restingHeartRateBpm = 58),
-            ),
-            sessions = listOf(
-                SessionRecord(
-                    id = "1718064000000-abc",
-                    startedAtMs = 1_718_064_000_000,
-                    durationSec = 780,
-                    cycles = 7,
-                    plannedCycles = 7,
-                    fatigueBrake = false,
-                    calories = 95.0,
-                    config = SessionConfigSnapshot.from(SessionConfig()),
-                ),
-            ),
+            documentation = ExportDocumentation.default(),
+            raw = RawData(dailyMetrics = dailyMetrics, sessions = sessions, workouts = emptyList()),
+            analysis = analyzeHealthData(dailyMetrics, sessions, emptyList(), settings = null),
         )
         val json = Json.encodeToString(HealthDataExport.serializer(), export)
         assertEquals(export, Json.decodeFromString(HealthDataExport.serializer(), json))
     }
 
     @Test
-    fun `古い export に未知フィールドが足されても新クライアントで読める`() {
+    fun `export に未知フィールドが足されても新クライアントで読める`() {
         // 将来 schema 拡張に備えた hedge。Json { ignoreUnknownKeys = true } で復元する
-        val json = """{
-            "schema": 1,
-            "exportedAtMs": 100,
-            "fromDate": "2026-06-01",
-            "toDate": "2026-06-18",
-            "dailyMetrics": [],
-            "sessions": [],
-            "futureField": "hello"
-        }"""
+        val export = HealthDataExport(
+            exportedAtMs = 100,
+            fromDate = "2026-06-01",
+            toDate = "2026-06-18",
+            documentation = ExportDocumentation.default(),
+            raw = RawData(dailyMetrics = emptyList(), sessions = emptyList(), workouts = emptyList()),
+            analysis = analyzeHealthData(emptyList(), emptyList(), emptyList(), settings = null),
+        )
+        val withUnknown = Json.encodeToString(HealthDataExport.serializer(), export)
+            .replaceFirst("{", """{"futureField":"hello",""")
         val lenient = Json { ignoreUnknownKeys = true }
-        val decoded = lenient.decodeFromString(HealthDataExport.serializer(), json)
+        val decoded = lenient.decodeFromString(HealthDataExport.serializer(), withUnknown)
         assertEquals("2026-06-18", decoded.toDate)
     }
 }

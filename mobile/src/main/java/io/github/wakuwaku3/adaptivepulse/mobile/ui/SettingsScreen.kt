@@ -28,6 +28,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import io.github.wakuwaku3.adaptivepulse.core.SessionConfig
 import io.github.wakuwaku3.adaptivepulse.core.settings.SettingItem
+import io.github.wakuwaku3.adaptivepulse.mobile.settings.ExportLocation
 
 /**
  * phone 側の設定編集。SessionConfig 系の項目は watch とサーバーへ LWW で伝播する
@@ -41,6 +42,9 @@ fun SettingsScreen(
     onHeightChange: (Int?) -> Unit,
     onTargetWeightChange: (Double?) -> Unit,
     onOpenLibrary: () -> Unit,
+    exportLocation: ExportLocation,
+    onExportPathChange: (String) -> Unit,
+    onExportFileNameChange: (String) -> Unit,
     healthConnectConnected: Boolean,
     healthConnectAvailable: Boolean,
     onHealthConnectToggle: (Boolean) -> Unit,
@@ -99,11 +103,66 @@ fun SettingsScreen(
             )
         }
         item {
+            ExportLocationCard(
+                location = exportLocation,
+                onPathChange = onExportPathChange,
+                onFileNameChange = onExportFileNameChange,
+            )
+        }
+        item {
             HealthConnectCard(
                 available = healthConnectAvailable,
                 connected = healthConnectConnected,
                 onToggle = onHealthConnectToggle,
                 onResync = onHealthConnectResync,
+            )
+        }
+    }
+}
+
+/**
+ * AI に食わせるデータファイルの保存先。既定は端末の Download 直下、固定名 (常に最新 1 枚を上書き)。
+ * フォルダ = 共有ストレージ内の相対パス、ファイル名 = 添付で選ぶ名前。
+ */
+@Composable
+private fun ExportLocationCard(
+    location: ExportLocation,
+    onPathChange: (String) -> Unit,
+    onFileNameChange: (String) -> Unit,
+) {
+    var path by remember(location.relativePath) { mutableStateOf(location.relativePath) }
+    var name by remember(location.fileName) { mutableStateOf(location.fileName) }
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text("DATA FILE", style = MaterialTheme.typography.titleSmall)
+            Text(
+                text = "Kept fresh automatically for Claude / ChatGPT to read. Attach it and ask to analyze.",
+                color = MobileColors.TextDim,
+                style = MaterialTheme.typography.bodySmall,
+            )
+            OutlinedTextField(
+                value = path,
+                onValueChange = { path = it; onPathChange(it) },
+                label = { Text("Folder (under shared storage)") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            OutlinedTextField(
+                value = name,
+                onValueChange = { name = it; onFileNameChange(it) },
+                label = { Text("File name") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Text(
+                text = "→ ${location.relativePath}/${location.fileName}",
+                color = MobileColors.Recover,
+                style = MaterialTheme.typography.bodySmall,
             )
         }
     }

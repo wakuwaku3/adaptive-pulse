@@ -39,7 +39,7 @@ fun OverflowMenu(
             )
         }
         DropdownMenuItem(
-            text = { Text("Export 30 days") },
+            text = { Text("Refresh data file") },
             enabled = exportEnabled,
             onClick = { open = false; onExport() },
         )
