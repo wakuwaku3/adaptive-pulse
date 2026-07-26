@@ -36,15 +36,25 @@ data class DashboardComputed(
     val restingHrBpm: Int?,
     val steps: Long?,
     val bmrEstKcal: Double?,
-    val proteinPerKg: Double?,
+    /** タンパク質のアンカー体重あたり g/kg ([proteinAnchorWeightKg] 基準) */
+    val proteinPerTargetKg: Double?,
     val fatPerKg: Double?,
     val carbsPerKg: Double?,
     val spo2AvgPct: Double?,
+    /** 明示設定された目標体重 (kg)。体重チャートの目標ラインに使う。null = 未設定 */
+    val targetWeightKg: Double?,
+    /**
+     * タンパク質帯のアンカー体重: 目標体重、未設定なら身長から BMI 22 標準体重。
+     * 過体重では現体重あたりの g/kg が過大になるため、目標体重にアンカーする
+     * (docs/stock/nutrition-guidelines.md)。
+     */
+    val proteinAnchorWeightKg: Double?,
 )
 
 fun DailySnapshotEntity.computed(
     ageYears: Int = 39,
     fallbackHeightCm: Double? = null,
+    targetWeightKg: Double? = null,
 ): DashboardComputed {
     // HC `HeightRecord` が無い環境 (Google Fit 切断後など) のため、entity に乗っていない日は
     // SessionConfig.heightCm で補完する。両方 null なら BMI / BMR_est は引き続き "—"。
@@ -54,7 +64,8 @@ fun DailySnapshotEntity.computed(
     // tdeeKcal が null の日 (旧 sync で未計算) は表示も deficit も「—」。
     val deficit = if (tdeeKcal != null && intakeKcal != null) intakeKcal - tdeeKcal else null
     val sleepHours = sleepDurationMin?.let { it / 60.0 }
-    val protKg = if (proteinG != null && weightKg != null) proteinG / weightKg else null
+    val proteinAnchor = targetWeightKg ?: standardWeightKg(effectiveHeightCm)
+    val protKg = if (proteinG != null && proteinAnchor != null) proteinG / proteinAnchor else null
     val fatKg = if (fatG != null && weightKg != null) fatG / weightKg else null
     val carbKg = if (carbsG != null && weightKg != null) carbsG / weightKg else null
     val bmi = if (weightKg != null && effectiveHeightCm != null && effectiveHeightCm > 0) {
@@ -80,11 +91,20 @@ fun DailySnapshotEntity.computed(
         restingHrBpm = restingHeartRateBpm,
         steps = steps,
         bmrEstKcal = bmr,
-        proteinPerKg = protKg,
+        proteinPerTargetKg = protKg,
         fatPerKg = fatKg,
         carbsPerKg = carbKg,
         spo2AvgPct = spo2AvgPct,
+        targetWeightKg = targetWeightKg,
+        proteinAnchorWeightKg = proteinAnchor,
     )
+}
+
+/** BMI 22 (日本肥満学会の標準体重) を身長から逆算する。目標体重が未設定のときの代用アンカー */
+fun standardWeightKg(heightCm: Double?): Double? {
+    if (heightCm == null || heightCm <= 0) return null
+    val m = heightCm / 100.0
+    return 22.0 * m * m
 }
 
 private fun bmrMifflinStJeor(weightKg: Double?, heightCm: Double?, ageYears: Int): Double? {
@@ -150,11 +170,15 @@ object Steps {
     fun categoryOf(v: Double): String = bands.firstOrNull { v in it.from..it.to }?.label ?: "—"
 }
 
-/** タンパク質 g/kg。減量中は 1.6+ が筋量維持の目安 */
+/**
+ * タンパク質 g/kg **目標体重** あたり。減量 × 筋トレ併用の筋量維持は 1.6-2.2 g/kg
+ * (Morton 2018 のブレークポイント 1.6, Helms 2014)。過体重では現体重あたりだと過大に
+ * なるため目標体重にアンカーする。「不足」境界 1.6 は /analyze の下限と同一
+ * (docs/stock/nutrition-guidelines.md)。
+ */
 object Protein {
     val bands = listOf(
-        Band("不足", 0.0, 1.0, BadBand),
-        Band("低め", 1.0, 1.6, NeutralBand),
+        Band("不足", 0.0, 1.6, BadBand),
         Band("適正", 1.6, 2.2, GoodBand),
         Band("過多", 2.2, 5.0, NeutralBand),
     )
@@ -162,12 +186,15 @@ object Protein {
     fun categoryOf(v: Double): String = bands.firstOrNull { v in it.from..it.to }?.label ?: "—"
 }
 
-/** 脂質 g/kg。ホルモン維持の最低 0.8 g/kg。過剰は炎症・カロリー押し上げの懸念 */
+/**
+ * 脂質 g/kg 現体重あたり。減量中の推奨 0.5-1.5 g/kg で、下限 0.5 はホルモン機能維持の
+ * 最低ライン (Helms 2014)。「不足」境界 0.5 は /analyze の下限と同一
+ * (docs/stock/nutrition-guidelines.md)。
+ */
 object Fat {
     val bands = listOf(
-        Band("不足", 0.0, 0.6, BadBand),
-        Band("低め", 0.6, 0.8, NeutralBand),
-        Band("適正", 0.8, 1.5, GoodBand),
+        Band("不足", 0.0, 0.5, BadBand),
+        Band("適正", 0.5, 1.5, GoodBand),
         Band("高め", 1.5, 5.0, NeutralBand),
     )
 

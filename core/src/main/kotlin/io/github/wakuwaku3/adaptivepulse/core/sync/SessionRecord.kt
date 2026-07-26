@@ -127,6 +127,7 @@ data class SettingsDocument(
     val targetCadenceRecovery: Int = 90,
     val heightCm: Int? = null,
     val weightKg: Double? = null,
+    val targetWeightKg: Double? = null,
 ) {
     fun toSessionConfig() = SessionConfig(
         ageYears = ageYears,
@@ -143,6 +144,7 @@ data class SettingsDocument(
         targetCadenceRecovery = targetCadenceRecovery,
         heightCm = heightCm,
         weightKg = weightKg,
+        targetWeightKg = targetWeightKg,
     )
 
     companion object {
@@ -163,6 +165,7 @@ data class SettingsDocument(
             targetCadenceRecovery = config.targetCadenceRecovery,
             heightCm = config.heightCm,
             weightKg = config.weightKg,
+            targetWeightKg = config.targetWeightKg,
         )
     }
 }

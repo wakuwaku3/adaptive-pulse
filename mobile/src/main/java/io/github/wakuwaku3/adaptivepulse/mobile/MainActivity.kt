@@ -312,11 +312,13 @@ class MainActivity : ComponentActivity() {
         val todayComputed = todayEntity?.computed(
             ageYears = currentConfig.ageYears,
             fallbackHeightCm = fallbackHeightCm,
+            targetWeightKg = currentConfig.targetWeightKg,
         )
         val recentComputed = recentEntities.sortedBy { it.date }.map {
             it.computed(
                 ageYears = currentConfig.ageYears,
                 fallbackHeightCm = fallbackHeightCm,
+                targetWeightKg = currentConfig.targetWeightKg,
             )
         }
 
@@ -518,6 +520,11 @@ class MainActivity : ComponentActivity() {
                         onHeightChange = { cm ->
                             scope.launch {
                                 PhoneSync.updateSettingsEverywhere(applicationContext) { it.copy(heightCm = cm) }
+                            }
+                        },
+                        onTargetWeightChange = { kg ->
+                            scope.launch {
+                                PhoneSync.updateSettingsEverywhere(applicationContext) { it.copy(targetWeightKg = kg) }
                             }
                         },
                         healthConnectConnected = hcConnected,

@@ -39,6 +39,7 @@ fun SettingsScreen(
     config: SessionConfig,
     onChange: (SettingItem, Int) -> Unit,
     onHeightChange: (Int?) -> Unit,
+    onTargetWeightChange: (Double?) -> Unit,
     onOpenLibrary: () -> Unit,
     healthConnectConnected: Boolean,
     healthConnectAvailable: Boolean,
@@ -89,6 +90,12 @@ fun SettingsScreen(
             HeightCard(
                 heightCm = config.heightCm,
                 onChange = onHeightChange,
+            )
+        }
+        item {
+            TargetWeightCard(
+                targetWeightKg = config.targetWeightKg,
+                onChange = onTargetWeightChange,
             )
         }
         item {
@@ -164,6 +171,53 @@ private fun HeightCard(heightCm: Int?, onChange: (Int?) -> Unit) {
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                 suffix = { Text("cm") },
+                modifier = Modifier.padding(start = 8.dp),
+            )
+        }
+    }
+}
+
+/**
+ * 目標体重入力。タンパク質目標帯のアンカーと体重チャートの目標ラインに使う。
+ * 空欄 = 未設定 (=> タンパク質帯は身長の BMI 22 標準体重で代用、目標ラインなし)。
+ * 個人値なのでデフォルト埋めはせず、ユーザが直接 kg で入力する。
+ */
+@Composable
+private fun TargetWeightCard(targetWeightKg: Double?, onChange: (Double?) -> Unit) {
+    var text by remember(targetWeightKg) {
+        mutableStateOf(targetWeightKg?.let { "%.1f".format(it).removeSuffix(".0") }.orEmpty())
+    }
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 6.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.padding(end = 12.dp)) {
+                Text("TARGET WEIGHT", style = MaterialTheme.typography.titleSmall)
+                Text(
+                    text = "Anchors the protein target and the weight goal line",
+                    color = MobileColors.TextDim,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+            OutlinedTextField(
+                value = text,
+                onValueChange = { raw ->
+                    val cleaned = raw.filter { it.isDigit() || it == '.' }.take(5)
+                    text = cleaned
+                    val parsed = cleaned.toDoubleOrNull()
+                    if (parsed == null) {
+                        onChange(null)
+                    } else if (parsed in 30.0..250.0) {
+                        onChange(parsed)
+                    }
+                },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                suffix = { Text("kg") },
                 modifier = Modifier.padding(start = 8.dp),
             )
         }

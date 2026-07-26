@@ -473,7 +473,9 @@ fun WeightChart(rows: List<DashboardComputed>, modifier: Modifier = Modifier) {
     val maNonNull = movingAvg.filterNotNull()
     // scale はデータ実値中心 (band は背景描画で必要に応じて clamp 表示)。
     // expandWithBands を使うと band 全幅 (例: BMI 18.5-35 帯) を抱え込んで縦軸が無駄に広くなる。
-    val combined = nonNull + maNonNull
+    // 目標体重はデータから離れていても「あとどれだけか」を見せたいので scale に含める
+    val targetWeight = rows.firstNotNullOfOrNull { it.targetWeightKg }
+    val combined = nonNull + maNonNull + listOfNotNull(targetWeight)
     val scale = if (combined.isEmpty()) Scale(60.0, 100.0) else expandScale(combined, 0.10)
     val today = rows.lastOrNull()
     val latestMa = maNonNull.lastOrNull()
@@ -486,6 +488,7 @@ fun WeightChart(rows: List<DashboardComputed>, modifier: Modifier = Modifier) {
         title = "Weight",
         info = "身長 ${heightCm?.let { "%.0f cm".format(it) } ?: "—"} の BMI 基準で帯を描画。" +
             "緑 = 普通 (BMI 18.5-25) / 黄 = 過体重 (25-30) / 赤 = 肥満 (30+)。" +
+            (targetWeight?.let { "破線 = 目標体重 (%.1f kg)。".format(it) } ?: "") +
             if (showMa) "赤線 = ${maWindow} 日移動平均" else "",
         legend = listOfNotNull(
             LegendItem(
@@ -508,6 +511,9 @@ fun WeightChart(rows: List<DashboardComputed>, modifier: Modifier = Modifier) {
         pointAt = { i -> rows.getOrNull(i)?.let { formatPoint(it.date, it.weightKg, "kg", 2) } ?: "" },
         drawContent = {
             drawBands(bands, scale)
+            if (targetWeight != null) {
+                drawReferenceLine(targetWeight, scale, PrimaryColor.copy(alpha = 0.5f))
+            }
             drawLineChart(values, scale, PrimaryColor)
             if (showMa) drawLineChart(movingAvg, scale, SecondaryColor, pointRadius = 0f, strokeWidth = 2.5f)
         },
@@ -638,8 +644,9 @@ fun TdeeIntakeChart(rows: List<DashboardComputed>, modifier: Modifier = Modifier
 fun ProteinChart(rows: List<DashboardComputed>, modifier: Modifier = Modifier) {
     val values = rows.map { it.proteinG }
     val nonNull = values.filterNotNull()
-    val weightForBands = rows.lastOrNull()?.weightKg ?: rows.firstNotNullOfOrNull { it.weightKg }
-    val bands = nutrientBandsForWeight(Protein.bands, weightForBands)
+    // 帯は現体重ではなく目標体重 (未設定なら BMI 22 標準体重) にアンカーする
+    val anchorWeight = rows.firstNotNullOfOrNull { it.proteinAnchorWeightKg }
+    val bands = nutrientBandsForWeight(Protein.bands, anchorWeight)
     val scale = when {
         nonNull.isEmpty() -> Scale(0.0, 200.0)
         bands.isNotEmpty() -> expandWithBands(nonNull, bands, 0.08)
@@ -648,14 +655,15 @@ fun ProteinChart(rows: List<DashboardComputed>, modifier: Modifier = Modifier) {
     val today = rows.lastOrNull()
     MiniChartCard(
         title = "Protein",
-        info = "1 日のタンパク質 (g)。減量中の筋量維持には 1.6 g/kg 以上が目安。" +
-            "緑 = 適正帯 (体重から逆算)",
+        info = "1 日のタンパク質 (g)。緑 = 適正 1.6-2.2 g/kg × 目標体重" +
+            "${anchorWeight?.let { " (%.1f kg)".format(it) } ?: ""} = 筋量維持の推奨帯。" +
+            "1.6 未満 (赤) は下限割れ。目標体重が未設定なら身長の BMI 22 標準体重で代用",
         legend = listOf(
             LegendItem(
                 "Protein",
                 today?.proteinG?.let { "%.0f g".format(it) } ?: "—",
                 PrimaryColor,
-                bandStateColor(today?.proteinPerKg, Protein.bands),
+                bandStateColor(today?.proteinPerTargetKg, Protein.bands),
             ),
         ),
         yLabels = yLabelsFor(scale) { "%.0f".format(it) },
@@ -684,8 +692,8 @@ fun FatChart(rows: List<DashboardComputed>, modifier: Modifier = Modifier) {
     val today = rows.lastOrNull()
     MiniChartCard(
         title = "Fat",
-        info = "1 日の脂質 (g)。ホルモン維持の最低 0.8 g/kg、適正は 0.8-1.5 g/kg。" +
-            "緑 = 適正帯 (体重から逆算)",
+        info = "1 日の脂質 (g)。緑 = 適正 0.5-1.5 g/kg × 現体重。" +
+            "下限 0.5 g/kg はホルモン機能維持の最低ラインで、下回る (赤) と下限割れ",
         legend = listOf(
             LegendItem(
                 "Fat",

@@ -28,6 +28,13 @@ data class SessionConfig(
      * → 推定は行わず Health Services の CALORIES_TOTAL にフォールバックする。
      */
     val weightKg: Double? = null,
+    /**
+     * 目標体重 (kg)。減量ゴールのユーザ入力で、タンパク質目標帯のアンカーと
+     * 体重チャートの目標ラインに使う (docs/stock/nutrition-guidelines.md)。
+     * null = 未設定 → タンパク質帯は身長から BMI 22 標準体重で代用する。
+     * デフォルト値はハードコードしない (目標体重は個人値なので source に embed しない)。
+     */
+    val targetWeightKg: Double? = null,
     val upperBpm: Int = HeartRateZones.defaultUpperBpm(ageYears, restingBpm),
     val lowerBpm: Int = HeartRateZones.defaultLowerBpm(ageYears, restingBpm),
     val targetCycles: Int = 5,
@@ -75,6 +82,7 @@ data class SessionConfig(
         require(restingBpm in 30..120) { "安静時心拍は 30〜120 の範囲" }
         require(heightCm == null || heightCm in 100..230) { "身長は 100〜230 cm の範囲" }
         require(weightKg == null || weightKg in 30.0..250.0) { "体重は 30〜250 kg の範囲" }
+        require(targetWeightKg == null || targetWeightKg in 30.0..250.0) { "目標体重は 30〜250 kg の範囲" }
         require(targetCadenceHigh > targetCadenceRecovery) {
             "高強度 cadence ($targetCadenceHigh) は回復 cadence ($targetCadenceRecovery) より速いこと"
         }

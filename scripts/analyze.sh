@@ -82,6 +82,14 @@ curl -fsS -H "Authorization: Bearer $TOKEN" \
 
 SUMMARY_PATH="$OUT_DIR/summary__${NOW_HM}__${SLUG}.md"
 
+# タンパク質下限のアンカー体重: 設定の目標体重、未設定なら身長から BMI 22 標準体重。
+# 根拠と閾値の出典は docs/stock/nutrition-guidelines.md (ダッシュボードの帯と同一基準)。
+TARGET_W=$(jq -r '
+  .fields.json.stringValue | fromjson
+  | (.targetWeightKg
+     // (if .heightCm != null then ((.heightCm / 100) as $m | $m * $m * 22) else null end))
+' "$OUT_DIR/settings.json")
+
 # ---- レポート生成 (markdown) ----
 {
   echo "# adaptive-pulse 現状評価 ($TODAY $(TZ=Asia/Tokyo date +%H:%M) JST)"
@@ -210,7 +218,7 @@ SUMMARY_PATH="$OUT_DIR/summary__${NOW_HM}__${SLUG}.md"
   echo
   echo "## 派生集計 (会話にはここの数値を転記し、会話側で再集計しない)"
   echo
-  jq -r '
+  jq -r --argjson tw "$TARGET_W" '
     def f1: if . == null then "—" else (. * 10 | round / 10 | tostring) end;
     def f0: if . == null then "—" else (. | round | tostring) end;
     def sgn1: (. * 10 | round / 10) | if . > 0 then "+\(.)" else tostring end;
@@ -223,8 +231,8 @@ SUMMARY_PATH="$OUT_DIR/summary__${NOW_HM}__${SLUG}.md"
     | ([$m[].restingHeartRateBpm | select(. != null)]) as $rhr
     | ([$m[].hrvRmssdMs | select(. != null)]) as $hrv
     | ($w | last) as $wLast
-    | (if $wLast != null then ($wLast * 1.5 * 10 | round / 10) else null end) as $pFloor
-    | (if $wLast != null then ($wLast * 0.6 * 10 | round / 10) else null end) as $fFloor
+    | (if $tw != null then ($tw * 1.6 * 10 | round / 10) else null end) as $pFloor
+    | (if $wLast != null then ($wLast * 0.5 * 10 | round / 10) else null end) as $fFloor
     | (if $pFloor != null then [$m[] | select(.proteinG != null and .proteinG < $pFloor) | .date[5:]] else [] end) as $pLow
     | (if $fFloor != null then [$m[] | select(.fatG != null and .fatG < $fFloor) | .date[5:]] else [] end) as $fLow
     | ([$m[] | select(.intakeKcal != null and .tdeeKcal != null)]) as $days
@@ -237,8 +245,8 @@ SUMMARY_PATH="$OUT_DIR/summary__${NOW_HM}__${SLUG}.md"
         ([$days[].intakeKcal] | add) as $in | ([$days[].tdeeKcal] | add) as $out
         | "- 摂取合計 \($in | f0) kcal / TDEE 合計 \($out | f0) kcal / 収支 \($in - $out | sgn0) kcal (日平均 \(($in - $out) / ($days | length) | sgn0) kcal)"
        else "- 摂取/TDEE のそろった日なし" end),
-      (if $pFloor != null then "- タンパク質が下限 (体重 \($wLast | f1) kg × 1.5 = \($pFloor) g/日) を下回った日: \(if ($pLow | length) > 0 then ($pLow | join(", ")) else "なし" end)" else empty end),
-      (if $fFloor != null then "- 脂質が下限 (体重 \($wLast | f1) kg × 0.6 = \($fFloor) g/日) を下回った日: \(if ($fLow | length) > 0 then ($fLow | join(", ")) else "なし" end)" else empty end),
+      (if $pFloor != null then "- タンパク質が下限 (目標体重 \($tw | f1) kg × 1.6 = \($pFloor) g/日) を下回った日: \(if ($pLow | length) > 0 then ($pLow | join(", ")) else "なし" end)" else empty end),
+      (if $fFloor != null then "- 脂質が下限 (体重 \($wLast | f1) kg × 0.5 = \($fFloor) g/日) を下回った日: \(if ($fLow | length) > 0 then ($fLow | join(", ")) else "なし" end)" else empty end),
       "",
       "### 回復 (期間内)",
       "- 安静時心拍数 中央値: \($rhr | median | f0) bpm / 心拍の揺らぎ 平均: \($hrv | avg | f1) ms"

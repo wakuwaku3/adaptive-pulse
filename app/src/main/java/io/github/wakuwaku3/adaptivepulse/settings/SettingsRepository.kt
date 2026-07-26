@@ -48,6 +48,7 @@ class SettingsRepository(private val context: Context) {
         val TargetCadenceRecovery = intPreferencesKey("target_cadence_recovery")
         val HeightCm = intPreferencesKey("height_cm")
         val WeightKg = doublePreferencesKey("weight_kg")
+        val TargetWeightKg = doublePreferencesKey("target_weight_kg")
     }
 
     val config: Flow<SessionConfig> = context.settingsDataStore.data.map { it.toConfig() }
@@ -105,6 +106,9 @@ class SettingsRepository(private val context: Context) {
         // 体重 (HC 実測由来) はセッション中のカロリー推定に使う
         val w = config.weightKg
         if (w != null) this[Keys.WeightKg] = w else remove(Keys.WeightKg)
+        // 目標体重は watch では使わないが、phone との往復同期で消えないよう保持する
+        val tw = config.targetWeightKg
+        if (tw != null) this[Keys.TargetWeightKg] = tw else remove(Keys.TargetWeightKg)
     }
 
     private fun Preferences.toDocument(): SettingsDocument = SettingsDocument.from(
@@ -135,6 +139,7 @@ class SettingsRepository(private val context: Context) {
                     ?: defaults.targetCadenceRecovery,
                 heightCm = this[Keys.HeightCm] ?: defaults.heightCm,
                 weightKg = this[Keys.WeightKg] ?: defaults.weightKg,
+                targetWeightKg = this[Keys.TargetWeightKg] ?: defaults.targetWeightKg,
             )
         }.getOrElse {
             Log.w(TAG, "保存設定が不正なためデフォルトを使用", it)

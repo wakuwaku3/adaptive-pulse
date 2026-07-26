@@ -81,7 +81,7 @@ fun TodayCard(today: DashboardComputed?, rows: List<DashboardComputed> = emptyLi
                 MetricCell(
                     "Protein",
                     today.proteinG?.let { "%.0f g".format(it) } ?: "—",
-                    accent = bandStateColor(today.proteinPerKg, Protein.bands),
+                    accent = bandStateColor(today.proteinPerTargetKg, Protein.bands),
                 )
                 MetricCell(
                     "Fat",
