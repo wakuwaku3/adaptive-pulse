@@ -38,4 +38,5 @@ paths:
 - **overflow menu は全画面で同一項目にする** (FB 2026-07-23)。`OverflowMenu` コンポーザブル (`mobile/ui/OverflowMenu.kt`) に一本化し、画面種別による項目の出し分けをしない。「この画面では Settings に行けない」のような穴を作らないため。例外は**現在画面への自己リンク** (Settings 画面での Settings) のみで、これは出さない (nullable コールバックで消す。FB 2026-07-23)。
 - **定義・コンテンツ管理系のサブ画面 (e.g., Menus & Programs) は Settings 配下に置く** (FB 2026-07-23)。トップレベルの遷移先は増やさず、Settings 内の navigation card から遷移させる (back は Settings に戻る)。
 - **副画面のタイトルはパンくず表示** (FB 2026-07-23)。`AdaptivePulse › Settings › Menus & Programs` のように祖先チェーンを表示し、祖先セグメントのタップでその画面へ戻す。戻り導線はパンくずに集約し、`navigationIcon` (`‹`) は置かない。システム back は `BackHandler` で parentOf に戻す (併存)。
+- **チャートの縦軸スケールに、データから遠い参照値 (目標値・band 全幅など) を含めない** (FB 2026-07-27)。縦軸はデータ実値中心 (`expandScale`) を守る。遠い参照値まで縦軸を広げるとデータ自体の変化量が潰れて読めなくなる (例: 体重チャートの縦軸に目標体重 75 kg を含めると、現体重 ~91 kg の日々 ±1 kg の変化がほぼ水平になる)。破線などの参照線はデータ近傍の値 (例: Deficit の -500 kcal) に限り、遠い値を見せたいときはチャート外 (凡例・テキスト) で伝える。
 - **タブで主画面を切り替えない**。主画面 1 枚 (`HISTORY`) + overflow から `Settings` などサブ画面へ遷移、戻りは `BackHandler` でシステム back に乗せる。タブは「同等な並列ビュー」のときだけ使う (本アプリは該当しない)。

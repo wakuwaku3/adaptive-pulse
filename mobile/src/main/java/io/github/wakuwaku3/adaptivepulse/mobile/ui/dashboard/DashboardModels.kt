@@ -41,8 +41,6 @@ data class DashboardComputed(
     val fatPerKg: Double?,
     val carbsPerKg: Double?,
     val spo2AvgPct: Double?,
-    /** 明示設定された目標体重 (kg)。体重チャートの目標ラインに使う。null = 未設定 */
-    val targetWeightKg: Double?,
     /**
      * タンパク質帯のアンカー体重: 目標体重、未設定なら身長から BMI 22 標準体重。
      * 過体重では現体重あたりの g/kg が過大になるため、目標体重にアンカーする
@@ -95,7 +93,6 @@ fun DailySnapshotEntity.computed(
         fatPerKg = fatKg,
         carbsPerKg = carbKg,
         spo2AvgPct = spo2AvgPct,
-        targetWeightKg = targetWeightKg,
         proteinAnchorWeightKg = proteinAnchor,
     )
 }

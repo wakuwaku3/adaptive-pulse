@@ -473,9 +473,7 @@ fun WeightChart(rows: List<DashboardComputed>, modifier: Modifier = Modifier) {
     val maNonNull = movingAvg.filterNotNull()
     // scale はデータ実値中心 (band は背景描画で必要に応じて clamp 表示)。
     // expandWithBands を使うと band 全幅 (例: BMI 18.5-35 帯) を抱え込んで縦軸が無駄に広くなる。
-    // 目標体重はデータから離れていても「あとどれだけか」を見せたいので scale に含める
-    val targetWeight = rows.firstNotNullOfOrNull { it.targetWeightKg }
-    val combined = nonNull + maNonNull + listOfNotNull(targetWeight)
+    val combined = nonNull + maNonNull
     val scale = if (combined.isEmpty()) Scale(60.0, 100.0) else expandScale(combined, 0.10)
     val today = rows.lastOrNull()
     val latestMa = maNonNull.lastOrNull()
@@ -488,7 +486,6 @@ fun WeightChart(rows: List<DashboardComputed>, modifier: Modifier = Modifier) {
         title = "Weight",
         info = "身長 ${heightCm?.let { "%.0f cm".format(it) } ?: "—"} の BMI 基準で帯を描画。" +
             "緑 = 普通 (BMI 18.5-25) / 黄 = 過体重 (25-30) / 赤 = 肥満 (30+)。" +
-            (targetWeight?.let { "破線 = 目標体重 (%.1f kg)。".format(it) } ?: "") +
             if (showMa) "赤線 = ${maWindow} 日移動平均" else "",
         legend = listOfNotNull(
             LegendItem(
@@ -511,9 +508,6 @@ fun WeightChart(rows: List<DashboardComputed>, modifier: Modifier = Modifier) {
         pointAt = { i -> rows.getOrNull(i)?.let { formatPoint(it.date, it.weightKg, "kg", 2) } ?: "" },
         drawContent = {
             drawBands(bands, scale)
-            if (targetWeight != null) {
-                drawReferenceLine(targetWeight, scale, PrimaryColor.copy(alpha = 0.5f))
-            }
             drawLineChart(values, scale, PrimaryColor)
             if (showMa) drawLineChart(movingAvg, scale, SecondaryColor, pointRadius = 0f, strokeWidth = 2.5f)
         },

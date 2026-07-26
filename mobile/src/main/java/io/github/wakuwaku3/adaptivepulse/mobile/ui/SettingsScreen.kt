@@ -178,8 +178,8 @@ private fun HeightCard(heightCm: Int?, onChange: (Int?) -> Unit) {
 }
 
 /**
- * 目標体重入力。タンパク質目標帯のアンカーと体重チャートの目標ラインに使う。
- * 空欄 = 未設定 (=> タンパク質帯は身長の BMI 22 標準体重で代用、目標ラインなし)。
+ * 目標体重入力。タンパク質目標帯のアンカーに使う。
+ * 空欄 = 未設定 (=> タンパク質帯は身長の BMI 22 標準体重で代用)。
  * 個人値なのでデフォルト埋めはせず、ユーザが直接 kg で入力する。
  */
 @Composable
@@ -198,7 +198,7 @@ private fun TargetWeightCard(targetWeightKg: Double?, onChange: (Double?) -> Uni
             Column(modifier = Modifier.padding(end = 12.dp)) {
                 Text("TARGET WEIGHT", style = MaterialTheme.typography.titleSmall)
                 Text(
-                    text = "Anchors the protein target and the weight goal line",
+                    text = "Anchors the protein target band",
                     color = MobileColors.TextDim,
                     style = MaterialTheme.typography.bodySmall,
                 )

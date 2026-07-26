@@ -29,8 +29,8 @@ data class SessionConfig(
      */
     val weightKg: Double? = null,
     /**
-     * 目標体重 (kg)。減量ゴールのユーザ入力で、タンパク質目標帯のアンカーと
-     * 体重チャートの目標ラインに使う (docs/stock/nutrition-guidelines.md)。
+     * 目標体重 (kg)。減量ゴールのユーザ入力で、タンパク質目標帯のアンカーに使う
+     * (docs/stock/nutrition-guidelines.md)。
      * null = 未設定 → タンパク質帯は身長から BMI 22 標準体重で代用する。
      * デフォルト値はハードコードしない (目標体重は個人値なので source に embed しない)。
      */
