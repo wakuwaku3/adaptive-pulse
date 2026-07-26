@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Firestore から HIIT セッション/筋トレ記録/日次健康指標/現行設定を取得し、直近 N 日の現状評価
-# (per-day 表 + sessions 表 + workouts 表 + 現行 settings) を Markdown で stdout に出す。
+# (per-day 表 + sessions 表 + workouts 表 + 派生集計 + 現行 settings) を Markdown で stdout に出す。
+# 会話に返す数値はすべて本スクリプトが成型する (会話側での再集計を不要にするのが目的)。
 #
 # 出力先 (raw JSON + summary md) は tmp/analyze/{YYYY-MM-DD}/。
 # 個人健康データなので tmp/ は .gitignore + .gitleaks.toml allowlist 済の前提。
@@ -203,6 +204,84 @@ SUMMARY_PATH="$OUT_DIR/summary__${NOW_HM}__${SLUG}.md"
         + " | " + ($volume | round | tostring)
         + " | " + (if .endedAtMs == null then "進行中" else (.endReason // "—") end)
         + " |"
+    ' "$OUT_DIR/workouts.json"
+  fi
+
+  echo
+  echo "## 派生集計 (会話にはここの数値を転記し、会話側で再集計しない)"
+  echo
+  jq -r '
+    def f1: if . == null then "—" else (. * 10 | round / 10 | tostring) end;
+    def f0: if . == null then "—" else (. | round | tostring) end;
+    def sgn1: (. * 10 | round / 10) | if . > 0 then "+\(.)" else tostring end;
+    def sgn0: round | if . > 0 then "+\(.)" else tostring end;
+    def median: if length == 0 then null else (sort | .[length/2|floor]) end;
+    def avg: if length == 0 then null else (add / length) end;
+    ([.[] | select(.document) | .document.fields.json.stringValue | fromjson] | sort_by(.date)) as $m
+    | ([$m[].weightKg | select(. != null)]) as $w
+    | ([$m[].bodyFatPct | select(. != null and . != 0)]) as $bf
+    | ([$m[].restingHeartRateBpm | select(. != null)]) as $rhr
+    | ([$m[].hrvRmssdMs | select(. != null)]) as $hrv
+    | ($w | last) as $wLast
+    | (if $wLast != null then ($wLast * 1.5 * 10 | round / 10) else null end) as $pFloor
+    | (if $wLast != null then ($wLast * 0.6 * 10 | round / 10) else null end) as $fFloor
+    | (if $pFloor != null then [$m[] | select(.proteinG != null and .proteinG < $pFloor) | .date[5:]] else [] end) as $pLow
+    | (if $fFloor != null then [$m[] | select(.fatG != null and .fatG < $fFloor) | .date[5:]] else [] end) as $fLow
+    | ([$m[] | select(.intakeKcal != null and .tdeeKcal != null)]) as $days
+    | "### 体組成 (期間の最初の実測 → 最後の実測)",
+      (if ($w | length) > 0 then "- 体重: \($w | first | f1) → \($w | last | f1) kg (\(($w | last) - ($w | first) | sgn1))" else "- 体重: データなし" end),
+      (if ($bf | length) > 0 then "- 体脂肪率: \($bf | first | f1) → \($bf | last | f1) % (\(($bf | last) - ($bf | first) | sgn1))" else "- 体脂肪率: データなし" end),
+      "",
+      "### 食事 (摂取と TDEE が両方ある \($days | length) 日分。当日は記録途中でありうる)",
+      (if ($days | length) > 0 then
+        ([$days[].intakeKcal] | add) as $in | ([$days[].tdeeKcal] | add) as $out
+        | "- 摂取合計 \($in | f0) kcal / TDEE 合計 \($out | f0) kcal / 収支 \($in - $out | sgn0) kcal (日平均 \(($in - $out) / ($days | length) | sgn0) kcal)"
+       else "- 摂取/TDEE のそろった日なし" end),
+      (if $pFloor != null then "- タンパク質が下限 (体重 \($wLast | f1) kg × 1.5 = \($pFloor) g/日) を下回った日: \(if ($pLow | length) > 0 then ($pLow | join(", ")) else "なし" end)" else empty end),
+      (if $fFloor != null then "- 脂質が下限 (体重 \($wLast | f1) kg × 0.6 = \($fFloor) g/日) を下回った日: \(if ($fLow | length) > 0 then ($fLow | join(", ")) else "なし" end)" else empty end),
+      "",
+      "### 回復 (期間内)",
+      "- 安静時心拍数 中央値: \($rhr | median | f0) bpm / 心拍の揺らぎ 平均: \($hrv | avg | f1) ms"
+  ' "$OUT_DIR/metrics.json"
+
+  echo
+  jq -r '
+    ([.[] | select(.document) | .document.fields.json.stringValue | fromjson]) as $s
+    | ([$s[] | select(.cycles == .plannedCycles and .cycles > 0)] | length) as $done
+    | ([$s[] | select(.fatigueBrake == true)] | length) as $brake
+    | ([$s[] | ((.highDurationsSec // []) | add // 0)] | add // 0) as $zoneSec
+    | "### HIIT (期間内)",
+      "- セッション \($s | length) 件 (完走 \($done) / brake 発動 \($brake))",
+      "- 高強度ゾーン滞在の合計: \($zoneSec / 60 | round) 分 (目安: 週 30-60 分)"
+  ' "$OUT_DIR/sessions.json"
+
+  echo
+  echo "### 筋トレ種目別推移 (セル = その日のトップセット重量×回数。量 = 全セットの重量×回数の合計)"
+  echo
+  if [ "$WORKOUT_COUNT" = "0" ]; then
+    echo "(該当期間に筋トレ記録なし)"
+  else
+    jq -r '
+      [.[] | select(.document) | .document.fields.json.stringValue | fromjson
+        | (((.startedAtMs / 1000) + 9*3600) | strftime("%Y-%m-%d")) as $d
+        | (.entries // [])[] | select(.skipped != true)
+        | {d: $d, n: .trainingName, sets: [(.sets // [])[] | {w: (.weightKg // 0), r: (.reps // 0)}]}
+        | select((.sets | length) > 0)
+      ]
+      | if length == 0 then "(セット記録のある種目なし)" else
+          ([.[].d] | unique | sort) as $dates
+          | group_by(.n)
+          | map({
+              n: .[0].n,
+              cells: (group_by(.d) | map({ (.[0].d): {
+                top: ([.[].sets[]] | max_by([.w, .r]) | "\(.w * 10 | round / 10)kg×\(.r)"),
+                vol: ([.[].sets[] | .w * .r] | add | round)
+              }}) | add)
+            })
+          | ("| 種目 | " + ($dates | map(.[5:] | sub("-"; "/")) | join(" | ")) + " |"),
+            ("|---|" + ($dates | map("---") | join("|")) + "|"),
+            (.[] | . as $row | "| \(.n) | " + ([$dates[] | $row.cells[.] | if . == null then "—" else "\(.top) (量 \(.vol))" end] | join(" | ")) + " |")
+        end
     ' "$OUT_DIR/workouts.json"
   fi
 
