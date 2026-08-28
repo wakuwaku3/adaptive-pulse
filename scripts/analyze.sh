@@ -235,6 +235,9 @@ TARGET_W=$(jq -r '
     | (if $wLast != null then ($wLast * 0.5 * 10 | round / 10) else null end) as $fFloor
     | (if $pFloor != null then [$m[] | select(.proteinG != null and .proteinG < $pFloor) | .date[5:]] else [] end) as $pLow
     | (if $fFloor != null then [$m[] | select(.fatG != null and .fatG < $fFloor) | .date[5:]] else [] end) as $fLow
+    | (if $wLast != null then ($wLast * 2 | round) else null end) as $cBandLo
+    | (if $cBandLo != null then [$m[] | select(.carbsG != null and .carbsG < $cBandLo) | .date[5:]] else [] end) as $cLow
+    | ([$m[].carbsG | select(. != null)]) as $carbs
     | ([$m[] | select(.intakeKcal != null and .tdeeKcal != null)]) as $days
     | "### 体組成 (期間の最初の実測 → 最後の実測)",
       (if ($w | length) > 0 then "- 体重: \($w | first | f1) → \($w | last | f1) kg (\(($w | last) - ($w | first) | sgn1))" else "- 体重: データなし" end),
@@ -247,6 +250,8 @@ TARGET_W=$(jq -r '
        else "- 摂取/TDEE のそろった日なし" end),
       (if $pFloor != null then "- タンパク質が下限 (目標体重 \($tw | f1) kg × 1.6 = \($pFloor) g/日) を下回った日: \(if ($pLow | length) > 0 then ($pLow | join(", ")) else "なし" end)" else empty end),
       (if $fFloor != null then "- 脂質が下限 (体重 \($wLast | f1) kg × 0.5 = \($fFloor) g/日) を下回った日: \(if ($fLow | length) > 0 then ($fLow | join(", ")) else "なし" end)" else empty end),
+      (if $cBandLo != null then "- 炭水化物が「ふつう」帯の下端 (体重 \($wLast | f1) kg × 2 = \($cBandLo) g/日) を下回った日: \(if ($cLow | length) > 0 then "\($cLow | length) 日 (\($cLow | join(", ")))" else "なし" end)" else empty end),
+      (if ($carbs | length) > 0 then "- 炭水化物 中央値 \($carbs | median | f0) g/日 (最小 \($carbs | min | f0) / 最大 \($carbs | max | f0))" else empty end),
       "",
       "### 回復 (期間内)",
       "- 安静時心拍数 中央値: \($rhr | median | f0) bpm / 心拍の揺らぎ 平均: \($hrv | avg | f1) ms"
