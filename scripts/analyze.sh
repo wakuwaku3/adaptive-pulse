@@ -238,12 +238,19 @@ TARGET_W=$(jq -r '
     | (if $wLast != null then ($wLast * 2 | round) else null end) as $cBandLo
     | (if $cBandLo != null then [$m[] | select(.carbsG != null and .carbsG < $cBandLo) | .date[5:]] else [] end) as $cLow
     | ([$m[].carbsG | select(. != null)]) as $carbs
+    | ([$m[] | select(.weightKg != null and .bodyFatPct != null and .bodyFatPct != 0)]) as $comp
     | ([$m[].sleepDurationMin | select(. != null)]) as $sleep
     | ([$m[] | select(.sleepDurationMin != null and .sleepDurationMin < 420) | .date[5:]]) as $sleepShort
     | ([$m[] | select(.intakeKcal != null and .tdeeKcal != null)]) as $days
     | "### 体組成 (期間の最初の実測 → 最後の実測)",
       (if ($w | length) > 0 then "- 体重: \($w | first | f1) → \($w | last | f1) kg (\(($w | last) - ($w | first) | sgn1))" else "- 体重: データなし" end),
       (if ($bf | length) > 0 then "- 体脂肪率: \($bf | first | f1) → \($bf | last | f1) % (\(($bf | last) - ($bf | first) | sgn1))" else "- 体脂肪率: データなし" end),
+      (if ($comp | length) > 1 then
+        ($comp | first) as $c0 | ($comp | last) as $c1
+        | ($c0.weightKg * $c0.bodyFatPct / 100) as $f0 | ($c1.weightKg * $c1.bodyFatPct / 100) as $f1x
+        | ($c0.weightKg - $f0) as $l0 | ($c1.weightKg - $f1x) as $l1
+        | "- 内訳 (\($c0.date[5:]) → \($c1.date[5:])): 脂肪量 \($f0 | f1) → \($f1x | f1) kg (\($f1x - $f0 | sgn1)) / 脂肪以外の重さ \($l0 | f1) → \($l1 | f1) kg (\($l1 - $l0 | sgn1))"
+       else empty end),
       "",
       "### 食事 (摂取と TDEE が両方ある \($days | length) 日分。当日は記録途中でありうる)",
       (if ($days | length) > 0 then
