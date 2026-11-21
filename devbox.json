@@ -6,6 +6,6 @@
     "jq@latest",
     "unzip@latest",
     "google-cloud-sdk@latest",
-    "nodejs@latest"
+    "nodejs@24"
   ]
 }
