@@ -2,6 +2,7 @@ package io.github.wakuwaku3.adaptivepulse.mobile.health
 
 import android.content.Context
 import android.util.Log
+import androidx.health.connect.client.HealthConnectFeatures
 import androidx.health.connect.client.HealthConnectClient
 import androidx.health.connect.client.PermissionController
 import androidx.health.connect.client.aggregate.AggregateMetric
@@ -63,6 +64,14 @@ class HealthDataSource(private val context: Context) {
     private val client by lazy {
         if (available) HealthConnectClient.getOrCreate(context) else null
     }
+
+    @OptIn(androidx.health.connect.client.feature.ExperimentalFeatureAvailabilityApi::class)
+    val backgroundReadAvailable: Boolean
+        get() = client?.features?.getFeatureStatus(HealthConnectFeatures.FEATURE_READ_HEALTH_DATA_IN_BACKGROUND) ==
+            HealthConnectFeatures.FEATURE_STATUS_AVAILABLE
+
+    fun requestPermissions(): Set<String> = REQUEST_PERMISSIONS +
+        if (backgroundReadAvailable) setOf(PERMISSION_BACKGROUND) else emptySet()
 
     suspend fun grantedPermissions(): Set<String> =
         client?.permissionController?.getGrantedPermissions().orEmpty()
@@ -611,6 +620,7 @@ class HealthDataSource(private val context: Context) {
          * には含めない: 拒否されても直近 30 日の通常同期は成立させたいため。
          */
         val REQUEST_PERMISSIONS: Set<String> = PERMISSIONS + PERMISSION_HISTORY
+        const val PERMISSION_BACKGROUND = HealthPermission.PERMISSION_READ_HEALTH_DATA_IN_BACKGROUND
 
         fun permissionRequestContract() =
             PermissionController.createRequestPermissionResultContract()

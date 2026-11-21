@@ -261,6 +261,7 @@ class MainActivity : ComponentActivity() {
         val healthSource = remember { HealthDataSource(applicationContext) }
         var hcConnected by remember { mutableStateOf(false) }
         var hcHistoryGranted by remember { mutableStateOf(false) }
+        var hcBackgroundGranted by remember { mutableStateOf(false) }
         val hcLauncher = rememberLauncherForActivityResult(
             contract = HealthDataSource.permissionRequestContract(),
         ) { granted ->
@@ -271,6 +272,7 @@ class MainActivity : ComponentActivity() {
             val historyNewlyGranted =
                 !hcHistoryGranted && HealthDataSource.PERMISSION_HISTORY in granted
             hcHistoryGranted = HealthDataSource.PERMISSION_HISTORY in granted
+            hcBackgroundGranted = HealthDataSource.PERMISSION_BACKGROUND in granted
             if (!hcConnected && granted.isNotEmpty()) {
                 status = "Health Connect: some permissions denied"
             }
@@ -292,12 +294,15 @@ class MainActivity : ComponentActivity() {
             val granted = healthSource.grantedPermissions()
             hcConnected = granted.containsAll(HealthDataSource.PERMISSIONS)
             hcHistoryGranted = HealthDataSource.PERMISSION_HISTORY in granted
+            hcBackgroundGranted = HealthDataSource.PERMISSION_BACKGROUND in granted
             if (hcConnected) {
                 DashboardSyncManager.enqueuePeriodic(applicationContext)
                 DashboardSyncManager.enqueueInitialSyncIfNeeded(applicationContext)
                 // 既存インストールへの履歴権限の後付け要求。付与されるまで起動ごとに出すが、
                 // 2 回拒否すると OS 側が sheet を出さなくなるので無限に煩わせることはない
-                if (!hcHistoryGranted) hcLauncher.launch(HealthDataSource.REQUEST_PERMISSIONS)
+                if (!hcHistoryGranted || (healthSource.backgroundReadAvailable && !hcBackgroundGranted)) {
+                    hcLauncher.launch(healthSource.requestPermissions())
+                }
             }
         }
 
@@ -534,9 +539,12 @@ class MainActivity : ComponentActivity() {
                         onExportFileNameChange = { name -> scope.launch { exportRepo.setFileName(name) } },
                         healthConnectConnected = hcConnected,
                         healthConnectAvailable = healthSource.available,
+                        backgroundReadAvailable = healthSource.backgroundReadAvailable,
+                        backgroundReadGranted = hcBackgroundGranted,
+                        onRequestBackgroundRead = { hcLauncher.launch(healthSource.requestPermissions()) },
                         onHealthConnectToggle = { wantConnect ->
                             if (wantConnect) {
-                                hcLauncher.launch(HealthDataSource.REQUEST_PERMISSIONS)
+                                hcLauncher.launch(healthSource.requestPermissions())
                             } else {
                                 DashboardSyncManager.cancelAll(applicationContext)
                                 status = "Revoke in Settings → Health Connect"

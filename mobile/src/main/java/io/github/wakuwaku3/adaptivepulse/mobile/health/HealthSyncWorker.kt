@@ -31,8 +31,16 @@ class HealthSyncWorker(
             Log.i(TAG, "HC 利用不可なので sync skip")
             return Result.success()
         }
-        if (source.grantedPermissions().isEmpty()) {
+        val granted = source.grantedPermissions()
+        if (granted.isEmpty()) {
             Log.i(TAG, "HC 権限なし → sync skip")
+            return Result.success()
+        }
+
+        if (inputData.getString(KEY_REASON) == "periodic" &&
+            HealthDataSource.PERMISSION_BACKGROUND !in granted
+        ) {
+            Log.w(TAG, "HC バックグラウンド読み取り権限なし → sync skip")
             return Result.success()
         }
 
@@ -42,6 +50,11 @@ class HealthSyncWorker(
                 Log.w(TAG, "Room 同期失敗", it)
                 return Result.retry()
             }
+
+        // ファイル更新はネットワーク同期に先行させる。
+        val exportFailed = runCatching { HealthDataExporter(applicationContext).exportToConfiguredLocation() }
+            .onFailure { Log.w(TAG, "export ファイル更新失敗", it) }
+            .isFailure
 
         // Firestore は日次集約のみ。Room から派生して upload する (HC 二重読み込みを避ける)。
         // 「今回書いた分」ではなく未反映行の全 flush にすることで、遡及 worker が途中停止した
@@ -66,13 +79,8 @@ class HealthSyncWorker(
                 ?: source.readLatestWeightKgBefore(ZonedDateTime.now()),
         )
 
-        // スマホの AI に食わせる取り出しファイルを最新化する (Room から組むので安価)。
-        // 失敗しても同期本体は成功扱いにする (取り出し口は本質機能でない)
-        runCatching { HealthDataExporter(applicationContext).exportToConfiguredLocation() }
-            .onFailure { Log.w(TAG, "export ファイル更新失敗", it) }
-
         Log.i(TAG, "sync 完了 (${records.size} days, firestore failed=$fsFailed)")
-        return if (fsFailed > 0) Result.retry() else Result.success()
+        return if (fsFailed > 0 || exportFailed) Result.retry() else Result.success()
     }
 
     private suspend fun syncWeightKg(latestWeightKg: Double?) {
