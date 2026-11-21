@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Firestore Security Rules を CI から deploy するための一回限りのブートストラップ。
-# 専用 SA (firebaserules.admin だけ持つ最小権限) を作り、GitHub Actions に渡す。
+# 専用 SA に Rules 管理と API 状態の読み取り権限を与え、GitHub Actions に渡す。
 #
 # 前提: gcloud auth login 済み、gh auth login 済み、Firebase プロジェクトが
 # 既に作成済み (Spark プランで OK)。Cloud Run / Artifact Registry には依存しない。
@@ -37,6 +37,10 @@ fi
 echo "==> IAM: roles/firebaserules.admin を付与"
 gcloud projects add-iam-policy-binding "$PROJECT_ID" \
   --member="serviceAccount:$SA_EMAIL" --role="roles/firebaserules.admin" --condition=None >/dev/null
+
+echo "==> IAM: API の有効化状態を確認する権限を付与"
+gcloud projects add-iam-policy-binding "$PROJECT_ID" \
+  --member="serviceAccount:$SA_EMAIL" --role="roles/serviceusage.serviceUsageViewer" --condition=None >/dev/null
 
 echo "==> SA キーを生成"
 gcloud iam service-accounts keys create "$KEY_FILE" --iam-account="$SA_EMAIL" >/dev/null

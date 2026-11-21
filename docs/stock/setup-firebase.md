@@ -41,7 +41,7 @@ Rules は phone クライアントの直接書き込みに対する唯一の防�
    devbox shell   # gcloud / gh が PATH に通る
    bash scripts/setup-firebase-rules-deploy.sh <Firebase プロジェクト ID>
    ```
-   bootstrap が API 有効化 (firebaserules, firestore, iam)・SA `firebase-rules-deployer` 作成・`roles/firebaserules.admin` 付与・SA キー生成までを行い、GitHub に `FIREBASE_RULES_DEPLOYER_KEY` (secret) と `FIREBASE_PROJECT_ID` (variable) を登録する。
+   bootstrap が API 有効化 (firebaserules, firestore, iam)・SA `firebase-rules-deployer` 作成・`roles/firebaserules.admin` と `roles/serviceusage.serviceUsageViewer` 付与・SA キー生成までを行い、GitHub に `FIREBASE_RULES_DEPLOYER_KEY` (secret) と `FIREBASE_PROJECT_ID` (variable) を登録する。
 3. 初回 Rules deploy: GitHub の Actions タブから **deploy-firestore-rules workflow を `workflow_dispatch` で実行**。以降は `firestore.rules` 変更を main へ push すると CI が deploy する。
 
 ### 3.2 以降の運用
@@ -55,3 +55,16 @@ Rules は phone クライアントの直接書き込みに対する唯一の防�
 2. phone アプリを起動 → Google サインイン
 3. watch でセッションを完走 → phone の HISTORY に出る (Firestore Console でも確認可能)
 4. phone の SETTINGS で値を変更 → watch の設定画面に反映される (逆方向も同様)
+
+最新版 Firebase CLI はデプロイ時に Firestore API の有効化状態を確認するため、
+既存の deploy 用サービスアカウントにも Service Usage 閲覧権限が必要。権限不足で
+`serviceusage.googleapis.com` が 403 を返す場合は、プロジェクトの IAM 管理者が次を実行する。
+既存キーを再生成する必要はない。
+
+```bash
+gcloud projects add-iam-policy-binding PROJECT_ID \
+  --member="serviceAccount:firebase-rules-deployer@PROJECT_ID.iam.gserviceaccount.com" \
+  --role=roles/serviceusage.serviceUsageViewer --condition=None
+```
+
+その後、GitHub Actions の `deploy-firestore-rules` を再実行する。
