@@ -39,7 +39,7 @@ jobs:
       - name: build
         run: |
           if [ -x ./gradlew ]; then
-            ./gradlew build
+            ./gradlew build --max-workers=2 --stacktrace
           else
             echo "gradlew 不在のため build をスキップ (アプリ scaffold 前)"
           fi
