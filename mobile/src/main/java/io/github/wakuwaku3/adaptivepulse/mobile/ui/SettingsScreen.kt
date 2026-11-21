@@ -47,6 +47,9 @@ fun SettingsScreen(
     onExportFileNameChange: (String) -> Unit,
     healthConnectConnected: Boolean,
     healthConnectAvailable: Boolean,
+    backgroundReadAvailable: Boolean,
+    backgroundReadGranted: Boolean,
+    onRequestBackgroundRead: () -> Unit,
     onHealthConnectToggle: (Boolean) -> Unit,
     onHealthConnectResync: () -> Unit,
 ) {
@@ -113,6 +116,9 @@ fun SettingsScreen(
             HealthConnectCard(
                 available = healthConnectAvailable,
                 connected = healthConnectConnected,
+                backgroundReadAvailable = backgroundReadAvailable,
+                backgroundReadGranted = backgroundReadGranted,
+                onRequestBackgroundRead = onRequestBackgroundRead,
                 onToggle = onHealthConnectToggle,
                 onResync = onHealthConnectResync,
             )
@@ -287,6 +293,9 @@ private fun TargetWeightCard(targetWeightKg: Double?, onChange: (Double?) -> Uni
 private fun HealthConnectCard(
     available: Boolean,
     connected: Boolean,
+    backgroundReadAvailable: Boolean,
+    backgroundReadGranted: Boolean,
+    onRequestBackgroundRead: () -> Unit,
     onToggle: (Boolean) -> Unit,
     onResync: () -> Unit,
 ) {
@@ -304,7 +313,9 @@ private fun HealthConnectCard(
                 Text(
                     text = when {
                         !available -> "Not installed on this device"
-                        connected -> "Connected · daily metrics readable"
+                        connected && !backgroundReadAvailable -> "Background reading unavailable on this device"
+                        connected && !backgroundReadGranted -> "Allow background access for hourly export"
+                        connected -> "Connected · hourly background export enabled"
                         else -> "Tap to grant read access"
                     },
                     color = if (connected) MobileColors.Recover else MobileColors.TextDim,
@@ -312,6 +323,9 @@ private fun HealthConnectCard(
                 )
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
+                if (connected && backgroundReadAvailable && !backgroundReadGranted) {
+                    TextButton(onClick = onRequestBackgroundRead) { Text("Allow") }
+                }
                 // 5 年 backfill を手動再実行する用。Room destructive migration 後など
                 // 自動再 backfill が失敗していたケースのエスケープハッチ
                 TextButton(

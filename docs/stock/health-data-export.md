@@ -101,13 +101,11 @@ Room destructive migration で wipe されたケースは自動で再 backfill �
 「読めなかった (既存キャッシュ温存)」を区別する (`SnapshotResult.readFailed`)。
 TDEE / exerciseExtra は本アプリがマスターで、どのモードでも `CalorieEnricher` が再計算する。
 
-HC 読み込みはローカルなので network 不要だが、Firestore upsert を伴うため
-WorkManager の constraint は `NetworkType.CONNECTED` を要求する (network 不在時は
-OS が待機させる)。
-
-Worker は HC 権限が無ければ `Result.success()` で no-op に倒れる。`ExistingPeriodicWorkPolicy.KEEP`
-で複数回 enqueue しても置き換わらない。前景化時の one-time も `ExistingWorkPolicy.KEEP` で
-重複しない。
+毎時同期はネットワークを必須とせず、HC 読み込み後にファイルを書き出してから Firestore を同期する。
+前景同期と遡及同期はネットワーク接続を待つ。バックグラウンド読み取りには Health Connect の
+`READ_HEALTH_DATA_IN_BACKGROUND` の許可が必要で、未許可・非対応時は定期同期をスキップする。
+設定画面で権限を再要求できる。定期 Work は `ExistingPeriodicWorkPolicy.UPDATE` で更新し、
+前景化時の one-time は `ExistingWorkPolicy.KEEP` で重複を防ぐ。
 
 ## Firestore 連携
 
@@ -192,6 +190,7 @@ revoke する必要がある。`dataOrigin` で filter する読み手 (Google F
   MediaStore の同名エントリを更新して増殖させない。Android 10 未満は共有ストレージに
   権限が要るため app 専用領域 (`getExternalFilesDir`) に退避する。
 - **更新契機**: `HealthSyncWorker` (1 時間ごと + 前景化) の末尾で毎回書き直すので常に最新。
+  Android の省電力制御により実行時刻は遅れることがある。権限を付与するには更新後に一度アプリを開く。
   overflow メニューの「Refresh data file」で任意のタイミングでも即時更新できる。
 - **中身**: 生データ (`raw`: dailyMetrics / sessions / workouts / settings / strengthCatalog)
   と analyze 相当の集計 (`analysis`) の両方を持ち、先頭の `documentation` に「ファイルの

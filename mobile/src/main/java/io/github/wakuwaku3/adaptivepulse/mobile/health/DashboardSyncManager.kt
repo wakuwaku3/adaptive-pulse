@@ -38,11 +38,11 @@ object DashboardSyncManager {
 
     fun enqueuePeriodic(context: Context) {
         val request = PeriodicWorkRequestBuilder<HealthSyncWorker>(1, TimeUnit.HOURS)
-            .setConstraints(networkOptional())
+            .setInputData(workDataOf(HealthSyncWorker.KEY_REASON to "periodic"))
             .build()
         WorkManager.getInstance(context).enqueueUniquePeriodicWork(
             WORK_PERIODIC,
-            ExistingPeriodicWorkPolicy.KEEP,
+            ExistingPeriodicWorkPolicy.UPDATE,
             request,
         )
     }

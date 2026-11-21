@@ -38,6 +38,7 @@
     <!-- 過去 30 日より前のデータを読むには Android 14+ で別途必要。
          初回 5 年同期 (HealthSyncWorker) のためにリクエストする。拒否時は HC が 30 日で打ち切る -->
     <uses-permission android:name="android.permission.health.READ_HEALTH_DATA_HISTORY" />
+    <uses-permission android:name="android.permission.health.READ_HEALTH_DATA_IN_BACKGROUND" />
 
     <!-- 本アプリを HC のカロリー master にする (docs/stock/health-data-export.md)。
          日次の自前 TDEE を TotalCaloriesBurnedRecord として 1 レコード/日 で upsert し、
