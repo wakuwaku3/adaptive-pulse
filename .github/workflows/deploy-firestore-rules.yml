@@ -10,8 +10,6 @@ on:
     paths:
       - "firestore.rules"
       - "firebase.json"
-      - "rules-test/**"
-      - ".github/workflows/deploy-firestore-rules.yml"
   pull_request:
     paths:
       - "firestore.rules"
