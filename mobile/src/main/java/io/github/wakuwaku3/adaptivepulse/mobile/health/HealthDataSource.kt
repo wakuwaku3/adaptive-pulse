@@ -65,7 +65,6 @@ class HealthDataSource(private val context: Context) {
         if (available) HealthConnectClient.getOrCreate(context) else null
     }
 
-    @OptIn(androidx.health.connect.client.feature.ExperimentalFeatureAvailabilityApi::class)
     val backgroundReadAvailable: Boolean
         get() = client?.features?.getFeatureStatus(HealthConnectFeatures.FEATURE_READ_HEALTH_DATA_IN_BACKGROUND) ==
             HealthConnectFeatures.FEATURE_STATUS_AVAILABLE
@@ -212,9 +211,11 @@ class HealthDataSource(private val context: Context) {
             endTime = end,
             endZoneOffset = endOffset,
             energy = androidx.health.connect.client.units.Energy.kilocalories(tdeeKcal),
-            metadata = androidx.health.connect.client.records.metadata.Metadata(
+            metadata = androidx.health.connect.client.records.metadata.Metadata.autoRecorded(
                 clientRecordId = "ap-total-$date",
-                recordingMethod = androidx.health.connect.client.records.metadata.Metadata.RECORDING_METHOD_AUTOMATICALLY_RECORDED,
+                device = androidx.health.connect.client.records.metadata.Device(
+                    type = androidx.health.connect.client.records.metadata.Device.TYPE_PHONE,
+                ),
             ),
         )
         return runCatching {
